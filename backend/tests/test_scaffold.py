@@ -53,7 +53,7 @@ def test_endpoints_for_task_picks_named_endpoints_or_all():
 
 
 def test_contract_tests_are_generated_from_examples_and_run_green_against_a_correct_app(tmp_path, monkeypatch):
-    from app.contract_tests import api_test_source, ui_test_source
+    from app.contract_tests import api_test_source, edge_test_source, ui_page_test_source, ui_script_test_source
     from app.schemas import ExampleSpec
 
     d = DESIGN.model_copy(deep=True)
@@ -67,9 +67,16 @@ def test_contract_tests_are_generated_from_examples_and_run_green_against_a_corr
     assert "client.post('/api/calculate', json={'a': 2, 'b': 3, 'operation': 'add'})" in src
     assert "client.delete('/api/history/99999')" in src and "pytest.approx(5)" in src
     assert "'id' in data" in src and "'result' in data" in src
-    ui = ui_test_source(d)
+    ui = ui_script_test_source(d)
     compile(ui, "t.py", "exec")
     assert "'/api/calculate'" in ui and "'/api/history'" in ui
+    compile(ui_page_test_source(d), "t.py", "exec")
+    d.endpoints[1].response_fields[0].type = "array"
+    d.endpoints.append(d.endpoints[2].model_copy(update={"path": "/api/history"}))
+    edge = edge_test_source(d)
+    compile(edge, "t.py", "exec")
+    for needle in ("rejects_empty_body", "rejects_missing_a", "rejects_non_numeric_b", "def test_posted_item_shows_up_in_the_list", "def test_clearing_empties_the_list"):
+        assert needle in edge, needle
 
 
 def test_examples_expecting_computed_numbers_need_numeric_inputs():

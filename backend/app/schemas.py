@@ -288,9 +288,10 @@ def _ancestors(tasks: list[TaskSpec], task_id: str) -> set[str]:
 
 
 def check_stage_order(tasks: list[TaskSpec]) -> list[str]:
-    """database -> backend -> frontend must be visible in depends_on, not just in the list order."""
+    """database -> backend must be visible in depends_on, not just in the list order. The frontend codes against the contract,
+    so it does not wait for the backend and can be built in parallel with it (P3)."""
     out = []
-    for upstream, downstream in (("database", "backend"), ("backend", "frontend")):
+    for upstream, downstream in (("database", "backend"),):
         for t in (t for t in tasks if t.owner == downstream):
             missing = [u.id for u in tasks if u.owner == upstream and u.id not in _ancestors(tasks, t.id)]
             if missing:

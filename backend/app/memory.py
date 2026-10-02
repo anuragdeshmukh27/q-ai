@@ -118,7 +118,7 @@ class ProjectMemory:
         """Only the parts of the shared memory this role needs."""
         parts: list[str] = []
         contract = self.contract()
-        if agent_id in ("backend", "frontend") and contract:
+        if agent_id in ("backend", "frontend", "qa") and contract:
             parts.append(contract_brief(contract))
         if agent_id in ("backend", "database"):
             schema = self.read("database_schema.md")

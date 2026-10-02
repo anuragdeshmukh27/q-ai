@@ -44,6 +44,16 @@ def printer(e: dict) -> None:
         print(f"** SENIOR CONSULTANT ** {e['message']}")
     elif t == "consultant_result":
         print(f"** consultant {'solved' if e['ok'] else 'did not solve'} {e['task']} ({e['iterations']} iterations)")
+    elif t == "review_result":
+        print(f"   review {e['task']} round {e['round']}: {e['verdict']}" + "".join(f"\n      - {i['file']}: {i['problem']}" for i in e["items"]))
+    elif t == "merge_result":
+        print(f"   merge {e['branch']}: {'ok' if e['ok'] else 'FAILED'}" + (f" (resolved conflicts: {', '.join(e['resolved'])})" if e["resolved"] else "") + f" | tests: {e['summary']}")
+    elif t == "fault_injected":
+        print(f"!! FAULT INJECTED: {e['message']}")
+    elif t == "bug_filed":
+        print(f"!! QA filed bug {e['bug']:03d} for {e['owner']}: {e['title']} ({e['test']})")
+    elif t == "bug_fixed":
+        print(f"   bug {e['bug']:03d} fixed ({e['owner']})")
     elif t == "app_running":
         print(f"== app running at {e['url']}")
     elif t == "agent_state" and e["state"] in ("thinking",) and e["agent"] in ("architect", "planner"):
@@ -59,6 +69,8 @@ def main() -> int:
     ap.add_argument("--preset")
     ap.add_argument("--allow-cloud", action="store_true", help="permit cloud models (default: local only)")
     ap.add_argument("--consultant", action="store_true", help="after two local escalations, retry the task once on a cloud model (needs GEMINI_API_KEY); logged as a senior-consultant event")
+    ap.add_argument("--parallel", type=int, default=2, help="how many engineers may work at the same time (default 2)")
+    ap.add_argument("--inject-fault", action="store_true", help="after the build, deliberately break the app so QA must find the bug and the owner must fix it")
     ap.add_argument("--serve", action="store_true", help="keep the built app running until Ctrl-C")
     args = ap.parse_args()
 
@@ -68,7 +80,8 @@ def main() -> int:
     bus.subscribe(printer)
     started = time.time()
     orch = Orchestrator(args.goal, registry, LLMClient(registry), bus, mode=args.mode, approver=cli_approver,
-                        preset=args.preset, local_only=not args.allow_cloud, consultant=args.consultant)
+                        preset=args.preset, local_only=not args.allow_cloud, consultant=args.consultant,
+                        max_parallel=args.parallel, inject_fault=args.inject_fault)
     res = orch.run()
 
     print(f"\n== {'BUILD OK' if res.ok else 'BUILD FAILED'} in {time.time() - started:.0f}s | tests: {res.test_summary}")

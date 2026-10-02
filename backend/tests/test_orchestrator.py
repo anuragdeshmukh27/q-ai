@@ -6,7 +6,10 @@ import pytest
 from app import orchestrator as orch_mod
 from app.agent.actions import Action
 from app.agent.planning import AmendOutput
+from app.agent.qa import BugTriage
+from app.agent.review import ReviewItem, ReviewOutput
 from app.events import EventBus
+from app.integrator import Resolution
 from app.llm import StructuredResult
 from app.orchestrator import Orchestrator
 from app.registry import ModelRegistry
@@ -49,6 +52,15 @@ HTML = "<!doctype html><html><head><link rel='stylesheet' href='/static/style.cs
 JS = "async function go() { await fetch('/api/calculate'); await fetch('/api/history'); }\ngo();\n"
 
 
+DB_TESTS = """from database.calculations import add_calculation, list_history
+
+
+def test_add_and_list():
+    row = add_calculation(2, 3, 'add', 5)
+    assert row['result'] == 5
+    assert [r['id'] for r in list_history()] == [row['id']]
+"""
+
 def act(action, **kw):
     return {"thought": "t", "action": action, **kw}
 
@@ -56,6 +68,7 @@ def act(action, **kw):
 GOOD = {
     "Karan": [act("implement", path="database/calculations.py", function="add_calculation", content=DB_ADD),
               act("implement", path="database/calculations.py", function="list_history", content=DB_LIST),
+              act("write_file", path="tests/test_db_calculations.py", content=DB_TESTS),
               act("run_tests"), act("finish", summary="db done")],
     "Rohan": [act("implement", path="backend/api/calculator.py", function="handle_post_calculate", content=API_POST),
               act("implement", path="backend/api/calculator.py", function="handle_get_history", content=API_GET),
@@ -72,6 +85,8 @@ class FakeLLM:
     def __init__(self, broken_local=None):
         self.scripts = {k: list(v) for k, v in GOOD.items()}
         self.broken_local, self.models_used = broken_local, []
+        self.reviews: list[ReviewOutput] = []  # popped per review call; empty -> PASS
+        self.triaged: list[str] = []
 
     def call(self, model_id, messages, schema_model, temperature=0.2):
         self.models_used.append((model_id, schema_model.__name__))
@@ -82,6 +97,13 @@ class FakeLLM:
             parsed = PlannerOutput.model_validate(PLAN)
         elif schema_model is AmendOutput:
             parsed = AmendOutput(approve=False, reason="not needed")
+        elif schema_model is ReviewOutput:
+            parsed = self.reviews.pop(0) if self.reviews else ReviewOutput(verdict="PASS", summary="looks fine")
+        elif schema_model is BugTriage:
+            self.triaged.append(messages[1]["content"])
+            parsed = BugTriage(verdict="app_bug", owner="backend", title="Wrong calculation", expected="a + b", actual="wrong value", suggestion="check the operator")
+        elif schema_model is Resolution:
+            parsed = Resolution(content="x = 1\n", summary="kept both")
         else:
             name = next(n for n in ("Karan", "Rohan", "Meera") if f"You are {n}" in system)
             if self.broken_local == name and not model_id.startswith("gemini"):
@@ -107,16 +129,16 @@ def test_full_build_with_scripted_team(tmp_path):
     o, bus = make(tmp_path, llm)
     res = o.run()
     assert res.ok, res.problems
-    assert res.tests_passed and [t["status"] for t in res.tasks] == ["done"] * 4
+    assert res.tests_passed and [t["status"] for t in res.tasks] == ["done"] * 5
     root = res.root
     for f in (".q/architecture.md", ".q/api_contract.json", ".q/database_schema.md", ".q/tasks.json", ".q/design.json",
-              "tests/test_contract_api.py", "tests/test_contract_ui.py", "database/calculations.py", "backend/api/calculator.py"):
+              "tests/api/test_contract_api.py", "tests/ui/test_page.py", "tests/ui/test_script.py", "tests/qa/test_edge_cases.py", "database/calculations.py", "backend/api/calculator.py"):
         assert (root / f).is_file(), f
     assert json.loads((root / ".q/api_contract.json").read_text())["version"] == 1
     t = types(bus)
     assert t.index("architecture_ready") < t.index("plan_created") < t.index("task_assigned") and t[-1] == "project_done"
     assert bus.history[-1]["ok"] is True and bus.history[-1]["type"] == "project_done"
-    assert [e["agent"] for e in bus.history if e["type"] == "task_assigned"] == ["database", "backend", "frontend", "frontend"]
+    assert [e["agent"] for e in bus.history if e["type"] == "task_assigned"] == ["database", "backend", "frontend", "frontend", "qa"]
     log = o.memory.read("decisions.md")
     assert "Architect" in log
     assert (root / ".q/agents.json").is_file() and list((root / ".q/history").glob("events-*.jsonl"))
@@ -130,7 +152,7 @@ def test_engineers_cannot_touch_locked_files_or_generated_tests(tmp_path):
     assert set(LOCKED) <= set(backend.forbidden_paths)
     from app.sandbox.paths import PathPolicy, SandboxError
     pp = PathPolicy(o.root, backend.owned_paths, backend.forbidden_paths)
-    for bad in ("backend/main.py", "tests/test_contract_api.py", ".q/api_contract.json", "static/app.js"):
+    for bad in ("backend/main.py", "tests/api/test_contract_api.py", ".q/api_contract.json", "static/app.js"):
         with pytest.raises(SandboxError):
             pp.resolve_write(bad)
 
