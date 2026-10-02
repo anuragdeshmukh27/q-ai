@@ -1,5 +1,9 @@
 # Model registry. VRAM figures measured on RTX 5070 Laptop (8 GB) at num_ctx 8192.
 # 7B + 4B do not fit together, so the scheduler swaps one model at a time.
+# P2-P6 development: every role uses one model so Ollama never swaps models (and keeps it loaded).
+# Remove `dev_single_model` in P7 to restore per-role routing by capability and benchmark score.
+dev_single_model: qwen25-coder-7b
+keep_alive: 60m
 models:
   - id: qwen25-coder-7b
     provider: ollama

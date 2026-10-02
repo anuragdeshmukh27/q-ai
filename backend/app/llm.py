@@ -64,7 +64,7 @@ class LLMClient:
     def _default_factory(self, m: ModelConfig) -> LLMProvider:
         if m.provider not in self._cache:
             if m.provider == "ollama":
-                self._cache[m.provider] = OllamaProvider(ollama_host())
+                self._cache[m.provider] = OllamaProvider(ollama_host(), keep_alive=self.registry.keep_alive)
             elif m.provider == "gemini":
                 self._cache[m.provider] = GeminiProvider(self.env["GEMINI_API_KEY"])
             elif m.provider == "openai_compat":

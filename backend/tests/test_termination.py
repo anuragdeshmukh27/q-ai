@@ -108,3 +108,25 @@ def test_consecutive_invalid_outputs_terminate():
     t2.record(a(path="ok"))
     t2.record_failed()
     assert t2.check() is None
+
+
+def test_stall_warning_one_failure_before_escalation():
+    t = TerminationTracker(max_iterations=20)
+    t.record(a("run_tests"), "tests/t.py::test_a")
+    assert not t.stall_warning()
+    t.record(a("write_file"))
+    t.record(a("run_tests"), "tests/t.py::test_a")
+    assert t.stall_warning() and t.check() is None
+    t.record(a("write_file", path="g.py"))
+    t.record(a("run_tests"), "tests/t.py::test_a")
+    assert t.check() == NO_IMPROVEMENT
+
+
+def test_stall_warning_not_for_passing_or_changing_failures():
+    t = TerminationTracker(max_iterations=20)
+    t.record(a("run_tests"), "")
+    t.record(a("run_tests"), "")
+    assert not t.stall_warning()
+    t.record(a("run_tests"), "x")
+    t.record(a("run_tests"), "y")
+    assert not t.stall_warning()

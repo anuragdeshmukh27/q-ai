@@ -14,9 +14,15 @@ from .termination import REASON_TEXT, TerminationTracker
 
 STATE_BY_ACTION = {
     "list_dir": "reading", "read_file": "reading", "search": "reading",
-    "write_file": "typing", "run": "executing", "run_tests": "testing",
+    "write_file": "typing", "implement": "typing", "run": "executing", "run_tests": "testing",
     "send_message": "walking", "ask_human": "waiting_human", "finish": "idle",
 }
+STALL_HINT = (
+    "\n\nWARNING: the same tests failed again; one more identical failure escalates the task. For EACH failing assertion decide: "
+    "if it expects a value the code could not know in advance (a timestamp, an id) or contradicts the task's acceptance criteria, "
+    "rewrite the TEST. Otherwise change the exact line of code that the failure points to. Do not send the same file again."
+)
+BASE_TEMPERATURE = 0.1
 OBSERVATION_CHARS = 3000
 CHARS_PER_TOKEN = 3  # conservative; keeps the prompt inside num_ctx
 
@@ -104,6 +110,7 @@ def run_agent(
     steps: list[Step] = []
     res = AgentResult("running")
     dirty = False  # code changed since the last test run
+    stuck = 0  # consecutive rejected writes: the model keeps re-sending the same broken code
 
     def result(status: str, reason: str = "", **kw) -> AgentResult:
         res.status, res.reason, res.iterations = status, reason, tracker.iterations
@@ -124,7 +131,7 @@ def run_agent(
         emit("agent_state", agent=agent.id, state="thinking")
         messages = fit_messages(system, first_user, steps, budget)
         try:
-            out = llm.call(model_id, messages, Action)
+            out = llm.call(model_id, messages, Action, temperature=min(0.9, BASE_TEMPERATURE + 0.3 * stuck))  # warmer when stuck, to escape loops
         except InvalidOutputError as e:
             emit("error", agent=agent.id, message=f"model returned invalid output: {e}")
             tracker.record_failed()
@@ -146,7 +153,7 @@ def run_agent(
         emit("agent_state", agent=agent.id, state=STATE_BY_ACTION[action.action] if action.action != "finish" else "thinking")
 
         tr = _execute(action, toolbox, emit, agent, res.last_test, dirty)
-        if action.action == "write_file" and tr.ok:
+        if action.action in ("write_file", "implement") and (tr.ok or tr.data.get("wrote")):
             dirty = True
         signature = None
         if action.action == "run_tests" and "signature" in tr.data:
@@ -154,8 +161,12 @@ def run_agent(
             res.last_test = {k: tr.data[k] for k in ("passed", "failed", "summary", "signature")}
             dirty = False
             emit("test_result", agent=agent.id, **res.last_test)
+        stuck = stuck + 1 if (action.action in ("write_file", "implement") and not tr.ok) else 0
         tracker.record(action, signature)
-        steps.append(_step(len(steps) + 1, action, tr, tracker.repeat_warning()))
+        step = _step(len(steps) + 1, action, tr, tracker.repeat_warning(), action.action == "run_tests" and tracker.stall_warning())
+        steps.append(step)
+        if len(steps) > 1:  # remind the model what it just did, so it does not loop on the same move
+            step.observation["content"] += "\nYour last actions: " + "; ".join(s.digest for s in steps[-3:])
 
         if tr.finished:
             emit("agent_state", agent=agent.id, state="idle")
@@ -181,13 +192,15 @@ def _execute(action: Action, toolbox: ToolBox, emit, agent: AgentConfig, last_te
     return toolbox.execute(action)
 
 
-def _step(n: int, action: Action, tr: ToolResult, repeat_warning: bool) -> Step:
+def _step(n: int, action: Action, tr: ToolResult, repeat_warning: bool, stalled: bool = False) -> Step:
     text = trim_observation(tr.output)
     if action.action == "run_tests" and tr.data.get("passed"):
         text = f"All tests passed. {tr.data.get('summary', '')}\n" + text[-600:]
     obs = f"Result of {action.action} ({'ok' if tr.ok else 'FAILED'}):\n{text}"
     if repeat_warning:
         obs += "\n\nWARNING: you repeated the same action. Do something different or the task will be escalated."
+    if stalled:
+        obs += STALL_HINT
     return Step(
         {"role": "assistant", "content": action.model_dump_json(exclude_none=True)},
         {"role": "user", "content": obs},

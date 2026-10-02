@@ -9,6 +9,8 @@ import difflib
 import hashlib
 import os
 import re
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +19,7 @@ from typing import Callable
 from .agent.actions import Action
 from .config import AgentConfig
 from .sandbox.commands import ALLOW, ASK, DENY, CommandPolicy, apply_mode
+from .pybody import replace_function_body
 from .sandbox.paths import PathPolicy, SandboxError
 from .sandbox.runner import resolve_argv, run_command
 
@@ -24,6 +27,7 @@ MAX_READ_CHARS = 12_000
 MAX_WRITE_CHARS = 1_000_000
 MAX_SEARCH_HITS = 50
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".pytest_cache", ".worktrees"}
+_UNSAFE_CALL = re.compile(r"(?<![\w.])(eval|exec)\s*\(")
 _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
 
 Approver = Callable[[str, str, str, dict], bool]
@@ -40,6 +44,34 @@ class ToolResult:
 
 def _fail(msg: str, **data) -> ToolResult:
     return ToolResult(False, msg, data)
+
+
+def _syntax_problem(rel: str, content: str) -> str:
+    """Immediate, precise feedback for the model: which line of the file it just wrote does not parse."""
+    try:
+        compile(content, rel, "exec")
+    except SyntaxError as e:
+        lines = content.splitlines()
+        text = lines[e.lineno - 1].strip() if e.lineno and 0 < e.lineno <= len(lines) else ""
+        return f"wrote {rel}, but it is not valid Python: {e.msg} on line {e.lineno}: `{text}`. Fix that line and write the whole file again."
+    return ""
+
+
+def _js_problem(rel: str, path: Path) -> str:
+    """`node --check` feedback for JavaScript files (skipped when node is not installed)."""
+    node = shutil.which("node")
+    if not node:
+        return ""
+    r = subprocess.run([node, "--check", str(path)], capture_output=True, text=True, timeout=15)
+    if r.returncode == 0:
+        return ""
+    lines = [l for l in r.stderr.splitlines() if l.strip()]
+    where = next((l for l in lines if re.search(r":\d+$", l)), "")
+    msg = next((l for l in lines if "Error" in l), "SyntaxError")
+    line_no = where.rsplit(":", 1)[-1] if where else "?"
+    src = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    text = src[int(line_no) - 1].strip() if line_no.isdigit() and int(line_no) <= len(src) else ""
+    return f"wrote {rel}, but it is not valid JavaScript: {msg} on line {line_no}: `{text}`. Fix that line and write the whole file again."
 
 
 class ToolBox:
@@ -143,10 +175,29 @@ class ToolBox:
         p = self.paths.resolve_write(a.path or "")
         if p.is_dir():
             return _fail(f"{a.path} is a directory")
+        return self._store(p, content)
+
+    def _implement(self, a: Action) -> ToolResult:
+        """Replace the body of one function in a Python file; the rest of the file is untouched."""
+        p = self.paths.resolve_write(a.path or "")
+        if not p.is_file():
+            return _fail(f"{a.path} does not exist; create it with write_file first")
+        new_source, problem = replace_function_body(p.read_text(encoding="utf-8", errors="replace"), a.function or "", a.content or "")
+        if problem:
+            return _fail(problem)
+        return self._store(p, new_source, f"implemented {a.function} in")
+
+    def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:
         rel = self.paths.rel(p)
+        if rel.endswith(".py") and _UNSAFE_CALL.search(content):
+            return _fail("refused: eval()/exec() would run user-supplied text as code (injection risk). Use an if/elif chain or a dict of "
+                         "functions, e.g. {'add': operator.add, 'subtract': operator.sub}[name](a, b).", decision="deny")
         if self.mode == "assisted" and not self._approve("write", f"write {rel}", {"path": rel, "bytes": len(content)}):
             return _fail("write was not approved", decision="denied_by_human")
         old = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+        if p.exists() and old == content:
+            return _fail(f"no change: {rel} already has exactly this content, so nothing was fixed. Look at the failure again "
+                         "and change the specific lines it points to.", decision="allow")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8", newline="\n")
         diff = "".join(
@@ -156,7 +207,15 @@ class ToolBox:
             self.files_touched.append(rel)
         self.emit("file_changed", agent=self.agent.id, path=rel, diff=diff, created=not old)
         data = {"decision": "approved"} if self.mode == "assisted" else {}
-        return ToolResult(True, f"wrote {rel} ({len(content.splitlines())} lines)", data)
+        if rel.endswith(".py"):
+            problem = _syntax_problem(rel, content)
+            if problem:
+                return ToolResult(False, problem.replace("wrote ", f"{verb} ", 1), {**data, "wrote": True})
+        if rel.endswith(".js"):
+            problem = _js_problem(rel, p)
+            if problem:
+                return ToolResult(False, problem.replace("wrote ", f"{verb} ", 1), {**data, "wrote": True})
+        return ToolResult(True, f"{verb} {rel} ({len(content.splitlines())} lines)", data)
 
     def _search(self, a: Action) -> ToolResult:
         pat = a.pattern or ""

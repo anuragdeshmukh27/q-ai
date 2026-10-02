@@ -74,3 +74,8 @@ def test_fallback_chain_skips_unavailable_and_cycles():
 def test_unknown_model():
     with pytest.raises(UnknownModel):
         ModelRegistry.load(env={}).get("nope")
+
+
+def test_dev_single_model_and_keep_alive_load_from_yaml():
+    r = ModelRegistry.load(env={})
+    assert r.single_model == "qwen25-coder-7b" and r.keep_alive == "60m"

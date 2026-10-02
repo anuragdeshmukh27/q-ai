@@ -32,14 +32,17 @@ class ModelConfig(BaseModel):
 
 
 class ModelRegistry:
-    def __init__(self, models: Iterable[ModelConfig], env: Mapping[str, str] | None = None):
+    def __init__(self, models: Iterable[ModelConfig], env: Mapping[str, str] | None = None,
+                 single_model: str | None = None, keep_alive: str = "10m"):
         self.models: dict[str, ModelConfig] = {m.id: m for m in models}
         self.env = os.environ if env is None else env
+        self.single_model = single_model  # dev setting: every role uses this model (no model swaps)
+        self.keep_alive = keep_alive
 
     @classmethod
     def load(cls, path: Path | None = None, env: Mapping[str, str] | None = None) -> "ModelRegistry":
         data = yaml.safe_load((path or CONFIG_DIR / "models.yaml").read_text(encoding="utf-8"))
-        return cls([ModelConfig(**m) for m in data["models"]], env)
+        return cls([ModelConfig(**m) for m in data["models"]], env, data.get("dev_single_model"), data.get("keep_alive", "10m"))
 
     def get(self, model_id: str) -> ModelConfig:
         try:

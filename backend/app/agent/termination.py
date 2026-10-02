@@ -51,6 +51,11 @@ class TerminationTracker:
     def repeat_warning(self) -> bool:
         return self._repeat == self.repeat_limit - 1
 
+    def stall_warning(self) -> bool:
+        """The same tests failed on the last (window - 1) runs: one more identical failure will escalate."""
+        last = self._signatures[-(self.window - 1) :]
+        return len(last) == self.window - 1 and bool(last[0]) and len(set(last)) == 1
+
     def check(self) -> str | None:
         if self._repeat >= self.repeat_limit:
             return REPEATED_ACTION

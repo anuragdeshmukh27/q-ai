@@ -16,7 +16,7 @@ def make_agent(**kw):
     base = dict(
         id="backend", name="Rohan", role="Backend Engineer", model_capability="coding",
         system_prompt_file="backend.md",
-        tools=["list_dir", "read_file", "write_file", "search", "run", "run_tests", "send_message", "ask_human", "finish"],
+        tools=["list_dir", "read_file", "write_file", "implement", "search", "run", "run_tests", "send_message", "ask_human", "finish"],
         owned_paths=["backend/**", "tests/**"], forbidden_paths=[],
     )
     base.update(kw)
@@ -276,3 +276,58 @@ def test_python_interpreter_is_the_current_one(root):
     tb, _ = box(root)
     r = tb.execute(act("run", command="python backend/exe.py"))
     assert os.path.normcase(sys.executable) in os.path.normcase(r.output)
+
+
+def test_identical_rewrite_is_reported_as_no_change(root):
+    tb, bus = box(root)
+    assert tb.execute(act("write_file", path="backend/a.py", content="x = 1\n")).ok
+    r = tb.execute(act("write_file", path="backend/a.py", content="x = 1\n"))
+    assert not r.ok and "no change" in r.output
+    assert len([e for e in bus.history if e["type"] == "file_changed"]) == 1
+
+
+def test_python_syntax_error_is_reported_with_its_line(root):
+    tb, _ = box(root)
+    r = tb.execute(act("write_file", path="backend/bad.py", content="def f():\n    return [1, 2]()\n\nx = (1,\n"))
+    assert not r.ok and r.data.get("wrote") and "not valid Python" in r.output and "line" in r.output
+    assert (root / "backend" / "bad.py").exists()  # written, so a follow-up fix can be diffed
+    assert tb.execute(act("write_file", path="backend/good.py", content="x = 1\n")).ok
+
+
+def test_implement_action_fills_one_function_and_reports_syntax_errors(root):
+    tb, bus = box(root)
+    stub = "def add(a, b):\n    raise NotImplementedError\n\n\ndef sub(a, b):\n    raise NotImplementedError\n"
+    assert tb.execute(act("write_file", path="backend/m.py", content=stub)).ok
+    r = tb.execute(act("implement", path="backend/m.py", function="add", content="return a + b"))
+    assert r.ok and "implemented add" in r.output
+    text = (root / "backend" / "m.py").read_text()
+    assert "return a + b" in text and "def sub(a, b):\n    raise NotImplementedError" in text
+    bad = tb.execute(act("implement", path="backend/m.py", function="sub", content="return (a -"))
+    assert not bad.ok and bad.data.get("wrote") and "not valid Python" in bad.output
+    assert not tb.execute(act("implement", path="backend/missing.py", function="f", content="pass")).ok
+    assert not tb.execute(act("implement", path="README.md", function="f", content="pass")).ok  # outside owned paths
+
+
+def test_misfiled_code_field_is_accepted_for_write_and_implement():
+    a = Action.model_validate_json('{"thought": "t", "action": "implement", "path": "a.py", "function": "f", "command": "return 1"}')
+    assert a.content == "return 1" and a.command is None
+    b = Action.model_validate_json('{"thought": "t", "action": "write_file", "path": "a.py", "text": "x = 1"}')
+    assert b.content == "x = 1"
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="node not installed")
+def test_javascript_syntax_error_is_reported_with_its_line(tmp_path):
+    r = tmp_path / "wt"
+    (r / "static").mkdir(parents=True)
+    tb, _ = box(r, agent=make_agent(owned_paths=["static/**"]))
+    bad = tb.execute(act("write_file", path="static/app.js", content="const a = 1;\nfunction f( {\n"))
+    assert not bad.ok and bad.data.get("wrote") and "not valid JavaScript" in bad.output
+    assert tb.execute(act("write_file", path="static/app.js", content="const a = 1;\n")).ok
+
+
+def test_eval_and_exec_are_refused_in_python_files(root):
+    tb, _ = box(root)
+    for code in ("x = eval(s)\n", "exec(code)\n", "r = eval (f'{a} + {b}')\n"):
+        r = tb.execute(act("write_file", path="backend/e.py", content=code))
+        assert not r.ok and "injection" in r.output and not (root / "backend" / "e.py").exists()
+    assert tb.execute(act("write_file", path="backend/ok.py", content="def evaluate(x):\n    return x.eval_count\n")).ok
