@@ -55,8 +55,10 @@ class LLMClient:
         registry: ModelRegistry,
         provider_factory: Callable[[ModelConfig], LLMProvider] | None = None,
         env: Mapping[str, str] | None = None,
+        observer: Callable[[dict], None] | None = None,
     ):
         self.registry = registry
+        self.observer = observer  # called with every raw model response (the recorder uses it)
         self.env = os.environ if env is None else env
         self._factory = provider_factory or self._default_factory
         self._cache: dict[str, LLMProvider] = {}
@@ -97,6 +99,13 @@ class LLMClient:
         for attempt in (1, 2):
             resp: LLMResponse = provider.chat(m, msgs, schema, temperature)
             pt, ct, secs = pt + resp.prompt_tokens, ct + resp.completion_tokens, secs + resp.seconds
+            if self.observer:
+                try:
+                    self.observer({"model": m.id, "name": m.name, "attempt": attempt, "text": resp.text, "prompt_tokens": resp.prompt_tokens,
+                                   "completion_tokens": resp.completion_tokens, "seconds": round(resp.seconds, 2),
+                                   "prompt_chars": sum(len(x.get("content", "")) for x in msgs)})
+                except Exception:
+                    pass
             try:
                 parsed = schema_model.model_validate_json(extract_json(resp.text))
                 return StructuredResult(parsed, m.id, attempt, pt, ct, secs, resp.text)

@@ -20,6 +20,7 @@ from .agent.loop import AgentResult, run_agent
 from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
 from .agent.review import missing_tests, review_markdown, run_review, static_findings
+from .approvals import request_approval
 from .faults import inject_fault
 from .repo import GitError, Repo
 from .integrator import Integrator, run_suite
@@ -85,7 +86,7 @@ class Orchestrator:
         self.goal, self.registry, self.llm = goal, registry, llm
         self.bus = bus or EventBus()
         self.mode, self.approver, self.forced_preset, self.base = mode, approver, preset, base
-        self.overrides, self.local_only = overrides or {}, local_only
+        self.overrides, self.local_only = overrides if overrides is not None else {}, local_only  # the UI keeps a handle on this dict
         self.ports, self.start_app, self.consultant = ports, start_app, consultant
         self.max_parallel, self.review, self.qa, self.fault_injection = max(1, max_parallel), review, qa, inject_fault
         self.repo: Repo | None = None
@@ -126,7 +127,7 @@ class Orchestrator:
     def _toolbox(self, agent: AgentConfig, test_cmd: str = "python -m pytest -q", extra_allowed: list[str] | None = None, root: Path | None = None) -> ToolBox:
         """A sandboxed toolbox rooted in `root` (an agent's own worktree) or, by default, the main checkout."""
         assert self.root and self.messages
-        return ToolBox(root or self.root, agent, mode=self.mode, approver=self.approver, emit=self.emit, test_cmd=test_cmd,
+        return ToolBox(root or self.root, agent, mode=lambda: self.mode, approver=self.approver, emit=self.emit, test_cmd=test_cmd,
                        extra_allowed=extra_allowed, message_sink=lambda f, t, text: self.messages.send(f, t, text))  # type: ignore[union-attr]
 
     def _engineer(self, owner: str) -> AgentConfig:
@@ -140,7 +141,7 @@ class Orchestrator:
     def _write(self, agent: AgentConfig, path: str, content: str, root: Path | None = None) -> None:
         """Agents write their documents through the same sandboxed tool layer as everyone else."""
         tr = self._toolbox(agent, root=root).execute(Action(thought=f"write {path}", action="write_file", path=path, content=content))
-        if not tr.ok:
+        if not tr.ok and not tr.data.get("unchanged"):  # rewriting identical content (a retried review, say) is not an error
             raise AgentFailed(agent.id, f"could not write {path}: {tr.output}")
 
     def _commit(self, message: str) -> None:
@@ -191,7 +192,7 @@ class Orchestrator:
         self.messages = MessageBus(self.memory, self.emit)
         self.emit("project_created", slug=self.root.name, goal=self.goal, preset=design.preset, path=str(self.root))
         ia = self.agents["integrator"]
-        self.integrator = Integrator(ia, self.repo, self.llm, self._model(ia).id, self.emit, self.mode, self.approver)
+        self.integrator = Integrator(ia, self.repo, self.llm, self._model(ia).id, self.emit, lambda: self.mode, self.approver)
         self.memory.append_decision(f"Architect ({model.name}) chose preset {design.preset}")
 
         contract = contract_dict(design)
@@ -258,9 +259,13 @@ class Orchestrator:
 
     def _task_text(self, t: dict, previous_failure: str = "", stub: tuple[str, str] | None = None) -> str:
         crit = "\n".join(f"- {c}" for c in t["acceptance"])
-        if t.get("kind") == "bugfix":
+        if t.get("kind") == "request":
+            text = (f"Task {t['id']}: {t['title']}\nA human on the team asked you directly: {t['request']}\n"
+                    f"Make the smallest change in your own area that does this, then run_tests. Do not rewrite files.\nAcceptance criteria:\n{crit}")
+        elif t.get("kind") == "bugfix":
             text = (f"Task {t['id']}: {t['title']}\nQA found bugs in your area. Read each report, open the failing test and the code it exercises, "
-                    f"and make the smallest change that fixes the code (the tests are right). Do not rewrite files.\nAcceptance criteria:\n{crit}\n\n{t['bug']}")
+                    f"and make the smallest change that fixes the code (the tests are right). Do not rewrite files. If you use `implement`, it replaces the "
+                    f"WHOLE function body: send the complete body with only the faulty line changed.\nAcceptance criteria:\n{crit}\n\n{t['bug']}")
         else:
             text = f"Task {t['id']}: {t['title']}\nFiles to create: {', '.join(t['files'])}\nAcceptance criteria:\n{crit}"
         if previous_failure:
@@ -450,7 +455,8 @@ class Orchestrator:
         # Still not clean after the last round: a human decides (autonomous mode accepts the work and records it).
         asked = "; ".join(f"{i.file}: {i.problem}" for i in review.items)[:300]
         self.emit("escalation", agent=reviewer.id, task=t["id"], reason="review_unresolved", detail=asked, iterations=MAX_REVIEW_ROUNDS, recent=[])
-        approved = self.mode == "autonomous" or bool(self.approver and self.approver(reviewer.id, "review_unresolved", f"merge {t['id']} with open review items", {"items": asked}))
+        approved = self.mode == "autonomous" or request_approval(self.emit, self.approver, reviewer.id, "review_unresolved",
+                                                                 f"merge {t['id']} with open review items", {"items": asked})
         self.memory.append_decision(f"{t['id']} merged with open review items ({asked})" if approved else f"{t['id']} blocked by unresolved review items ({asked})")
         if approved:
             return res
@@ -588,6 +594,31 @@ class Orchestrator:
         self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True)
         return True
 
+    # -- direct requests from the human (Ask employee) -------------------------------
+    def add_request(self, owner: str, text: str) -> dict:
+        """Queue a task that only `owner` receives. Picked up by the running scheduler, or by `finish_requests` after the build."""
+        if owner not in ENGINEERS:
+            raise ValueError("only the engineers can be given build tasks")
+        n = 1 + sum(1 for x in self.tasks if x.get("kind") == "request")
+        t = {"id": f"r{n}", "title": f"Request: {text[:50]}", "owner": owner, "depends_on": [], "files": [], "kind": "request", "request": text,
+             "acceptance": ["the request is done", "run_tests passes"], "status": "pending", "summary": "", "attempts": 0}
+        self.tasks.append(t)
+        self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True, reason="request")
+        self._save_tasks()
+        self._progress()
+        return t
+
+    def finish_requests(self) -> None:
+        """Run queued requests on a finished build, then re-verify the whole project and restart the app."""
+        try:
+            self._execute_tasks()
+            self._verify()
+        except AgentFailed as e:
+            self.emit("error", agent=e.agent, message=e.reason)
+        except Exception:
+            self.emit("error", agent="orchestrator", message="the request stopped unexpectedly; see the log")
+        self._save_tasks()
+
     # -- messages and contract amendments -------------------------------------------
     def _after_task(self, t: dict) -> None:
         assert self.messages and self.memory
@@ -607,7 +638,8 @@ class Orchestrator:
         if not decision.approve:
             self.messages.send("architect", sender, f"Contract change denied: {decision.reason}")
             return
-        if self.mode != "autonomous" and not (self.approver and self.approver("architect", "contract_change", f"change the API contract: {request[:80]}", {"reason": decision.reason})):
+        if self.mode != "autonomous" and not request_approval(self.emit, self.approver, "architect", "contract_change",
+                                                              f"change the API contract: {request[:80]}", {"reason": decision.reason}):
             self.messages.send("architect", sender, "Contract change was not approved by the human; keep the current contract.")
             return
         old = self.memory.contract() or {"version": 1}

@@ -60,6 +60,30 @@ def test_one_line_function_and_broken_source_are_refused():
     assert "does not parse" in replace_function_body("def f(:\n", "f", "return 2")[1]
 
 
+BIG = '''def handle(req):
+    if req.op not in ("add", "sub"):
+        raise ValueError("bad")
+    result = {"add": operator.sub, "sub": operator.sub}[req.op](req.a, req.b)
+    row = save(req, result)
+    return {"result": result, "id": row["id"]}
+'''
+
+
+def test_a_one_line_fix_cannot_wipe_out_a_working_function():
+    """Regression from the first real recording: the bug fix sent only the faulty line and deleted the validation, the save and the return."""
+    out, problem = replace_function_body(BIG, "handle", 'result = {"add": operator.add, "sub": operator.sub}[req.op](req.a, req.b)')
+    assert out == "" and "WHOLE body" in problem
+    assert "row = save(req, result)" in problem and 'raise ValueError("bad")' in problem  # the current body is shown, to copy and edit
+    fixed, problem = replace_function_body(BIG, "handle", "\n".join(l[4:] for l in BIG.splitlines()[1:]).replace('"add": operator.sub', '"add": operator.add'))
+    assert problem == "" and 'operator.add' in fixed and "row = save(req, result)" in fixed and "def handle(req):" in fixed
+
+
+def test_short_bodies_and_real_shrinks_of_small_functions_are_still_allowed():
+    assert replace_function_body(SRC, "third", "return 4")[1] == ""  # tiny old body: free to rewrite
+    two = "def f():\n    a = 1\n    b = 2\n    c = 3\n    d = 4\n    return a\n"
+    assert replace_function_body(two, "f", "a = 1\nb = 2\nc = 3\nreturn a")[1] == ""  # not below half
+
+
 def test_whole_function_sent_by_the_model_is_reduced_to_its_body():
     code = "from x import y\n\n@router.get('/x')\ndef second():\n    value = 1\n    return {'v': value}"
     out, problem = replace_function_body(SRC, "second", code)

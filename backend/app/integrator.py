@@ -17,6 +17,7 @@ from typing import Callable
 from pydantic import BaseModel
 
 from .agent.planning import AgentFailed, structured_step
+from .approvals import request_approval
 from .config import PROMPTS_DIR, AgentConfig
 from .repo import GitError, MergeOutcome, Repo
 from .llm import LLMClient
@@ -56,7 +57,11 @@ class Integrator:
     def __init__(self, agent: AgentConfig, repo: Repo, llm: LLMClient, model_id: str, emit: Callable[..., object],
                  mode: str = "supervised", approver=None):
         self.agent, self.repo, self.llm, self.model_id, self.emit = agent, repo, llm, model_id, emit
-        self.mode, self.approver = mode, approver
+        self._mode, self.approver = mode, approver
+
+    @property
+    def mode(self) -> str:
+        return self._mode() if callable(self._mode) else self._mode
 
     def merge(self, agent_id: str, title: str) -> MergeResult:
         branch = self.repo.branch(agent_id)
@@ -103,8 +108,7 @@ class Integrator:
         if self.mode != "autonomous":
             summary = f"resolve merge conflict in {', '.join(proposals)} ({branch})"
             details = {"files": list(proposals), "proposal": {k: v[:600] for k, v in proposals.items()}}
-            self.emit("approval_needed", agent=self.agent.id, kind="merge_conflict", summary=summary, details=details)
-            if not (self.approver and self.approver(self.agent.id, "merge_conflict", summary, details)):
+            if not request_approval(self.emit, self.approver, self.agent.id, "merge_conflict", summary, details):
                 return self._abort("the conflict resolution was not approved")
         for rel, content in proposals.items():
             (self.repo.root / rel).write_text(content, encoding="utf-8", newline="\n")

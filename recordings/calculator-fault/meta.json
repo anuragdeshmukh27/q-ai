@@ -1,0 +1,15 @@
+{
+  "name": "calculator-fault",
+  "goal": "Build a calculator with history",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-03 00:43:40",
+  "seconds": 185,
+  "events": 442,
+  "llm_calls": 59,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true
+}

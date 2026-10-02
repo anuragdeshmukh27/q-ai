@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from .agent.actions import Action
+from .approvals import request_approval
 from .config import AgentConfig
 from .sandbox.commands import ALLOW, ASK, DENY, CommandPolicy, apply_mode
 from .pybody import replace_function_body
@@ -92,7 +93,7 @@ class ToolBox:
     ):
         self.root = Path(os.path.realpath(root))
         self.agent = agent
-        self.mode = mode
+        self._mode = mode  # a string, or a callable so the UI can switch the autonomy mode while the agent runs
         self.approver = approver
         self.human = human
         self.message_sink = message_sink
@@ -105,6 +106,10 @@ class ToolBox:
         self.emit = emit or (lambda *a, **k: None)
         self.log: list[dict] = []
         self.files_touched: list[str] = []
+
+    @property
+    def mode(self) -> str:
+        return self._mode() if callable(self._mode) else self._mode
 
     # -- dispatch -------------------------------------------------------------------
     def execute(self, action: Action) -> ToolResult:
@@ -137,13 +142,7 @@ class ToolBox:
 
     # -- approvals ------------------------------------------------------------------
     def _approve(self, kind: str, summary: str, details: dict) -> bool:
-        self.emit("approval_needed", agent=self.agent.id, kind=kind, summary=summary, details=details)
-        if self.approver is None:
-            return False
-        try:
-            return bool(self.approver(self.agent.id, kind, summary, details))
-        except Exception:
-            return False
+        return request_approval(self.emit, self.approver, self.agent.id, kind, summary, details)
 
     # -- file tools -----------------------------------------------------------------
     def _list_dir(self, a: Action) -> ToolResult:
@@ -197,7 +196,7 @@ class ToolBox:
         old = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
         if p.exists() and old == content:
             return _fail(f"no change: {rel} already has exactly this content, so nothing was fixed. Look at the failure again "
-                         "and change the specific lines it points to.", decision="allow")
+                         "and change the specific lines it points to.", decision="allow", unchanged=True)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8", newline="\n")
         diff = "".join(
