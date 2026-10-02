@@ -1,0 +1,6 @@
+name: fastapi-vanilla
+description: FastAPI + SQLite backend, plain HTML/CSS/JS frontend served by FastAPI, pytest tests. No npm needed.
+run_cmd: python -m uvicorn backend.main:app --host 127.0.0.1 --port {port}
+test_cmd: python -m pytest -q
+health_path: /health
+frontend_dir: static

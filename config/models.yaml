@@ -22,17 +22,30 @@ models:
     num_ctx: 8192
     vram_gb: 2.5
     enabled: true
+  # Cloud entries: effective only when `requires_env` is set (see registry.py).
+  # gemini-2.5-flash is no longer served to new keys; 3.8-flash is the primary.
   - id: gemini-flash
     provider: gemini
-    name: gemini-2.5-flash
+    name: gemini-3.8-flash
     capabilities: [coding, frontend, sql, reasoning, review]
     num_ctx: 32768
     vram_gb: 0
-    enabled: false   # needs GEMINI_API_KEY
+    enabled: true
+    requires_env: GEMINI_API_KEY
+    fallback: gemini-flash-lite
+  - id: gemini-flash-lite
+    provider: gemini
+    name: gemini-3.1-flash-lite
+    capabilities: [coding, frontend, sql, reasoning, review]
+    num_ctx: 32768
+    vram_gb: 0
+    enabled: true
+    requires_env: GEMINI_API_KEY
   - id: groq-llama
     provider: openai_compat
     name: llama-3.3-70b-versatile
     capabilities: [coding, frontend, sql, reasoning, review]
     num_ctx: 32768
     vram_gb: 0
-    enabled: false   # needs OPENAI_COMPAT_API_KEY
+    enabled: true
+    requires_env: OPENAI_COMPAT_API_KEY
