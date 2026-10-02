@@ -1,0 +1,11 @@
+﻿.env
+.venv/
+node_modules/
+workspace/
+*.db
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+frontend/dist/
+recordings/**/*.zip
