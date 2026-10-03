@@ -135,4 +135,31 @@ describe('office model', () => {
     expect(m.changes.get('a.py')).toHaveLength(1)
     expect(m.filesVersion).toBeGreaterThan(v + 1)
   })
+  it('puts a finished project back in progress for an Ask-employee request and celebrates only the people who did the work', () => {
+    const { m, seen } = setup()
+    m.apply(ev('project_done', { ok: true, seconds: 120 }))
+    expect(m.finished?.ok).toBe(true)
+    expect([...m.agents.values()].every((a) => a.state === 'celebrating')).toBe(true)
+    m.apply(ev('project_resumed', { agent: 'backend', task: 'r1', message: 'Rohan is working on a request' }))
+    expect(m.finished).toBeNull() // "in progress" again
+    expect([...m.agents.values()].every((a) => a.state === 'idle')).toBe(true) // nobody keeps celebrating
+    m.apply(ev('agent_state', { agent: 'backend', state: 'typing' }))
+    expect(m.activeCount).toBe(1)
+    seen.length = 0
+    m.apply(ev('project_done', { ok: true, seconds: 20, request: true, involved: ['backend'] }))
+    expect(m.agents.get('backend')!.state).toBe('celebrating')
+    expect(['frontend', 'qa', 'planner'].map((id) => m.agents.get(id)!.state)).toEqual(['idle', 'idle', 'idle'])
+    expect(seen.some((v) => v.kind === 'toast' && v.title === 'Request complete')).toBe(true)
+  })
+
+  it('keeps the newest metrics event for the gauges and the loaded-model chip', () => {
+    const { m } = setup()
+    expect(m.metrics).toBeNull()
+    m.apply(ev('metrics', { gpu: { name: 'RTX', used_gb: 6.1, total_gb: 8 }, ram: { used_gb: 12, total_gb: 32 }, loaded: [{ id: 'qwen25-coder-7b', name: 'qwen2.5-coder:7b', vram_gb: 4.7 }], budget_gb: 6.2, tokens_per_s: 71.4, swaps: 1 }))
+    expect(m.metrics?.gpu?.used_gb).toBe(6.1)
+    expect(m.metrics?.loaded?.[0].name).toBe('qwen2.5-coder:7b')
+    expect(m.metrics?.tokens_per_s).toBe(71.4)
+    m.reset()
+    expect(m.metrics).toBeNull()
+  })
 })

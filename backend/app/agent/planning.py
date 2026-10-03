@@ -11,7 +11,7 @@ from typing import Callable, TypeVar
 from pydantic import BaseModel, Field
 
 from ..config import PROMPTS_DIR, AgentConfig
-from ..llm import InvalidOutputError, LLMClient
+from ..llm import InvalidOutputError, LLMClient, agent_context
 from ..providers.base import ProviderError
 from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, check_acceptance, check_architecture, check_plan
 
@@ -58,7 +58,8 @@ def structured_step(
         emit("iteration", agent=agent.id, n=n, max=max_attempts)
         emit("agent_state", agent=agent.id, state="thinking")
         try:
-            out = llm.call(model_id, messages, schema)
+            with agent_context(agent.id):
+                out = llm.call(model_id, messages, schema)
         except InvalidOutputError as e:
             last = f"model returned invalid output: {e}"
             emit("error", agent=agent.id, message=last)

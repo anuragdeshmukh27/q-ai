@@ -21,6 +21,8 @@ interface Props {
   config: ConfigInfo | null
   preset: string
   onPreset: (p: string) => void
+  fast: boolean
+  onFast: (v: boolean) => void
   onStart: (goal: string) => void
 }
 
@@ -64,7 +66,7 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, onStart }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart }: Props) {
   const [goal, setGoal] = useState(EXAMPLES[0].goal)
   const good = recordings.filter((r) => r.ok)
   const submit = () => goal.trim() && !busy && onStart(goal.trim())
@@ -95,6 +97,16 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
         <Heading>STACK PRESET</Heading>
         <PresetPicker config={config} value={preset} onChange={onPreset} locked={demo} shown={hasProject ? model.preset : ''} />
       </div>
+
+      {!demo && (
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[13px]" title="Skips the UI polish pass when the page already uses the UI kit, and allows one model review round per task (the automatic checks still run).">
+          <input type="checkbox" checked={fast} onChange={(e) => onFast(e.target.checked)} className="mt-[3px]" />
+          <span>
+            <span className="font-bold">Fast live mode</span>
+            <span className="block text-[11.5px] leading-tight text-[var(--muted)]">One review round per task, no polish when the page already uses the UI kit</span>
+          </span>
+        </label>
+      )}
 
       {demo && (
         <div>

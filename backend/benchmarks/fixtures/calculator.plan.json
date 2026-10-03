@@ -1,0 +1,59 @@
+{
+ "tasks": [
+  {
+   "id": "t1",
+   "title": "DB functions",
+   "owner": "database",
+   "depends_on": [],
+   "files": [
+    "database/calculations.py"
+   ],
+   "acceptance": [
+    "add and list work"
+   ]
+  },
+  {
+   "id": "t2",
+   "title": "API router",
+   "owner": "backend",
+   "depends_on": [
+    "t1"
+   ],
+   "files": [
+    "backend/api/calculator.py"
+   ],
+   "acceptance": [
+    "POST /api/calculate returns 201"
+   ]
+  },
+  {
+   "id": "t3",
+   "title": "Page",
+   "owner": "frontend",
+   "depends_on": [
+    "t2"
+   ],
+   "files": [
+    "static/index.html",
+    "static/style.css"
+   ],
+   "acceptance": [
+    "has a form"
+   ]
+  },
+  {
+   "id": "t4",
+   "title": "Script",
+   "owner": "frontend",
+   "depends_on": [
+    "t3"
+   ],
+   "files": [
+    "static/app.js"
+   ],
+   "acceptance": [
+    "calls the API"
+   ]
+  }
+ ]
+}

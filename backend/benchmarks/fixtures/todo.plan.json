@@ -1,0 +1,69 @@
+{
+ "tasks": [
+  {
+   "id": "t1",
+   "title": "Implement todo data access functions",
+   "owner": "database",
+   "depends_on": [],
+   "files": [
+    "database/todos.py"
+   ],
+   "acceptance": [
+    "add_todo(title, description, priority) returns a dict with id, title, description, priority",
+    "list_todos() returns newest first",
+    "update_todo(todo_id, title, description, priority) returns True if a row was updated",
+    "delete_todo(todo_id) returns True if a row was deleted",
+    "the table is created automatically on first use"
+   ]
+  },
+  {
+   "id": "t2",
+   "title": "Implement the todos API router",
+   "owner": "backend",
+   "depends_on": [
+    "t1"
+   ],
+   "files": [
+    "backend/api/todos.py"
+   ],
+   "acceptance": [
+    "POST /api/todos returns 201 with id, title, description, priority",
+    "POST with an empty title returns 400 {\"detail\": \"Title must not be empty\"}",
+    "POST with an invalid priority returns 400 {\"detail\": \"Priority must be one of 'low', 'medium', 'high'\"}",
+    "GET /api/todos returns {\"items\": [...]}",
+    "PUT /api/todos/{id} returns 200 {\"updated\": boolean}",
+    "PUT with an invalid priority returns 400 {\"detail\": \"Priority must be one of 'low', 'medium', 'high'\"}",
+    "DELETE /api/todos/{id} returns 200 {\"deleted\": boolean}"
+   ]
+  },
+  {
+   "id": "t3",
+   "title": "Build the page structure and style",
+   "owner": "frontend",
+   "depends_on": [],
+   "files": [
+    "static/index.html",
+    "static/style.css"
+   ],
+   "acceptance": [
+    "index.html has a form with inputs id=title, id=description, id=priority and a Save button",
+    "index.html loads /static/app.js",
+    "an element id=list holds the todos"
+   ]
+  },
+  {
+   "id": "t4",
+   "title": "Write the page script",
+   "owner": "frontend",
+   "depends_on": [],
+   "files": [
+    "static/app.js"
+   ],
+   "acceptance": [
+    "loads GET /api/todos on page load and renders items.title, items.description, items.priority",
+    "submitting the form POSTs to /api/todos then reloads the list",
+    "shows the API's detail text on a 400"
+   ]
+  }
+ ]
+}

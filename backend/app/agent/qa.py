@@ -79,11 +79,11 @@ class BugTriage(BaseModel):
     suggestion: str = Field(description="Where to look and what to change, one or two sentences")
 
 
-def run_triage(agent: AgentConfig, llm: LLMClient, model_id: str, f: Failure, contract_text: str, guess: str, emit) -> tuple[BugTriage, dict]:
+def run_triage(agent: AgentConfig, llm: LLMClient, model_id: str, f: Failure, contract_text: str, guess: str, emit, hint: bool = True) -> tuple[BugTriage, dict]:
     system = (PROMPTS_DIR / "qa_triage.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", agent.role)
     kind = "a generated contract test (it is always right; the app is wrong)" if f.authoritative else "a test written by QA (it may itself be wrong)"
-    user = (f"{contract_text}\n\nFailing test: {f.test_id}  [{kind}]\nFailure: {f.message}\n\nOutput:\n{f.trace or '(no traceback)'}\n\n"
-            f"Hint from the traceback: the code that failed belongs to the `{guess}` engineer.")
+    user = (f"{contract_text}\n\nFailing test: {f.test_id}  [{kind}]\nFailure: {f.message}\n\nOutput:\n{f.trace or '(no traceback)'}"
+            + (f"\n\nHint from the traceback: the code that failed belongs to the `{guess}` engineer." if hint else ""))  # the benchmark asks without the hint
 
     def check(t: BugTriage) -> list[str]:
         return [] if t.title.strip() and t.suggestion.strip() else ["title and suggestion must not be empty"]

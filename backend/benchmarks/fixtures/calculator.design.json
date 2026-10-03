@@ -1,0 +1,144 @@
+{
+ "preset": "fastapi-vanilla",
+ "architecture": "Store calculations in SQLite and expose two endpoints.",
+ "endpoints": [
+  {
+   "method": "POST",
+   "path": "/api/calculate",
+   "summary": "Compute and store",
+   "request_fields": [
+    {
+     "name": "a",
+     "type": "number",
+     "description": ""
+    },
+    {
+     "name": "b",
+     "type": "number",
+     "description": ""
+    },
+    {
+     "name": "operation",
+     "type": "string",
+     "description": ""
+    }
+   ],
+   "response_status": 201,
+   "response_fields": [
+    {
+     "name": "id",
+     "type": "integer",
+     "description": ""
+    },
+    {
+     "name": "result",
+     "type": "number",
+     "description": ""
+    }
+   ],
+   "errors": [
+    {
+     "status": 400,
+     "detail": "Cannot divide by zero"
+    }
+   ],
+   "examples": [
+    {
+     "description": "adds",
+     "request": {
+      "a": 2,
+      "b": 3,
+      "operation": "add"
+     },
+     "status": 201,
+     "response": {
+      "result": 5
+     }
+    },
+    {
+     "description": "zero",
+     "request": {
+      "a": 1,
+      "b": 0,
+      "operation": "divide"
+     },
+     "status": 400,
+     "response": {
+      "detail": "Cannot divide by zero"
+     }
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/history",
+   "summary": "List calculations",
+   "request_fields": [],
+   "response_status": 200,
+   "response_fields": [
+    {
+     "name": "items",
+     "type": "array",
+     "description": ""
+    }
+   ],
+   "errors": [],
+   "examples": [
+    {
+     "description": "lists",
+     "request": {},
+     "status": 200,
+     "response": {}
+    }
+   ]
+  }
+ ],
+ "tables": [
+  {
+   "name": "calculations",
+   "columns": [
+    {
+     "name": "id",
+     "type": "INTEGER",
+     "constraints": "PRIMARY KEY AUTOINCREMENT"
+    },
+    {
+     "name": "a",
+     "type": "REAL",
+     "constraints": ""
+    },
+    {
+     "name": "b",
+     "type": "REAL",
+     "constraints": ""
+    },
+    {
+     "name": "operation",
+     "type": "TEXT",
+     "constraints": ""
+    },
+    {
+     "name": "result",
+     "type": "REAL",
+     "constraints": ""
+    }
+   ]
+  }
+ ],
+ "db_functions": [
+  {
+   "name": "add_calculation",
+   "signature": "add_calculation(a: float, b: float, operation: str, result: float) -> dict",
+   "description": "Stores a row"
+  },
+  {
+   "name": "list_history",
+   "signature": "list_history() -> list[dict]",
+   "description": "All rows, newest first"
+  }
+ ],
+ "ui_features": [
+  "form",
+  "history list"
+ ]
+}

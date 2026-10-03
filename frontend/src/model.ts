@@ -1,4 +1,5 @@
 // Client-side view of a project, derived only from the event stream (so live builds and replays look identical).
+import type { Metrics } from './api'
 
 export interface QEvent {
   seq: number
@@ -104,6 +105,7 @@ export class OfficeModel {
   preset = ''
   appUrl = ''
   finished: { ok: boolean; seconds: number } | null = null
+  metrics: Metrics | null = null // the newest `metrics` event (VRAM, RAM, loaded models, tokens/s); live builds and recordings both carry them
   mode = 'supervised'
   ticker = ''
   eventCount = 0
@@ -163,6 +165,7 @@ export class OfficeModel {
     this.progress = { done: 0, total: 0, percent: 0 }
     this.slug = this.goal = this.preset = this.appUrl = this.ticker = ''
     this.finished = null
+    this.metrics = null
     this.bugs = []
     this.messages = []
     this.terminal = []
@@ -428,19 +431,45 @@ export class OfficeModel {
         this.appUrl = str(e.url)
         this.say(`The app is running at ${this.appUrl}`)
         break
-      case 'project_done':
+      case 'metrics':
+        this.metrics = {
+          gpu: (e.gpu as Metrics['gpu']) ?? null,
+          ram: (e.ram as Metrics['ram']) ?? { used_gb: 0, total_gb: 0 },
+          loaded: Array.isArray(e.loaded) ? (e.loaded as Metrics['loaded']) : [],
+          budget_gb: typeof e.budget_gb === 'number' ? e.budget_gb : null,
+          tokens_per_s: num(e.tokens_per_s),
+          swaps: num(e.swaps),
+        }
+        break
+      case 'model_loaded':
+        this.say(`${a ? a.name : 'The scheduler'} loaded ${str(e.name)} in ${num(e.seconds)} s (coffee break)`)
+        break
+      case 'model_unloaded':
+        this.say(`Unloaded ${str(e.name)}: ${str(e.reason)}`)
+        break
+      case 'project_resumed':
+        // A request on a finished project: it is in progress again and nobody is celebrating any more.
+        this.finished = null
+        for (const v of this.agents.values()) if (v.state === 'celebrating') v.state = 'idle'
+        this.show({ kind: 'toast', level: 'info', title: 'Project in progress again', text: clip(str(e.message), 120) }, visuals)
+        this.say(str(e.message) || 'The project is in progress again')
+        break
+      case 'project_done': {
         this.filesVersion++
         this.finished = { ok: e.ok === true, seconds: num(e.seconds) }
         this.appUrl = str(e.app_url) || this.appUrl
+        const involved = Array.isArray(e.involved) ? (e.involved as string[]) : null // set for an Ask-employee request: only they did the work
         if (e.ok === true) {
-          for (const v of this.agents.values()) v.state = 'celebrating'
+          for (const v of this.agents.values()) v.state = involved && !involved.includes(v.id) ? 'idle' : 'celebrating'
           this.show({ kind: 'celebrate' }, visuals)
-          this.show({ kind: 'toast', level: 'good', title: 'Build complete', text: `Finished in ${num(e.seconds)} s` }, visuals)
+          this.show({ kind: 'toast', level: 'good', title: involved ? 'Request complete' : 'Build complete', text: `Finished in ${num(e.seconds)} s` }, visuals)
         } else {
-          this.show({ kind: 'toast', level: 'bad', title: 'Build stopped', text: clip(Array.isArray(e.problems) ? (e.problems as string[]).join('; ') : '', 140) || 'See the log for details' }, visuals)
+          for (const v of this.agents.values()) if (v.state === 'celebrating') v.state = 'idle'
+          this.show({ kind: 'toast', level: 'bad', title: involved ? 'Request stopped' : 'Build stopped', text: clip(Array.isArray(e.problems) ? (e.problems as string[]).join('; ') : '', 140) || 'See the log for details' }, visuals)
         }
         this.say(e.ok ? `Done in ${num(e.seconds)} s` : 'The build stopped')
         break
+      }
     }
     this.touch()
   }

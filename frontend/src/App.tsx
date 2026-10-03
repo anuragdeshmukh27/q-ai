@@ -33,7 +33,7 @@ export default function App() {
         onDemo={q.setDemo}
         speed={q.speed}
         onSpeed={q.setSpeed}
-        metrics={q.metrics}
+        metrics={model.metrics ?? (q.replay && q.metrics ? { ...q.metrics, loaded: undefined } : q.metrics)}
         appUrl={model.appUrl}
         connected={q.connected}
         done={model.finished ? model.finished.ok : null}
@@ -50,6 +50,8 @@ export default function App() {
           config={q.config}
           preset={q.preset}
           onPreset={q.setPreset}
+          fast={q.fast}
+          onFast={q.setFast}
           onStart={q.start}
         />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>

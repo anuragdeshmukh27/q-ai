@@ -49,7 +49,8 @@ API_POST = ("ops = {'add': lambda x, y: x + y, 'divide': lambda x, y: x / y}\nif
             "return db.add_calculation(req.a, req.b, req.operation, ops[req.operation](req.a, req.b))")
 API_GET = "return {'items': db.list_history()}"
 HTML = "<!doctype html><html><head><link rel='stylesheet' href='/static/style.css'></head><body><form id='f'></form><script src='/static/app.js'></script></body></html>"
-JS = "async function go() { await fetch('/api/calculate'); await fetch('/api/history'); }\ngo();\n"
+JS = ("async function go() { await fetch('/api/calculate'); const d = await (await fetch('/api/history')).json();\n"
+      "  for (const item of d.items) { console.log(item.operation); } }\ngo();\n")
 
 
 DB_TESTS = """from database.calculations import add_calculation, list_history
@@ -157,11 +158,13 @@ def test_engineers_cannot_touch_locked_files_or_generated_tests(tmp_path):
             pp.resolve_write(bad)
 
 
-def test_every_role_uses_the_single_dev_model_and_stays_local(tmp_path):
+def test_without_a_router_each_role_uses_the_registry_default_and_stays_local(tmp_path):
     llm = FakeLLM()
     o, _ = make(tmp_path, llm)
     o.run()
-    assert {m for m, _ in llm.models_used} == {"qwen25-coder-7b"}
+    reg = ModelRegistry.load(env={})
+    assert {m for m, _ in llm.models_used} <= {reg.default_for(c).id for c in ("coding", "frontend", "sql", "reasoning", "review")}
+    assert all(reg.get(m).local for m, _ in llm.models_used)
 
 
 def test_cloud_model_is_refused_when_local_only(tmp_path):

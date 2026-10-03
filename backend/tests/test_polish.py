@@ -8,7 +8,7 @@ POLISHED_HTML = ("<!doctype html><html><head><link rel='stylesheet' href='/stati
                  "<div id='list'></div></section></main><script src='/static/app.js'></script></body></html>")
 POLISHED_JS = ("async function go() {\n  const list = document.getElementById('list');\n  UI.loading(list);\n"
                "  await fetch('/api/calculate');\n  const r = await fetch('/api/history');\n  const d = await r.json();\n"
-               "  if (!d.items.length) UI.empty(list, 'No calculations yet');\n}\ngo();\n")
+               "  if (!d.items.length) UI.empty(list, 'No calculations yet');\n  for (const item of d.items) { list.textContent = item.operation; }\n}\ngo();\n")
 
 
 def polish_script(llm):
@@ -138,9 +138,9 @@ def test_a_polished_script_that_uses_no_ui_kit_helper_is_not_merged(tmp_path):
     o, _ = make(tmp_path, FakeLLM(), polish=True)
     o.run()
     wt = o.repo.worktree("frontend")
-    (wt / "static" / "app.js").write_text("fetch('/api/calculate'); fetch('/api/history');\n", encoding="utf-8")
+    (wt / "static" / "app.js").write_text("fetch('/api/calculate'); fetch('/api/history'); const x = item.operation;\n", encoding="utf-8")
     assert "UI kit helper" in o._polish_check(wt)
-    (wt / "static" / "app.js").write_text("fetch('/api/calculate'); fetch('/api/history'); UI.num(1);\n", encoding="utf-8")
+    (wt / "static" / "app.js").write_text("fetch('/api/calculate'); fetch('/api/history'); const x = item.operation; UI.num(1);\n", encoding="utf-8")
     assert o._polish_check(wt) == ""
 
 

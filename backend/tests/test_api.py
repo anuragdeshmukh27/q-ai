@@ -174,6 +174,13 @@ def test_a_task_given_to_one_engineer_runs_after_the_build_and_the_project_is_re
         assert r.status_code == 200 and r.json()["task"] == "r1"
         wait_for(lambda: (lambda s: s["state"] == "done" and any(t["id"] == "r1" and t["status"] == "done" for t in s["tasks"]))(c.get(f"/api/projects/{pid}").json()), 90, "the request")
         assert c.get(f"/api/projects/{pid}").json()["app"]["running"]
+        ev = c.get(f"/api/projects/{pid}/events").json()
+        types = [e["type"] for e in ev]
+        resumed = types.index("project_resumed")  # the finished project went back to "in progress" the moment the request arrived
+        assert resumed > types.index("project_done") and ev[resumed]["agent"] == "backend"
+        last_done = [e for e in ev if e["type"] == "project_done"][-1]
+        assert last_done["request"] is True and last_done["involved"] == ["backend"] and last_done["ok"]
+        assert c.get(f"/api/projects/{pid}").json()["finished"]["ok"]
     finally:
         mgr.shutdown()
 
@@ -233,8 +240,10 @@ def test_request_validation_and_friendly_errors(tmp_path):
 def test_leaderboard_endpoint_reads_the_benchmark_table(tmp_path):
     c, settings, mgr = make_client(tmp_path)
     try:
-        assert c.get("/api/leaderboard").json() == {"runs": 0, "roles": [], "models": [], "matrix": {}}
-        b = Leaderboard(settings.leaderboard_db)
+        empty = c.get("/api/leaderboard").json()
+        assert (empty["runs"], empty["roles"], empty["models"], empty["matrix"]) == (0, [], [], {})
+        assert {r["model"] for r in empty["router"]} == {"qwen25-coder-7b"}  # no evidence: everyone on the safe default
+        b = Leaderboard(settings.leaderboard_db, shipped=None)
         b.record("qwen25-coder-7b", "backend", "endpoint", True, 4, 12.0, 900, 4.6)
         b.record("qwen25-coder-7b", "backend", "endpoint2", False, 8, 30.0, 1500, 4.7)
         cell = c.get("/api/leaderboard").json()["matrix"]["backend"]["qwen25-coder-7b"]

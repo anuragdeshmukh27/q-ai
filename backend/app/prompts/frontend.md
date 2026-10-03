@@ -17,7 +17,18 @@ You build the web page of the app in plain HTML, CSS and JavaScript (no framewor
 - Badges: `<span class="badge badge-success|badge-warning|badge-danger|badge-info">` (use them for priority, category, status).
 - Messages: `<div id="error" class="alert alert-error"></div>` (empty means hidden). Corner messages: `UI.toast("Saved", "success")` or `"error"`.
 - Empty and loading states: `UI.loading(box, "Loading…")` before a fetch, `UI.empty(box, "No items yet. Add the first one above.")` when a list is empty.
+- **Lists: do NOT build list items with DOM code. Call `UI.renderList(box, items, build, emptyText)` once** (see "Lists" below).
 - Helpers in `app.js`: `UI.num(1234.5)` formats numbers ("1,234.5"), `UI.money(12.5)` gives "$12.50", `UI.symbol("subtract")` turns an operation word into its symbol.
+
+## Lists: one call, every field shown
+`UI.renderList(box, items, build, "No items yet. Add the first one above.")` clears the box, shows the empty state, or renders a list with one row per item. It shows EVERY field you name, so the page never shows only the title. `build` is a function `(item) => options` with these options (field names are keys of the item, written as strings):
+- `title: "title"`: the main text of the row.
+- `details: ["description", "notes"]`: longer text fields, each on its own muted line.
+- `badges: ["priority", "category"]`: short categorical fields as coloured badges (high/urgent = red, medium/pending = yellow, low/done = green, anything else = blue).
+- `formats: { amount: "money", quantity: "num" }`: number fields shown as money or formatted numbers.
+- `done: "done"`: a boolean field; the row is struck through when it is true.
+- `actions: [{ label: "Edit", onClick: () => edit(item) }, { label: "Delete", kind: "danger", onClick: () => remove(item.id) }]`: buttons.
+Every field the contract names for an item (except `id` and timestamps) must appear in `title`, `details`, `badges` or `formats`; the test fails otherwise. A counter, total or badge elsewhere on the page never shows a bare number: always say what it counts ("2 pending", "5 items", "Total: $12.50").
 
 ## Rules
 - Give every interactive element a stable `id` (inputs, buttons, result and list containers, error box) and use those ids in `app.js`. When you write `app.js`, first `read_file static/index.html` and use exactly its ids.
@@ -54,12 +65,13 @@ You build the web page of the app in plain HTML, CSS and JavaScript (no framewor
         <div class="form-row">
           <div class="field"><label for="title">Title</label><input id="title" required></div>
           <div class="field"><label for="url">URL</label><input id="url" required></div>
+          <div class="field"><label for="category">Category</label><select id="category"><option>work</option><option>fun</option></select></div>
         </div>
         <div id="error" class="alert alert-error"></div>
         <div><button id="add" type="submit">Add</button></div>
       </form>
     </section>
-    <section class="card"><h2 class="card-title">Saved</h2><div id="list"></div></section>
+    <section class="card"><h2 class="card-title">Saved <span id="count" class="badge badge-info"></span></h2><div id="list"></div></section>
   </main>
   <script src="/static/app.js"></script>
 </body>
@@ -69,26 +81,26 @@ You build the web page of the app in plain HTML, CSS and JavaScript (no framewor
 ## Worked example: `static/app.js` for the same page
 ```
 const list = document.getElementById("list");
+const count = document.getElementById("count");
 const errorBox = document.getElementById("error");
+
+async function remove(id) {
+  await fetch("/api/bookmarks/" + id, { method: "DELETE" });
+  UI.toast("Bookmark removed", "success");
+  await load();
+}
 
 async function load() {
   UI.loading(list);
   const res = await fetch("/api/bookmarks");
   const data = await res.json();
-  if (!data.items.length) return UI.empty(list, "No bookmarks yet. Add the first one above.");
-  list.textContent = "";
-  const ul = document.createElement("ul");
-  ul.className = "list";
-  for (const item of data.items) {
-    const li = document.createElement("li");
-    li.className = "list-item";
-    const main = document.createElement("span");
-    main.className = "item-main";
-    main.textContent = item.title;
-    li.appendChild(main);
-    ul.appendChild(li);
-  }
-  list.appendChild(ul);
+  count.textContent = data.items.length + " saved";
+  UI.renderList(list, data.items, (item) => ({
+    title: "title",
+    details: ["url"],
+    badges: ["category"],
+    actions: [{ label: "Delete", kind: "danger", onClick: () => remove(item.id) }],
+  }), "No bookmarks yet. Add the first one above.");
 }
 
 document.getElementById("form").addEventListener("submit", async (ev) => {
@@ -97,7 +109,7 @@ document.getElementById("form").addEventListener("submit", async (ev) => {
   const res = await fetch("/api/bookmarks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: document.getElementById("title").value, url: document.getElementById("url").value }),
+    body: JSON.stringify({ title: document.getElementById("title").value, url: document.getElementById("url").value, category: document.getElementById("category").value }),
   });
   const data = await res.json();
   if (!res.ok) {

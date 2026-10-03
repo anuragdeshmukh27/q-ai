@@ -1,8 +1,19 @@
 # Model registry. VRAM figures measured on RTX 5070 Laptop (8 GB) at num_ctx 8192.
 # 7B + 4B do not fit together, so the scheduler swaps one model at a time.
-# P2-P6 development: every role uses one model so Ollama never swaps models (and keeps it loaded).
-# Remove `dev_single_model` in P7 to restore per-role routing by capability and benchmark score.
-dev_single_model: qwen25-coder-7b
+# keep_alive: how long Ollama keeps a model resident after its last request (the scheduler unloads explicitly when it needs the room).
+# router: which model each employee uses (see backend/app/router.py). With no benchmark evidence every role runs on `safe_default`
+# (the model every full build has been proven on); another model takes a role only when it beats the default's pass rate by `margin`
+# over at least `min_runs` benchmark runs. `pins` fix a role to a model whatever the scores say, with the reason shown on the leaderboard.
+router:
+  safe_default: qwen25-coder-7b
+  margin: 0.1
+  min_runs: 2
+  pins: {}
+  note: >-
+    Why every role runs on qwen2.5-coder:7b: no other model beat it by the margin. qwen3:4b ties it on Database and Frontend and is close on Backend,
+    but fails the Planner (0 of 4) and QA triage (2 of 8); llama3.2:3b fails every engineering task. Swapping models also costs time: a build with the
+    Reviewer on qwen3:4b passed but took 233 s (8 model swaps) against about 120 s on the 7B alone, because each swap is a model load and the GPU
+    serves one model at a time. A different model can still be chosen per employee in the inspector.
 keep_alive: 60m
 models:
   - id: qwen25-coder-7b

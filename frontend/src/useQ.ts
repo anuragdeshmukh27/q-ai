@@ -25,6 +25,7 @@ export function useQ() {
   const [recording, setRecording] = useState('')
   const [config, setConfig] = useState<ConfigInfo | null>(null)
   const [preset, setPreset] = useState('fastapi-vanilla')
+  const [fast, setFast] = useState(true) // fast live mode: skip an unneeded polish pass, one LLM review round per task
   const [replay, setReplay] = useState(false) // the current project is a replay, not a live build
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [builds, setBuilds] = useState(0)
@@ -111,7 +112,7 @@ export function useQ() {
     async (goal: string) => {
       setBusy(true)
       try {
-        const s = await api.create({ goal, mode, demo, recording: demo ? recording || undefined : undefined, speed, preset: demo ? undefined : preset })
+        const s = await api.create({ goal, mode, demo, recording: demo ? recording || undefined : undefined, speed, preset: demo ? undefined : preset, fast_live: demo ? undefined : fast })
         model.reset()
         model.setGoal(goal)
         model.setMode(s.mode)
@@ -124,7 +125,7 @@ export function useQ() {
         setBusy(false)
       }
     },
-    [mode, demo, recording, speed, preset, model, fail, builds],
+    [mode, demo, recording, speed, preset, fast, model, fail, builds],
   )
 
   const setMode = useCallback(
@@ -152,7 +153,7 @@ export function useQ() {
   )
 
   return {
-    config, preset, setPreset, replay, decide, toast, fail,
+    config, preset, setPreset, fast, setFast, replay, decide, toast, fail,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
     metrics, builds, busy, start, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }

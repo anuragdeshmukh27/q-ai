@@ -1,0 +1,303 @@
+{
+ "preset": "fastapi-vanilla",
+ "architecture": "A SQLite table stores todos with title, description, and priority. A database module offers add, list, update, and delete functions. FastAPI routes under /api/todos call them. A single HTML page lists todos, allows adding, updating, and deleting them, and shows priorities as buttons.",
+ "endpoints": [
+  {
+   "method": "POST",
+   "path": "/api/todos",
+   "summary": "Add a new todo",
+   "request_fields": [
+    {
+     "name": "title",
+     "type": "string",
+     "description": "Title of the todo"
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "description": "Description of the todo"
+    },
+    {
+     "name": "priority",
+     "type": "string",
+     "description": "Priority of the todo (low, medium, high)"
+    }
+   ],
+   "response_status": 201,
+   "response_fields": [
+    {
+     "name": "id",
+     "type": "integer",
+     "description": ""
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "description": ""
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "description": ""
+    },
+    {
+     "name": "priority",
+     "type": "string",
+     "description": ""
+    }
+   ],
+   "errors": [
+    {
+     "status": 400,
+     "detail": "Title must not be empty"
+    },
+    {
+     "status": 400,
+     "detail": "Priority must be one of 'low', 'medium', 'high'"
+    }
+   ],
+   "examples": [
+    {
+     "description": "Adds a new todo",
+     "request": {
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "medium"
+     },
+     "status": 201,
+     "response": {
+      "id": 1,
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "medium"
+     }
+    },
+    {
+     "description": "Rejects an empty title",
+     "request": {
+      "title": "",
+      "description": "Milk, eggs, bread",
+      "priority": "medium"
+     },
+     "status": 400,
+     "response": {
+      "detail": "Title must not be empty"
+     }
+    },
+    {
+     "description": "Rejects an invalid priority",
+     "request": {
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "urgent"
+     },
+     "status": 400,
+     "response": {
+      "detail": "Priority must be one of 'low', 'medium', 'high'"
+     }
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/todos",
+   "summary": "List all todos, newest first",
+   "request_fields": [],
+   "response_status": 200,
+   "response_fields": [
+    {
+     "name": "items",
+     "type": "array",
+     "description": "Objects with id, title, description, and priority"
+    }
+   ],
+   "errors": [],
+   "examples": [
+    {
+     "description": "Lists todos",
+     "request": {},
+     "status": 200,
+     "response": {}
+    }
+   ]
+  },
+  {
+   "method": "PUT",
+   "path": "/api/todos/{id}",
+   "summary": "Update a todo",
+   "request_fields": [
+    {
+     "name": "title",
+     "type": "string",
+     "description": "New title of the todo"
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "description": "New description of the todo"
+    },
+    {
+     "name": "priority",
+     "type": "string",
+     "description": "New priority of the todo (low, medium, high)"
+    }
+   ],
+   "response_status": 200,
+   "response_fields": [
+    {
+     "name": "updated",
+     "type": "boolean",
+     "description": ""
+    }
+   ],
+   "errors": [
+    {
+     "status": 404,
+     "detail": "Todo not found"
+    },
+    {
+     "status": 400,
+     "detail": "Priority must be one of 'low', 'medium', 'high'"
+    }
+   ],
+   "examples": [
+    {
+     "description": "Updates a todo",
+     "request": {
+      "id": 1,
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "high"
+     },
+     "status": 200,
+     "response": {
+      "updated": true
+     }
+    },
+    {
+     "description": "Unknown id",
+     "request": {
+      "id": 99999,
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "high"
+     },
+     "status": 404,
+     "response": {
+      "detail": "Todo not found"
+     }
+    },
+    {
+     "description": "Rejects an invalid priority",
+     "request": {
+      "id": 1,
+      "title": "Buy groceries",
+      "description": "Milk, eggs, bread",
+      "priority": "urgent"
+     },
+     "status": 400,
+     "response": {
+      "detail": "Priority must be one of 'low', 'medium', 'high'"
+     }
+    }
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/todos/{id}",
+   "summary": "Delete a todo",
+   "request_fields": [],
+   "response_status": 200,
+   "response_fields": [
+    {
+     "name": "deleted",
+     "type": "boolean",
+     "description": ""
+    }
+   ],
+   "errors": [
+    {
+     "status": 404,
+     "detail": "Todo not found"
+    }
+   ],
+   "examples": [
+    {
+     "description": "Deletes a todo",
+     "request": {
+      "id": 1
+     },
+     "status": 200,
+     "response": {
+      "deleted": true
+     }
+    },
+    {
+     "description": "Unknown id",
+     "request": {
+      "id": 99999
+     },
+     "status": 404,
+     "response": {
+      "detail": "Todo not found"
+     }
+    }
+   ]
+  }
+ ],
+ "tables": [
+  {
+   "name": "todos",
+   "columns": [
+    {
+     "name": "id",
+     "type": "INTEGER",
+     "constraints": "PRIMARY KEY AUTOINCREMENT"
+    },
+    {
+     "name": "title",
+     "type": "TEXT",
+     "constraints": "NOT NULL"
+    },
+    {
+     "name": "description",
+     "type": "TEXT",
+     "constraints": "NOT NULL"
+    },
+    {
+     "name": "priority",
+     "type": "TEXT",
+     "constraints": "NOT NULL"
+    }
+   ]
+  }
+ ],
+ "db_functions": [
+  {
+   "name": "add_todo",
+   "signature": "add_todo(title: str, description: str, priority: str) -> dict",
+   "description": "Insert and return the new row"
+  },
+  {
+   "name": "list_todos",
+   "signature": "list_todos() -> list[dict]",
+   "description": "All rows, newest first"
+  },
+  {
+   "name": "update_todo",
+   "signature": "update_todo(todo_id: int, title: str, description: str, priority: str) -> bool",
+   "description": "True if a row was updated"
+  },
+  {
+   "name": "delete_todo",
+   "signature": "delete_todo(todo_id: int) -> bool",
+   "description": "True if a row was deleted"
+  }
+ ],
+ "ui_features": [
+  "Form with title, description, and priority inputs and a Save button",
+  "List of saved todos with title, description, and priority",
+  "Buttons to update and delete each todo",
+  "Show error messages from the API"
+ ]
+}

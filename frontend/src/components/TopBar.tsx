@@ -36,6 +36,22 @@ function Gauge({ label, used, total }: { label: string; used?: number; total?: n
   )
 }
 
+/** Which models the scheduler has in VRAM right now (and how fast they generate). Empty = every model is unloaded. */
+function LoadedModels({ metrics }: { metrics: Metrics | null }) {
+  if (!metrics?.loaded) return null
+  const names = metrics.loaded.map((m) => m.name)
+  const tps = metrics.tokens_per_s ?? 0
+  return (
+    <div className="w-[150px]" title={names.length ? `Loaded in VRAM: ${names.join(', ')}` : 'No model is loaded (the team is asleep)'}>
+      <div className="text-[11px] font-semibold tracking-wide text-[var(--muted)]">LOADED MODEL</div>
+      <div className="truncate text-[12.5px] font-bold" style={{ color: names.length ? 'var(--text)' : 'var(--muted)' }}>
+        {names.length ? names.join(' + ') : 'none (asleep)'}
+      </div>
+      <div className="text-[11px] tabular-nums text-[var(--muted)]">{tps > 0 ? `${Math.round(tps)} tokens/s` : metrics.swaps ? `${metrics.swaps} swap${metrics.swaps === 1 ? '' : 's'}` : ' '}</div>
+    </div>
+  )
+}
+
 export function TopBar(p: Props) {
   const status = p.done === true ? 'Complete' : p.done === false ? 'Stopped' : p.hasProject ? (p.connected ? 'Building' : 'Reconnecting…') : 'Ready'
   const statusColor = p.done === true ? 'var(--good)' : p.done === false ? 'var(--bad)' : p.hasProject ? 'var(--accent)' : 'var(--muted)'
@@ -106,6 +122,8 @@ export function TopBar(p: Props) {
             )}
           </div>
         </div>
+
+        <LoadedModels metrics={p.metrics} />
 
         <div className="flex flex-col gap-2">
           <Gauge label="VRAM" used={p.metrics?.gpu?.used_gb} total={p.metrics?.gpu?.total_gb} />

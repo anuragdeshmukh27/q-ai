@@ -76,6 +76,8 @@ def test_unknown_model():
         ModelRegistry.load(env={}).get("nope")
 
 
-def test_dev_single_model_and_keep_alive_load_from_yaml():
+def test_keep_alive_and_router_section_load_from_yaml():
     r = ModelRegistry.load(env={})
-    assert r.single_model == "qwen25-coder-7b" and r.keep_alive == "60m"
+    assert not hasattr(r, "single_model")  # the dev single-model switch is gone: the router chooses
+    assert r.keep_alive == "60m"
+    assert r.router_config["safe_default"] == "qwen25-coder-7b" and r.router_config["margin"] > 0

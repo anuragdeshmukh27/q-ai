@@ -20,7 +20,7 @@ from .agent.actions import Action
 from .agent.loop import AgentResult, run_agent
 from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
-from .agent.review import missing_tests, review_markdown, run_review, static_findings
+from .agent.review import ReviewOutput, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
 from .faults import inject_fault
 from .repo import GitError, Repo
@@ -86,6 +86,8 @@ class Orchestrator:
         qa: bool = True,
         inject_fault: bool = False,
         polish: bool = False,
+        fast_live: bool = False,
+        router=None,
     ):
         self.goal, self.registry, self.llm = goal, registry, llm
         self.bus = bus or EventBus()
@@ -94,6 +96,9 @@ class Orchestrator:
         self.ports, self.start_app, self.consultant = ports, start_app, consultant
         self.max_parallel, self.review, self.qa, self.fault_injection = max(1, max_parallel), review, qa, inject_fault
         self.polish = polish
+        self.fast_live = fast_live  # live-demo speed: no polish when the page already uses the UI kit, one LLM review round per task
+        self.router = router  # picks a model per employee from the benchmark scores (None: the registry's capability default)
+        self.finished = False
         self.repo: Repo | None = None
         self.integrator: Integrator | None = None
         self.fault = None
@@ -113,8 +118,13 @@ class Orchestrator:
 
     # -- helpers --------------------------------------------------------------------
     def _model(self, agent: AgentConfig) -> ModelConfig:
-        mid = self.overrides.get(agent.id) or self.registry.single_model
-        m = self.registry.get(mid) if mid else self.registry.default_for(agent.model_capability)
+        mid = self.overrides.get(agent.id)
+        if mid:
+            m = self.registry.get(mid)
+        elif self.router is not None:
+            m = self.router.choose(agent.id, agent.model_capability, local_only=self.local_only).model
+        else:
+            m = self.registry.default_for(agent.model_capability)
         if self.local_only and not m.local:
             raise AgentFailed(agent.id, f"model {m.id} is a cloud model but this build is local-only")
         if not self.registry.is_available(m.id):
@@ -190,8 +200,12 @@ class Orchestrator:
         presets = {n: load_preset(n).description for n in list_presets()}
         design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset)
         self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
-        self.design = design
+        self._init_project(design, model)
 
+    def _init_project(self, design: ArchitectOutput, model: ModelConfig) -> None:
+        """Everything that follows a finished design: the project repo, `.q/` memory, the contract documents (the benchmarks start here too)."""
+        arch_agent = self.agents["architect"]
+        self.design = design
         self.root = create_project(self.goal, design.preset, self.base)
         self.repo = Repo(self.root)
         self.memory = ProjectMemory(self.root)
@@ -219,7 +233,11 @@ class Orchestrator:
         plan, st = run_planner(agent, self.llm, model.id, self.goal, contract_text, schema_text, bool(self.design.tables),
                                self.design.endpoints, self.emit)
         self._stat("planner", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
-        self.tasks = [{**t.model_dump(), "status": "pending", "summary": "", "attempts": 0} for t in topo_order(plan.tasks)]
+        self._adopt_plan(plan.tasks)
+
+    def _adopt_plan(self, specs: list[TaskSpec]) -> None:
+        agent = self.agents["planner"]
+        self.tasks = [{**t.model_dump(), "status": "pending", "summary": "", "attempts": 0} for t in topo_order(specs)]
         self._write(agent, ".q/tasks.json", json.dumps({"tasks": self.tasks}, indent=2))
         self.emit("plan_created", tasks=[{k: t[k] for k in ("id", "title", "owner", "depends_on", "files")} for t in self.tasks])
         self._commit("[planner] task plan")
@@ -285,7 +303,8 @@ class Orchestrator:
         crit = "\n".join(f"- {c}" for c in t["acceptance"])
         if t.get("kind") == "request":
             text = (f"Task {t['id']}: {t['title']}\nA human on the team asked you directly: {t['request']}\n"
-                    f"Make the smallest change in your own area that does this, then run_tests. Do not rewrite files.\nAcceptance criteria:\n{crit}")
+                    f"Make the smallest change in your own area that does this, then run_tests. Do not rewrite files. A counter, total or badge you add always has a "
+                    f"text label (for example '2 pending', never just '2'); anything you add to a list shows every important field of an item.\nAcceptance criteria:\n{crit}")
         elif t.get("kind") == "bugfix":
             text = (f"Task {t['id']}: {t['title']}\nQA found bugs in your area. Read each report, open the failing test and the code it exercises, "
                     f"and make the smallest change that fixes the code (the tests are right). Do not rewrite files. If you use `implement`, it replaces the "
@@ -470,19 +489,19 @@ class Orchestrator:
 
     # -- review ---------------------------------------------------------------------
     def _review_loop(self, t: dict, agent: AgentConfig, res: AgentResult, wt: Path, model: ModelConfig, preset, task_text: str, context: str) -> AgentResult:
-        """The Reviewer checks the branch diff; REQUEST_CHANGES goes back to the engineer, up to MAX_REVIEW_ROUNDS reviews."""
+        """The Reviewer checks the branch diff; REQUEST_CHANGES goes back to the engineer, up to MAX_REVIEW_ROUNDS reviews.
+
+        Fast live mode allows ONE LLM review: if it asks for changes, the engineer makes them once and only the automatic (static) checks look at the
+        result, so a clean fix is accepted without a second model review while injection/size/test findings still block."""
         assert self.repo and self.memory and self.messages
         reviewer = self.agents["reviewer"]
         rmodel = self._model(reviewer)
-        for rnd in range(1, MAX_REVIEW_ROUNDS + 1):
+        rounds = 1 if self.fast_live else MAX_REVIEW_ROUNDS
+        review = None
+        for rnd in range(1, rounds + 1):
             self.emit("agent_state", agent=reviewer.id, state="reading")
-            files = {}
-            for rel in self.repo.changed_files(agent.id):
-                p = wt / rel
-                if p.is_file():
-                    files[rel] = p.read_text(encoding="utf-8", errors="replace")
             review, st = run_review(reviewer, self.llm, rmodel.id, t, self.repo.diff_vs_main(agent.id),
-                                    static_findings(files) + missing_tests(files, t["owner"]), self.emit)
+                                    self._automatic_findings(agent, wt, t["owner"]), self.emit)
             self._stat("reviewer", rmodel, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
             self._write(reviewer, f".q/reviews/{t['id']}-r{rnd}.md", review_markdown(t, review, rnd))
             self.emit("review_result", agent=reviewer.id, task=t["id"], round=rnd, verdict=review.verdict, summary=review.summary,
@@ -490,7 +509,7 @@ class Orchestrator:
             if review.verdict == "PASS":
                 self.emit("agent_state", agent=reviewer.id, state="idle")
                 return res
-            if rnd == MAX_REVIEW_ROUNDS:
+            if rnd == rounds and not self.fast_live:
                 break
             self.messages.send(reviewer.id, agent.id, "Review requested changes: " + "; ".join(f"{i.file}: {i.problem}" for i in review.items))
             asked = "\n".join(f"- {i.file}: {i.problem}" for i in review.items)
@@ -502,15 +521,34 @@ class Orchestrator:
             if res.status != "finished":
                 return res
             self.repo.commit(wt, f"[{agent.id}] address review ({t['id']})"[:72])
+            if rnd == rounds:  # fast live mode: no second model review, the automatic checks decide
+                left = self._automatic_findings(agent, wt, t["owner"])
+                if not left:
+                    note = ReviewOutput(verdict="PASS", summary="fast live mode: changes made, automatic checks are clean")
+                    self._write(reviewer, f".q/reviews/{t['id']}-r{rnd + 1}.md", review_markdown(t, note, rnd + 1))
+                    self.emit("review_result", agent=reviewer.id, task=t["id"], round=rnd + 1, verdict="PASS", summary=note.summary, items=[])
+                    self.emit("agent_state", agent=reviewer.id, state="idle")
+                    return res
+                review = ReviewOutput(verdict="REQUEST_CHANGES", summary="automatic checks still find problems", items=left)
         # Still not clean after the last round: a human decides (autonomous mode accepts the work and records it).
-        asked = "; ".join(f"{i.file}: {i.problem}" for i in review.items)[:300]
-        self.emit("escalation", agent=reviewer.id, task=t["id"], reason="review_unresolved", detail=asked, iterations=MAX_REVIEW_ROUNDS, recent=[])
+        asked = "; ".join(f"{i.file}: {i.problem}" for i in review.items)[:300]  # type: ignore[union-attr]
+        self.emit("escalation", agent=reviewer.id, task=t["id"], reason="review_unresolved", detail=asked, iterations=rounds, recent=[])
         approved = self.mode == "autonomous" or request_approval(self.emit, self.approver, reviewer.id, "review_unresolved",
                                                                  f"merge {t['id']} with open review items", {"items": asked})
         self.memory.append_decision(f"{t['id']} merged with open review items ({asked})" if approved else f"{t['id']} blocked by unresolved review items ({asked})")
         if approved:
             return res
         return AgentResult("escalated", "review_unresolved", summary=asked, iterations=res.iterations)
+
+    def _automatic_findings(self, agent: AgentConfig, wt: Path, owner: str):
+        """The Reviewer's deterministic checks on the files this branch changed."""
+        assert self.repo
+        files = {}
+        for rel in self.repo.changed_files(agent.id):
+            p = wt / rel
+            if p.is_file():
+                files[rel] = p.read_text(encoding="utf-8", errors="replace")
+        return static_findings(files) + missing_tests(files, owner)
 
     # -- QA -------------------------------------------------------------------------
     def _qa_phase(self) -> None:
@@ -576,6 +614,11 @@ class Orchestrator:
             return
         if not (self.root / "static" / "ui-kit.css").is_file() or not (self.root / "static" / "app.js").is_file():
             return
+        if self.fast_live and self._uses_ui_kit():
+            if self.memory:
+                self.memory.append_decision("Polish skipped (fast live mode): the page already uses the UI kit")
+            self.emit("polish_result", ok=True, changed=False, reason="", skipped="fast live mode: the page already uses the UI kit")
+            return
         preset = load_preset(self.design.preset)
         t = {"id": "p1", "title": "Polish the UI with the UI kit", "owner": "frontend", "depends_on": [], "files": list(POLISH_FILES), "kind": "polish",
              "acceptance": ["the page uses the UI kit components", "numbers are formatted and operation words show symbols",
@@ -615,6 +658,17 @@ class Orchestrator:
         self._save_tasks()
         self._progress()
 
+    def _uses_ui_kit(self) -> bool:
+        """The page links the kit and its script already calls at least two kit helpers (loading, empty, num, money, symbol, toast)."""
+        assert self.root
+        html, js = self.root / "static" / "index.html", self.root / "static" / "app.js"
+        try:
+            page, script = html.read_text(encoding="utf-8"), js.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        helpers = {h for h in ("loading", "empty", "num", "money", "symbol", "toast", "renderList", "listItem") if f"UI.{h}(" in script}
+        return "ui-kit.css" in page and len(helpers) >= 2
+
     def _polish_check(self, wt: Path) -> str:
         """Empty string when the polished branch is safe to merge, else why not."""
         passed, summary, _ = run_suite(wt)
@@ -626,7 +680,7 @@ class Orchestrator:
             if syntax.returncode != 0:
                 return "static/app.js has a JavaScript syntax error"
         source = js.read_text(encoding="utf-8") if js.is_file() else ""
-        if not any(f"UI.{h}(" in source for h in ("loading", "empty", "num", "money", "symbol", "toast")):
+        if not any(f"UI.{h}(" in source for h in ("loading", "empty", "num", "money", "symbol", "toast", "renderList", "listItem")):
             return "the polished script does not use any UI kit helper"
         return ""
 
@@ -719,6 +773,9 @@ class Orchestrator:
         t = {"id": f"r{n}", "title": f"Request: {text[:50]}", "owner": owner, "depends_on": [], "files": [], "kind": "request", "request": text,
              "acceptance": ["the request is done", "run_tests passes"], "status": "pending", "summary": "", "attempts": 0}
         self.tasks.append(t)
+        if self.finished:  # the project was complete: it is in progress again until this request is done
+            self.finished = False
+            self.emit("project_resumed", agent=owner, task=t["id"], message=f"{self.agents[owner].name} is working on a request; the project is in progress again")
         self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True, reason="request")
         self._save_tasks()
         self._progress()
@@ -726,14 +783,23 @@ class Orchestrator:
 
     def finish_requests(self) -> None:
         """Run queued requests on a finished build, then re-verify the whole project and restart the app."""
+        started = time.time()
+        involved = sorted({t["owner"] for t in self.tasks if t.get("kind") == "request"})
         try:
             self._execute_tasks()
+            self.problems = [p for p in self.problems if not p.startswith("final test run failed")]  # re-verified below
             self._verify()
         except AgentFailed as e:
+            self.problems.append(str(e))
             self.emit("error", agent=e.agent, message=e.reason)
         except Exception:
+            self.problems.append("internal error while handling a request")
             self.emit("error", agent="orchestrator", message="the request stopped unexpectedly; see the log")
         self._save_tasks()
+        ok = self.tests_passed and not self.problems and all(t["status"] in ("done", "skipped") for t in self.tasks)
+        self.finished = True
+        # `involved` lets the office celebrate only the people who did the work; everyone else stays idle.
+        self.emit("project_done", ok=ok, seconds=round(time.time() - started), problems=self.problems, app_url=self.app_url, request=True, involved=involved)
 
     # -- messages and contract amendments -------------------------------------------
     def _after_task(self, t: dict) -> None:
@@ -811,6 +877,7 @@ class Orchestrator:
                 self._commit("[q] build record")
             except RuntimeError:
                 pass
+        self.finished = True
         self.emit("project_done", ok=ok, seconds=round(seconds), problems=self.problems, app_url=self.app_url)
         return BuildResult(ok, self.root, self.root.name if self.root else "", self.tasks, self.tests_passed, self.test_summary,
                            self.app_url, self.problems, self.stats)

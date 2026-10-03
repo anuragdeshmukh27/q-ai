@@ -72,6 +72,7 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid r
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .list-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.9rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
 .list-item .item-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; } .list-item .item-actions { display: flex; gap: 0.4rem; }
+.list-item .item-title { font-weight: 700; } .list-item .item-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .list-item.done .item-main { color: var(--muted); text-decoration: line-through; }
 
 /* badges: <span class="badge badge-success"> */

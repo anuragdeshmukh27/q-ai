@@ -1,0 +1,1267 @@
+{
+ "generated": "2026-10-03",
+ "machine": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB (Windows laptop)",
+ "notes": "local Ollama, num_ctx 8192, think off; engineer roles run the real agent loop in the real orchestrator on a fixed design",
+ "runs": [
+  {
+   "model": "qwen25-coder-7b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 33.6,
+   "tokens": 3500,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 20.5,
+   "tokens": 3118,
+   "peak_vram_gb": 4.81
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 27.9,
+   "tokens": 6238,
+   "peak_vram_gb": 4.83
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 20.7,
+   "tokens": 3133,
+   "peak_vram_gb": 4.87
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 20.5,
+   "tokens": 5500,
+   "peak_vram_gb": 4.81
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 19.9,
+   "tokens": 5500,
+   "peak_vram_gb": 4.8
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 15.7,
+   "tokens": 4066,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 17.0,
+   "tokens": 4183,
+   "peak_vram_gb": 4.8
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": true,
+   "iterations": 7,
+   "seconds": 15.8,
+   "tokens": 18901,
+   "peak_vram_gb": 4.81
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": true,
+   "iterations": 7,
+   "seconds": 13.5,
+   "tokens": 19074,
+   "peak_vram_gb": 4.81
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": true,
+   "iterations": 5,
+   "seconds": 10.3,
+   "tokens": 11728,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": true,
+   "iterations": 5,
+   "seconds": 10.2,
+   "tokens": 11756,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 16,
+   "seconds": 34.8,
+   "tokens": 63059,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 11,
+   "seconds": 22.0,
+   "tokens": 46862,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 7.2,
+   "tokens": 9920,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 6.9,
+   "tokens": 9908,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": true,
+   "iterations": 12,
+   "seconds": 56.3,
+   "tokens": 54176,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": true,
+   "iterations": 12,
+   "seconds": 72.8,
+   "tokens": 55460,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": true,
+   "iterations": 5,
+   "seconds": 25.1,
+   "tokens": 17878,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": true,
+   "iterations": 8,
+   "seconds": 38.0,
+   "tokens": 29842,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 2.0,
+   "tokens": 705,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.0,
+   "tokens": 650,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.2,
+   "tokens": 584,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.0,
+   "tokens": 579,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.4,
+   "tokens": 645,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 645,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.9,
+   "tokens": 696,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.9,
+   "tokens": 701,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.6,
+   "tokens": 669,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.0,
+   "tokens": 705,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.7,
+   "tokens": 659,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.6,
+   "tokens": 663,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 602,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.1,
+   "tokens": 591,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.9,
+   "tokens": 1098,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.4,
+   "tokens": 1085,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 1064,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 1064,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 1040,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 1040,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 1070,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 1085,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 42.2,
+   "tokens": 7180,
+   "peak_vram_gb": 3.76
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 13.3,
+   "tokens": 2933,
+   "peak_vram_gb": 3.76
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 44.4,
+   "tokens": 0,
+   "peak_vram_gb": 3.76
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 24.1,
+   "tokens": 6643,
+   "peak_vram_gb": 3.75
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 23.7,
+   "tokens": 0,
+   "peak_vram_gb": 3.75
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 20.3,
+   "tokens": 0,
+   "peak_vram_gb": 3.8
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 15.1,
+   "tokens": 0,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 12.5,
+   "tokens": 0,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": true,
+   "iterations": 7,
+   "seconds": 14.9,
+   "tokens": 20334,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": true,
+   "iterations": 7,
+   "seconds": 14.4,
+   "tokens": 20407,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": true,
+   "iterations": 5,
+   "seconds": 10.7,
+   "tokens": 12556,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": true,
+   "iterations": 5,
+   "seconds": 9.6,
+   "tokens": 12317,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 23,
+   "seconds": 76.5,
+   "tokens": 103165,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 78.2,
+   "tokens": 107930,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 7.3,
+   "tokens": 10246,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 6.9,
+   "tokens": 10236,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": true,
+   "iterations": 10,
+   "seconds": 51.4,
+   "tokens": 46039,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": true,
+   "iterations": 11,
+   "seconds": 47.9,
+   "tokens": 50321,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": true,
+   "iterations": 11,
+   "seconds": 46.3,
+   "tokens": 45665,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": true,
+   "iterations": 10,
+   "seconds": 44.4,
+   "tokens": 41290,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.1,
+   "tokens": 674,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.8,
+   "tokens": 672,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 666,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 646,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 682,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.7,
+   "tokens": 731,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.4,
+   "tokens": 711,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.3,
+   "tokens": 712,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.7,
+   "tokens": 807,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 2.0,
+   "tokens": 851,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.4,
+   "tokens": 648,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.3,
+   "tokens": 648,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 677,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.5,
+   "tokens": 674,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 1.1,
+   "tokens": 1077,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.8,
+   "tokens": 1074,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.0,
+   "tokens": 1069,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.9,
+   "tokens": 1066,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.1,
+   "tokens": 1053,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.1,
+   "tokens": 1053,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.4,
+   "tokens": 1128,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "qwen3-4b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 1.2,
+   "tokens": 1106,
+   "peak_vram_gb": 3.78
+  },
+  {
+   "model": "llama32-3b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 30.2,
+   "tokens": 0,
+   "peak_vram_gb": 3.05
+  },
+  {
+   "model": "llama32-3b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 28.0,
+   "tokens": 0,
+   "peak_vram_gb": 3.03
+  },
+  {
+   "model": "llama32-3b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 27.1,
+   "tokens": 0,
+   "peak_vram_gb": 3.03
+  },
+  {
+   "model": "llama32-3b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 27.7,
+   "tokens": 0,
+   "peak_vram_gb": 3.04
+  },
+  {
+   "model": "llama32-3b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 25.5,
+   "tokens": 0,
+   "peak_vram_gb": 3.04
+  },
+  {
+   "model": "llama32-3b",
+   "role": "planner",
+   "task": "plan-todo",
+   "passed": false,
+   "iterations": 3,
+   "seconds": 23.9,
+   "tokens": 0,
+   "peak_vram_gb": 3.07
+  },
+  {
+   "model": "llama32-3b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": true,
+   "iterations": 3,
+   "seconds": 11.7,
+   "tokens": 6663,
+   "peak_vram_gb": 3.04
+  },
+  {
+   "model": "llama32-3b",
+   "role": "planner",
+   "task": "plan-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 5.1,
+   "tokens": 3831,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 31.9,
+   "tokens": 81312,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "database",
+   "task": "db-todo",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 26.6,
+   "tokens": 73402,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 27.6,
+   "tokens": 82554,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "database",
+   "task": "db-calculator",
+   "passed": false,
+   "iterations": 21,
+   "seconds": 24.1,
+   "tokens": 70568,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 74.3,
+   "tokens": 123410,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 8,
+   "seconds": 311.3,
+   "tokens": 15744,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 34.2,
+   "tokens": 81524,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": false,
+   "iterations": 20,
+   "seconds": 26.4,
+   "tokens": 73249,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": false,
+   "iterations": 31,
+   "seconds": 356.0,
+   "tokens": 128358,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "frontend",
+   "task": "ui-todo",
+   "passed": false,
+   "iterations": 0,
+   "seconds": 308.7,
+   "tokens": 0,
+   "peak_vram_gb": 2.99
+  },
+  {
+   "model": "llama32-3b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": false,
+   "iterations": 26,
+   "seconds": 336.5,
+   "tokens": 111188,
+   "peak_vram_gb": 2.99
+  },
+  {
+   "model": "llama32-3b",
+   "role": "frontend",
+   "task": "ui-calculator",
+   "passed": false,
+   "iterations": 31,
+   "seconds": 330.9,
+   "tokens": 119192,
+   "peak_vram_gb": 2.98
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 4.8,
+   "tokens": 659,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.6,
+   "tokens": 664,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 536,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 536,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.5,
+   "tokens": 608,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.5,
+   "tokens": 623,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.4,
+   "tokens": 618,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.4,
+   "tokens": 626,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 666,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 666,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 636,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 636,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 546,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.2,
+   "tokens": 546,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.7,
+   "tokens": 1017,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.8,
+   "tokens": 1054,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.7,
+   "tokens": 1022,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.6,
+   "tokens": 1017,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.8,
+   "tokens": 1014,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 0.8,
+   "tokens": 1013,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.9,
+   "tokens": 1056,
+   "peak_vram_gb": 2.97
+  },
+  {
+   "model": "llama32-3b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 0.9,
+   "tokens": 1051,
+   "peak_vram_gb": 2.97
+  }
+ ]
+}

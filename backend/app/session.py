@@ -17,13 +17,16 @@ from .agent.planning import AgentFailed
 from .approvals import ApprovalQueue
 from .config import PROMPTS_DIR, WORKSPACE, ROOT, AgentConfig, load_agents
 from .events import EventBus
-from .llm import LLMClient
+from .llm import LLMClient, agent_context
 from .orchestrator import ENGINEERS, Orchestrator
 from .ports import PortError, PortManager
 from .presets import list_presets, load_preset
 from .providers.base import ProviderError
 from .recording import Recorder, RecordingError, check_name, load_recording, restore_snapshot
+from .leaderboard import SHIPPED_RESULTS, Leaderboard
 from .registry import ModelRegistry
+from .router import Router
+from .scheduler import MetricsSampler, ModelScheduler
 
 MODES = ("assisted", "supervised", "autonomous")
 
@@ -41,10 +44,12 @@ class Settings:
     workspace: Path = WORKSPACE
     recordings: Path = ROOT / "recordings"
     leaderboard_db: Path = ROOT / "data" / "q.db"
+    shipped_results: Path | None = SHIPPED_RESULTS  # pre-recorded benchmark runs committed with the repo
     q_mode: str = "live"  # live | record | replay
     approval_timeout: float = 600.0
     max_gap: float = 3.0  # replay never waits longer than this (at 1x) between two events
     polish: bool = True  # live builds end with the Frontend UI polish task (Q_POLISH=0 turns it off)
+    fast_live: bool = True  # live builds skip an unneeded polish pass and allow one LLM review round per task (Q_FAST_LIVE=0 turns it off)
 
     @classmethod
     def from_env(cls, env=None) -> "Settings":
@@ -57,6 +62,7 @@ class Settings:
         if env.get("Q_DB"):
             s.leaderboard_db = Path(env["Q_DB"])
         s.polish = env.get("Q_POLISH", "1").strip().lower() not in ("0", "false", "no", "off")
+        s.fast_live = env.get("Q_FAST_LIVE", "1").strip().lower() not in ("0", "false", "no", "off")
         mode = env.get("Q_MODE", "live").strip().lower()
         s.q_mode = mode if mode in ("live", "record", "replay") else "live"
         return s
@@ -72,6 +78,7 @@ class CreateRequest(BaseModel):
     speed: float = 1.0
     inject_fault: bool = False
     parallel: int = 2
+    fast_live: bool | None = None  # None: the server default (on); False turns the live-demo shortcuts off for this build
 
 
 class AskReply(BaseModel):
@@ -131,6 +138,11 @@ class Tracker:
             elif t == "project_done":
                 self.finished = {"ok": e["ok"], "seconds": e["seconds"]}
                 self.problems = list(e.get("problems", []))
+            elif t == "project_resumed":  # an Ask-employee request on a finished project: in progress again, nobody is celebrating
+                self.finished = None
+                for ag in self.agents.values():
+                    if ag["state"] == "celebrating":
+                        ag["state"] = "idle"
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -158,6 +170,8 @@ class Session:
         self.recording: dict | None = None
         self.speed = max(0.1, min(float(req.speed), 1000.0))
         self.chats: dict[str, list[dict]] = {}
+        self.sampler: MetricsSampler | None = None
+        self.fast_live = False
         self._thread: threading.Thread | None = None
         self._extra = threading.Lock()
         self._stop = threading.Event()
@@ -175,9 +189,15 @@ class Session:
             self.recorder = Recorder(mgr.settings.recordings, name, req.goal, overwrite=bool(req.record_as))
             self.bus.subscribe(self.recorder.on_event)
         llm = mgr.make_llm(self.recorder.on_llm if self.recorder else None)
+        fast = mgr.settings.fast_live if req.fast_live is None else req.fast_live
         self.orch = Orchestrator(req.goal, mgr.registry, llm, self.bus, mode=self.mode, approver=self.approvals, preset=req.preset,
                                  base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports,
-                                 max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish)
+                                 max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish,
+                                 fast_live=fast, router=mgr.router)
+        self.fast_live = fast
+        if mgr.scheduler is not None:
+            mgr.scheduler.emit = self.bus.emit
+            self.sampler = MetricsSampler(mgr.scheduler, self.bus.emit, lambda: llm.tokens_per_s).start()
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
         self._thread.start()
 
@@ -191,6 +211,8 @@ class Session:
             self.bus.emit("error", agent="orchestrator", message="the build stopped unexpectedly")
             problems = ["the build stopped unexpectedly"]
         self.state = "done" if ok else "failed"
+        if self.sampler:
+            self.sampler.stop()
         if self.recorder:
             try:
                 self.recorder.finalize(self.root, ok, problems)
@@ -315,7 +337,8 @@ class Session:
             system = (PROMPTS_DIR / "ask_employee.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", agent.role)
             history = self.chats.setdefault(agent_id, [])[-6:]
             messages = [{"role": "system", "content": f"{system}\n\nContext:\n{context}"}, *history, {"role": "user", "content": text}]
-            reply = self.orch.llm.call(model.id, messages, AskReply).parsed.reply.strip()  # type: ignore[attr-defined]
+            with agent_context(agent_id):
+                reply = self.orch.llm.call(model.id, messages, AskReply).parsed.reply.strip()  # type: ignore[attr-defined]
         except Exception as e:  # never leak a trace: AgentFailed/ProviderError messages are already user-safe
             msg = e.reason if isinstance(e, AgentFailed) else str(e) if isinstance(e, ProviderError) else "could not answer right now"
             raise SessionError(msg[:200], 503) from None
@@ -353,7 +376,7 @@ class Session:
     def status(self) -> dict:
         snap = self.tracker.snapshot()
         return {"id": self.id, "goal": self.goal, "kind": self.kind, "state": self.state, "mode": self.mode, "speed": self.speed,
-                "created": self.created, "events": len(self.bus.history), "overrides": dict(self.overrides), "recording": self.recording,
+                "created": self.created, "events": len(self.bus.history), "overrides": dict(self.overrides), "recording": self.recording, "fast_live": self.fast_live,
                 "pending_approvals": self.approvals.pending(), "app": self.app(), **snap}
 
 
@@ -366,11 +389,15 @@ class SessionManager:
         self.roster = load_agents()
         self.ports = PortManager()
         self._llm_factory = llm_factory
+        self.board = Leaderboard(settings.leaderboard_db, settings.shipped_results)
+        self.router = Router(self.registry, self.board)
+        # The scheduler talks to the real Ollama; tests that inject a fake LLM have no GPU to schedule.
+        self.scheduler = ModelScheduler(self.registry) if llm_factory is None and settings.q_mode != "replay" else None
         self.sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
 
     def make_llm(self, observer) -> LLMClient:
-        return self._llm_factory(self.registry, observer) if self._llm_factory else LLMClient(self.registry, observer=observer)
+        return self._llm_factory(self.registry, observer) if self._llm_factory else LLMClient(self.registry, observer=observer, scheduler=self.scheduler)
 
     def get(self, sid: str) -> Session:
         s = self.sessions.get(sid)

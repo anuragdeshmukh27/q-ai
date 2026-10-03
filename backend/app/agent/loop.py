@@ -6,7 +6,7 @@ from itertools import count
 from typing import Callable
 
 from ..config import PROMPTS_DIR, AgentConfig
-from ..llm import InvalidOutputError, LLMClient
+from ..llm import InvalidOutputError, LLMClient, agent_context
 from ..providers.base import ProviderError
 from ..tools import ToolBox, ToolResult
 from .actions import Action
@@ -91,7 +91,13 @@ def _digest(n: int, a: Action, ok: bool) -> str:
     return f"{n}. {a.action} {arg}".strip() + (": ok" if ok else ": failed")
 
 
-def run_agent(
+def run_agent(agent: AgentConfig, *args, **kwargs) -> AgentResult:
+    """Run one task; every model call inside it is attributed to `agent` (the scheduler shows who waits for the GPU)."""
+    with agent_context(agent.id):
+        return _run_agent(agent, *args, **kwargs)
+
+
+def _run_agent(
     agent: AgentConfig,
     task: str,
     toolbox: ToolBox,

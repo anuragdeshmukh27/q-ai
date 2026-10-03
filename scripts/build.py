@@ -17,9 +17,13 @@ from solo import cli_approver, printer as solo_printer  # noqa: E402
 
 from app.config import load_env  # noqa: E402
 from app.events import EventBus  # noqa: E402
+from app.config import load_agents  # noqa: E402
+from app.leaderboard import Leaderboard  # noqa: E402
 from app.llm import LLMClient  # noqa: E402
 from app.orchestrator import Orchestrator  # noqa: E402
 from app.registry import ModelRegistry  # noqa: E402
+from app.router import Router  # noqa: E402
+from app.scheduler import ModelScheduler  # noqa: E402
 
 
 def printer(e: dict) -> None:
@@ -55,13 +59,20 @@ def printer(e: dict) -> None:
     elif t == "bug_fixed":
         print(f"   bug {e['bug']:03d} fixed ({e['owner']})")
     elif t == "polish_result":
-        print(("== polish applied" if e.get("changed", True) else "== polish: nothing to change (the page already uses the UI kit)") if e["ok"] else f"== polish skipped (main unchanged): {e['reason']}")
+        print(("== polish applied" if e.get("changed", True) else f"== polish: {e.get('skipped') or 'nothing to change (the page already uses the UI kit)'}") if e["ok"] else f"== polish skipped (main unchanged): {e['reason']}")
+    elif t == "model_loaded":
+        print(f"   [coffee break] {e.get('agent') or 'scheduler'} waited {e['seconds']}s while {e['name']} loaded")
+    elif t == "model_unloaded":
+        print(f"   [unload] {e['name']} ({e['reason']})")
     elif t == "app_running":
         print(f"== app running at {e['url']}")
     elif t == "agent_state" and e["state"] in ("thinking",) and e["agent"] in ("architect", "planner"):
         print(f"[{e['agent']}] thinking...")
     else:
         solo_printer(e)
+
+
+ROOT_DB = Path(__file__).resolve().parents[1] / "data" / "q.db"
 
 
 def main() -> int:
@@ -74,6 +85,9 @@ def main() -> int:
     ap.add_argument("--parallel", type=int, default=2, help="how many engineers may work at the same time (default 2)")
     ap.add_argument("--inject-fault", action="store_true", help="after the build, deliberately break the app so QA must find the bug and the owner must fix it")
     ap.add_argument("--no-polish", action="store_true", help="skip the final UI polish task")
+    ap.add_argument("--no-fast", action="store_true", help="turn fast live mode off (full polish pass, up to 3 LLM review rounds per task)")
+    ap.add_argument("--override", action="append", default=[], metavar="AGENT=MODEL_ID", help="manual model override for one employee (like the inspector dropdown); repeatable")
+    ap.add_argument("--single-model", metavar="MODEL_ID", help="every employee uses this model (a baseline for comparing against the router)")
     ap.add_argument("--serve", action="store_true", help="keep the built app running until Ctrl-C")
     args = ap.parse_args()
 
@@ -82,10 +96,16 @@ def main() -> int:
     bus = EventBus()
     bus.subscribe(printer)
     started = time.time()
-    orch = Orchestrator(args.goal, registry, LLMClient(registry), bus, mode=args.mode, approver=cli_approver,
-                        preset=args.preset, local_only=not args.allow_cloud, consultant=args.consultant,
-                        max_parallel=args.parallel, inject_fault=args.inject_fault, polish=not args.no_polish)
+    scheduler = ModelScheduler(registry, emit=bus.emit)  # keeps local models inside the VRAM budget, swapping when the router picks different ones
+    router = Router(registry, Leaderboard(ROOT_DB))
+    overrides = {a: args.single_model for a in load_agents()} if args.single_model else {}
+    overrides.update(dict(o.split("=", 1) for o in args.override))
+    orch = Orchestrator(args.goal, registry, LLMClient(registry, scheduler=scheduler), bus, mode=args.mode, approver=cli_approver,
+                        preset=args.preset, local_only=not args.allow_cloud, consultant=args.consultant, overrides=overrides,
+                        max_parallel=args.parallel, inject_fault=args.inject_fault, polish=not args.no_polish,
+                        fast_live=not args.no_fast, router=router)
     res = orch.run()
+    print(f"== models: {', '.join(sorted({s['model'] for s in res.agent_stats.values()}))} | model swaps: {scheduler.swaps} | fast live mode: {'on' if not args.no_fast else 'off'}")
 
     print(f"\n== {'BUILD OK' if res.ok else 'BUILD FAILED'} in {time.time() - started:.0f}s | tests: {res.test_summary}")
     for name, s in res.agent_stats.items():

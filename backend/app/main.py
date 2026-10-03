@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from .approvals import UnknownApproval
 from .config import load_env
-from .leaderboard import Leaderboard
 from .metrics import read_metrics
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
@@ -49,7 +48,7 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     load_env()
     settings = settings or Settings.from_env()
     mgr = manager or SessionManager(settings)
-    board = Leaderboard(settings.leaderboard_db)
+    board = mgr.board
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -110,11 +109,17 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
 
     @app.get("/api/metrics")
     def metrics():
-        return read_metrics()
+        m = read_metrics()
+        sch = mgr.scheduler
+        return {**m, "loaded": sch.loaded() if sch else [], "budget_gb": sch.snapshot()["budget_gb"] if sch else None}
 
     @app.get("/api/leaderboard")
     def leaderboard():
-        return board.summary()
+        """Role x model benchmark scores plus what the router picks for each employee now, and why."""
+        caps = {a.id: a.model_capability for a in mgr.roster.values()}
+        mgr.router.refresh()
+        return {**board.summary(), "router": mgr.router.table(list(caps), caps), "margin": mgr.router.margin, "min_runs": mgr.router.min_runs,
+                "safe_default": mgr.router.default_model("coding").id, "note": mgr.registry.router_config.get("note", "")}
 
     # -- projects -----------------------------------------------------------------
     @app.post("/api/projects", status_code=201)

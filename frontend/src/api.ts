@@ -31,9 +31,20 @@ export interface RecordingMeta {
   events: number
 }
 
+export interface LoadedModel {
+  id: string
+  name: string
+  vram_gb: number
+}
+
+/** GPU/RAM gauges. `loaded`, `budget_gb` and `tokens_per_s` come from the scheduler (absent in old recordings). */
 export interface Metrics {
   gpu: { name: string; used_gb: number; total_gb: number } | null
   ram: { used_gb: number; total_gb: number }
+  loaded?: LoadedModel[]
+  budget_gb?: number | null
+  tokens_per_s?: number
+  swaps?: number
 }
 
 export interface ProjectStatus {
@@ -74,11 +85,39 @@ export interface Commit {
   author: string
 }
 
+export interface BenchCell {
+  runs: number
+  passed: number
+  pass_rate: number
+  avg_iterations: number
+  avg_seconds: number
+  avg_tokens: number
+  peak_vram_gb: number
+  source: 'live' | 'shipped'
+  tasks: { task: string; passed: boolean; iterations: number; seconds: number }[]
+}
+
+export interface RouterRow {
+  agent: string
+  model: string
+  model_name: string
+  source: 'pin' | 'score' | 'default'
+  reason: string
+}
+
 export interface Leaderboard {
   runs: number
   roles: string[]
   models: string[]
-  matrix: Record<string, Record<string, { runs: number; pass_rate: number; avg_iterations: number; avg_seconds: number }>>
+  matrix: Record<string, Record<string, BenchCell>>
+  router: RouterRow[]
+  margin: number
+  min_runs: number
+  safe_default: string
+  note?: string
+  generated?: string
+  machine?: string
+  notes?: string
 }
 
 const post = (path: string, body: unknown) => call<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })
@@ -99,7 +138,7 @@ export const api = {
   recordings: () => call<RecordingMeta[]>('/api/recordings'),
   metrics: () => call<Metrics>('/api/metrics'),
   projects: () => call<ProjectStatus[]>('/api/projects'),
-  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string }) =>
+  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string; fast_live?: boolean }) =>
     call<ProjectStatus>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
   setMode: (id: string, mode: string) => call<unknown>(`/api/projects/${id}/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   setSpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),

@@ -1,6 +1,8 @@
 """Structured LLM calls: JSON schema -> provider -> Pydantic validation, one retry, model fallback."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
 import re
 from dataclasses import dataclass
@@ -16,6 +18,18 @@ from .providers.openai_compat import OpenAICompatProvider
 from .registry import ModelConfig, ModelRegistry
 
 T = TypeVar("T", bound=BaseModel)
+
+_current_agent: contextvars.ContextVar[str | None] = contextvars.ContextVar("q_current_agent", default=None)
+
+
+@contextlib.contextmanager
+def agent_context(agent_id: str):
+    """Names the employee making the LLM calls inside the block, so the scheduler can show who is waiting for the GPU."""
+    token = _current_agent.set(agent_id)
+    try:
+        yield
+    finally:
+        _current_agent.reset(token)
 
 
 class InvalidOutputError(Exception):
@@ -56,8 +70,11 @@ class LLMClient:
         provider_factory: Callable[[ModelConfig], LLMProvider] | None = None,
         env: Mapping[str, str] | None = None,
         observer: Callable[[dict], None] | None = None,
+        scheduler=None,
     ):
         self.registry = registry
+        self.scheduler = scheduler  # ModelScheduler: keeps local models inside the VRAM budget (None: call the provider directly)
+        self.tokens_per_s = 0.0  # smoothed generation speed of the last responses, for the metrics gauge
         self.observer = observer  # called with every raw model response (the recorder uses it)
         self.env = os.environ if env is None else env
         self._factory = provider_factory or self._default_factory
@@ -97,7 +114,11 @@ class LLMClient:
         secs = 0.0
         err: Exception | None = None
         for attempt in (1, 2):
-            resp: LLMResponse = provider.chat(m, msgs, schema, temperature)
+            with (self.scheduler.slot(m, _current_agent.get()) if self.scheduler else contextlib.nullcontext()):
+                resp: LLMResponse = provider.chat(m, msgs, schema, temperature)
+            if resp.seconds > 0 and resp.completion_tokens > 8:
+                rate = resp.completion_tokens / resp.seconds
+                self.tokens_per_s = rate if self.tokens_per_s == 0 else 0.6 * self.tokens_per_s + 0.4 * rate
             pt, ct, secs = pt + resp.prompt_tokens, ct + resp.completion_tokens, secs + resp.seconds
             if self.observer:
                 try:

@@ -99,14 +99,47 @@ def ui_page_test_source(design: ArchitectOutput) -> str:
     ]) + "\n"
 
 
+def list_view_fields(design: ArchitectOutput) -> list[str]:
+    """The item fields a list view must show: what the user enters (POST fields) plus the keys of the listed items in the contract's examples.
+    Ids, foreign keys and server-filled timestamps are not "important fields"; a field shorter than 3 characters cannot be searched for reliably."""
+    lists = [e for e in design.endpoints if e.method == "GET" and "{" not in e.path and any(f.type == "array" for f in e.response_fields)]
+    if not lists:
+        return []
+    names: list[str] = []
+    for e in design.endpoints:
+        if e.method == "POST" and "{" not in e.path:
+            names += [f.name for f in e.request_fields]
+    for e in lists:
+        for ex in e.examples:
+            for v in ex.response.values():
+                if isinstance(v, list):
+                    names += [k for item in v if isinstance(item, dict) for k in item]
+    out: list[str] = []
+    for n in names:
+        if n != "id" and not n.endswith("_id") and not _server_filled(n) and len(n) >= 3 and n not in out:
+            out.append(n)
+    return out
+
+
 def ui_script_test_source(design: ArchitectOutput) -> str:
     paths = sorted({re.sub(r"/\{.*$", "", e.path) for e in design.endpoints})
+    fields = list_view_fields(design)
     out = ['"""UI script test generated from the API contract. Do not edit; fix the script instead."""',
-           "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", "",
+           "import re", "", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", "",
            "def test_script_calls_every_endpoint():",
            "    js = client.get('/static/app.js').text",
            "    assert 'fetch' in js"]
     out += [f"    assert {p!r} in js" for p in paths]
+    if fields:
+        out += ["", "",
+                "def test_list_view_shows_every_field_of_an_item():",
+                "    js = client.get('/static/app.js').text",
+                f"    for field in {fields!r}:",
+                "        # read as a property of an item (item.field, item['field']) or named for UI.renderList (a quoted name in a list or object);",
+                "        # the add form's own use of the name does not count",
+                "        assert re.search(r'(?:[.]|\\[\\s*[\\'\"])' + field + r'\\b|[\\'\"]' + field + r'[\\'\"]\\s*[\\],}]', js), (",
+                "            f\"the list never uses the item field '{field}'. Show EVERY important field of each item, not just the title \"",
+                "            \"(for example the description as muted text and a priority, status or category as a badge).\")"]
     return "\n".join(out) + "\n"
 
 

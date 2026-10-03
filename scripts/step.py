@@ -46,7 +46,7 @@ def main() -> int:
     llm, agents = LLMClient(registry), load_agents()
     bus = EventBus()
     bus.subscribe(quiet)
-    model = registry.get(registry.single_model) if registry.single_model else None
+    model = registry.get(registry.router_config.get("safe_default", "qwen25-coder-7b"))
     passed = 0
 
     if args.step in ("architect", "planner"):
