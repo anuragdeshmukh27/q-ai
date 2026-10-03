@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ConfigInfo, RecordingMeta } from '../api'
 import type { BoardArea, OfficeModel } from '../model'
 
+import { card, orderDemos } from '../demos'
 import { EXAMPLES } from '../examples'
 
 // The stack presets Q knows about. Only the ones the backend lists can be built today; the rest are shown as planned.
@@ -69,8 +70,9 @@ function Heading({ children }: { children: string }) {
 
 export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart }: Props) {
   const [goal, setGoal] = useState(EXAMPLES[0].goal)
-  const good = recordings.filter((r) => r.ok)
-  const submit = () => goal.trim() && !busy && onStart(goal.trim())
+  const cards = orderDemos(recordings).map(card)
+  const shown = demo ? (cards.find((c) => c.name === recording)?.goal ?? '') : goal
+  const submit = () => shown.trim() && !busy && onStart(shown.trim())
   const byId = new Map(model.tasks.map((t) => [t.id, t]))
   const board = model.board
   return (
@@ -78,20 +80,21 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
       <div>
         <Heading>GOAL</Heading>
         <textarea
-          value={goal}
+          value={shown}
+          readOnly={demo}
           onChange={(e) => setGoal(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-          rows={2}
+          rows={demo ? 4 : 2}
           placeholder="What should the team build?"
-          className="h-[58px] w-full resize-none rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-1.5 text-[14.5px] leading-snug text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          className={`${demo ? "h-[92px]" : "h-[58px]"} w-full resize-none rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-1.5 text-[14.5px] leading-snug text-[var(--text)] outline-none focus:border-[var(--accent)]`}
         />
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        {!demo && <div className="mt-2 flex flex-wrap gap-1.5">
           {EXAMPLES.map((x) => (
             <button key={x.label} onClick={() => setGoal(x.goal)} title={x.goal} className="rounded-full border border-[var(--line)] bg-[#0b0e17] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]">
               {x.label}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       <div>
@@ -111,21 +114,39 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
 
       {demo && (
         <div>
-          <Heading>RECORDING TO REPLAY</Heading>
-          <select value={recording} onChange={(e) => onRecording(e.target.value)} className="h-8 w-full rounded-lg border border-[var(--line)] bg-[#0b0e17] px-2 text-[13.5px] text-[var(--text)]">
-            {good.length === 0 && <option value="">No recordings yet</option>}
-            {good.map((r) => (
-              <option key={r.name} value={r.name}>
-                ▶ {r.name} ({Math.round(r.seconds)} s)
-              </option>
-            ))}
-          </select>
+          <Heading>CHOOSE A RECORDED BUILD</Heading>
+          {cards.length === 0 && <div className="text-[13px] text-[var(--muted)]">No recordings yet</div>}
+          <div role="radiogroup" aria-label="Recorded build" className="flex flex-col gap-1.5">
+            {cards.map((c) => {
+              const on = c.name === recording
+              return (
+                <button
+                  key={c.name}
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => onRecording(c.name)}
+                  className="w-full rounded-lg border px-3 py-1.5 text-left transition-colors"
+                  style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', background: on ? '#16213f' : '#0b0e17' }}
+                >
+                  <div className="flex items-center gap-2 text-[14px] font-bold">
+                    <span className="inline-block h-3 w-3 shrink-0 rounded-full border-2" style={{ borderColor: on ? 'var(--accent)' : '#3a4466', background: on ? 'var(--accent)' : 'transparent' }} />
+                    <span className="truncate">{c.title}</span>
+                    <span className="ml-auto shrink-0 text-[12px] font-semibold text-[var(--muted)]">{c.duration}</span>
+                  </div>
+                  <div className="ml-5 mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--muted)]">
+                    {c.app && <span>{c.app}</span>}
+                    {c.feature && <span className="rounded bg-[#243055] px-1.5 py-[1px] text-[10.5px] font-bold tracking-wide text-[#a9c1ff]">{c.feature.toUpperCase()}</span>}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
       <button
         onClick={submit}
-        disabled={busy || !goal.trim() || (demo && !recording)}
+        disabled={busy || !shown.trim() || (demo && !recording)}
         className="h-10 shrink-0 rounded-lg bg-gradient-to-b from-[#4f7dff] to-[#3563e6] text-[15px] font-bold text-white shadow-[0_0_20px_#4f7dff44] disabled:opacity-40"
       >
         {busy ? 'Starting…' : demo ? '▶ Play demo' : '⚙ Build it'}

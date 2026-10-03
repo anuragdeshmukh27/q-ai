@@ -269,7 +269,8 @@ def test_approval_queue_blocks_until_a_human_decides_and_times_out_to_deny():
     kinds = [e["type"] for e in bus.history]
     assert kinds.count("approval_needed") == 1 and bus.history[0]["id"] == a["id"] and "approval_resolved" in kinds
     slow = ApprovalQueue(bus.emit, timeout=0.2)
-    assert slow.announce("x", "k", "s", {}) is False and bus.history[-1]["by"] == "timeout"
+    assert slow.announce("x", "k", "s", {}) is False
+    assert [e for e in bus.history if e["type"] == "approval_resolved"][-1]["by"] == "timeout"
     with pytest.raises(Exception):
         q.resolve("missing", True)
 

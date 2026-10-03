@@ -79,6 +79,8 @@ class CreateRequest(BaseModel):
     inject_fault: bool = False
     parallel: int = 2
     fast_live: bool | None = None  # None: the server default (on); False turns the live-demo shortcuts off for this build
+    record_info: dict[str, str] | None = None  # recording card text for the demo picker: title, app, feature
+    then_ask: list[dict[str, str]] | None = None  # recorded builds only: Ask-employee tasks sent after the build ({agent, text}), part of the recording
 
 
 class AskReply(BaseModel):
@@ -163,7 +165,7 @@ class Session:
         self.state = "starting"
         self.created = time.time()
         self.overrides: dict[str, str] = {}
-        self.approvals = ApprovalQueue(self.bus.emit, mgr.settings.approval_timeout)
+        self.approvals = ApprovalQueue(self.bus.emit, mgr.settings.approval_timeout, lambda a: self.tracker.agents.get(a, {}).get("state", "idle"))
         self.recorder: Recorder | None = None
         self.orch: Orchestrator | None = None
         self.root: Path | None = None
@@ -172,6 +174,8 @@ class Session:
         self.chats: dict[str, list[dict]] = {}
         self.sampler: MetricsSampler | None = None
         self.fast_live = False
+        self.record_info = req.record_info
+        self.then_ask = req.then_ask or []
         self._thread: threading.Thread | None = None
         self._extra = threading.Lock()
         self._stop = threading.Event()
@@ -207,6 +211,8 @@ class Session:
         try:
             res = self.orch.run()  # type: ignore[union-attr]
             ok, problems = res.ok, res.problems
+            if ok and self.recorder and self.then_ask:
+                ok, problems = self._run_followups()
         except Exception:
             self.bus.emit("error", agent="orchestrator", message="the build stopped unexpectedly")
             problems = ["the build stopped unexpectedly"]
@@ -215,10 +221,19 @@ class Session:
             self.sampler.stop()
         if self.recorder:
             try:
-                self.recorder.finalize(self.root, ok, problems)
+                self.recorder.finalize(self.root, ok, problems, self.record_info)
             except (RecordingError, OSError) as e:
                 self.recorder.abort()
                 self.bus.emit("error", agent="orchestrator", message=f"the recording could not be saved: {e}"[:200])
+
+    def _run_followups(self) -> tuple[bool, list[str]]:
+        """Recorded builds can include Ask-employee tasks after the build; they run in the same recording, then the project is verified again."""
+        for step in self.then_ask:
+            time.sleep(2)  # a human reads the finished build first
+            self.ask(step["agent"], step["text"], True)
+            self.orch.finish_requests()  # type: ignore[union-attr]
+        ok = bool(self.orch.tests_passed and not self.orch.problems)  # type: ignore[union-attr]
+        return ok, list(self.orch.problems)  # type: ignore[union-attr]
 
     # -- replay -------------------------------------------------------------------
     def start_replay(self, req: CreateRequest) -> None:

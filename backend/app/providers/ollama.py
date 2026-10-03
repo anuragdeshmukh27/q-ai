@@ -8,6 +8,11 @@ from ..registry import ModelConfig
 from .base import LLMResponse, ProviderError
 
 
+# A structured answer is a few hundred to ~2500 tokens. Without a cap a 7B that falls into a loop inside a JSON string keeps generating until the
+# request times out (300 s seen in the demo recordings); with it the answer is cut off in under a minute, fails validation and the normal retry handles it.
+MAX_NEW_TOKENS = 4096
+
+
 class OllamaProvider:
     def __init__(self, host: str, client: httpx.Client | None = None, keep_alive: str = "10m"):
         self.host = host.rstrip("/")
@@ -21,7 +26,7 @@ class OllamaProvider:
             "stream": False,
             "think": False,  # qwen3 is ~4x slower with thinking on; harmless for other models
             "keep_alive": self.keep_alive,
-            "options": {"num_ctx": model.num_ctx, "temperature": temperature},
+            "options": {"num_ctx": model.num_ctx, "temperature": temperature, "num_predict": MAX_NEW_TOKENS},
         }
         if schema:
             body["format"] = schema

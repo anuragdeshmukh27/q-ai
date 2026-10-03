@@ -98,6 +98,13 @@ def ui_page_test_source(design: ArchitectOutput) -> str:
         "    assert client.get('/static/style.css').status_code == 200",
         "    assert client.get('/static/ui-kit.css').status_code == 200",
         "    assert client.get('/static/app.js').status_code == 200",
+        "", "",
+        "def test_element_ids_are_unique():",
+        "    import collections, re",
+        "    ids = re.findall(r'\\sid=[\"\\']([^\"\\']+)[\"\\']', client.get('/').text)",
+        "    dup = sorted(i for i, n in collections.Counter(ids).items() if n > 1)",
+        "    assert not dup, (f'these element ids appear more than once: {dup}. getElementById only finds the first one, so the others stay stale. '",
+        "                     'Give each element its own id, or move the element instead of copying it.')",
     ]) + "\n"
 
 

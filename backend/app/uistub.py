@@ -93,7 +93,8 @@ def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
     bar = f'\n          <div class="form-row">{"".join(controls)}</div>' if controls else ""
     total = '\n          <p class="muted">Total: <strong id="total">0</strong></p>' if "total" in s.features and any(MONEY.search(f.name) for f in s.numbers) else ""
     result = '\n      <div id="result" class="alert alert-success"></div>' if s.computed else ""
-    clear = '\n          <div><button id="clear" type="button" class="btn-secondary btn-sm">Clear all</button></div>' if s.clear else ""
+    clear = '\n          <div style="margin-top: 12px"><button id="clear" type="button" class="btn-secondary btn-sm">Clear all</button></div>' if s.clear else ""
+    verb = "Calculate" if s.computed else "Add"  # a calculator does not "add" a row: it works something out
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -108,13 +109,13 @@ def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
   <main class="container stack">
     <header class="page-header"><h1>{heading}</h1></header>
     <section class="card">
-      <h2 class="card-title">Add</h2>
+      <h2 class="card-title">{verb}</h2>
       <form id="form" class="stack">
         <div class="form-row">
             {form}
         </div>
         <div id="error" class="alert alert-error"></div>
-        <div><button id="add" type="submit">Add</button></div>
+        <div><button id="add" type="submit">{verb}</button></div>
       </form>{result}
     </section>
     <section class="card">

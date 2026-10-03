@@ -37,7 +37,7 @@ def test_ollama_request_shape_and_parsing():
     b = seen["body"]
     assert seen["url"] == "http://localhost:11434/api/chat"
     assert b["model"] == "qwen2.5-coder:7b" and b["stream"] is False and b["format"] == SCHEMA
-    assert b["options"]["num_ctx"] == 8192 and b["options"]["temperature"] == 0.1
+    assert b["options"]["num_ctx"] == 8192 and b["options"]["temperature"] == 0.1 and b["options"]["num_predict"] == 4096  # a looping model cannot run for minutes
     assert b["think"] is False and b["keep_alive"]
     assert b["messages"] == MSGS
     assert r.text == '{"x": 1}' and r.prompt_tokens == 11 and r.completion_tokens == 7

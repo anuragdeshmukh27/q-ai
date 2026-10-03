@@ -32,19 +32,22 @@ class UnknownApproval(KeyError):
 class ApprovalQueue:
     """Callable approver: the asking agent thread blocks until a human decides (or the timeout denies, so nothing hangs forever)."""
 
-    def __init__(self, emit: Callable[..., object], timeout: float = 600.0):
-        self.emit, self.timeout = emit, timeout
+    def __init__(self, emit: Callable[..., object], timeout: float = 600.0, state_of: Callable[[str], str] | None = None):
+        self.emit, self.timeout, self.state_of = emit, timeout, state_of
         self._lock = threading.Lock()
         self._items: dict[str, Approval] = {}
 
     def announce(self, agent: str, kind: str, summary: str, details: dict) -> bool:
         a = Approval(uuid.uuid4().hex[:8], agent, kind, summary, details)
+        before = self.state_of(agent) if self.state_of else "idle"
         with self._lock:
             self._items[a.id] = a
         self.emit("approval_needed", id=a.id, agent=agent, kind=kind, summary=summary, details=details)
         self.emit("agent_state", agent=agent, state="waiting_human")
         if not a.event.wait(self.timeout):
             self._decide(a, False, "timeout")
+        # the decision is in: the employee goes back to what they were doing (otherwise the office keeps showing a raised hand)
+        self.emit("agent_state", agent=agent, state=before if before not in ("waiting_human", "") else "idle")
         return bool(a.approve)
 
     __call__ = announce

@@ -3,7 +3,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 
 // Q_BACKEND points the dev server at another backend port (for example a second instance for screenshots).
-const backend = process.env.Q_BACKEND ?? 'http://localhost:8000'
+const backend = process.env.Q_BACKEND ?? 'http://127.0.0.1:8000'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

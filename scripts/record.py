@@ -32,6 +32,10 @@ def main() -> int:
     ap.add_argument("--mode", default="supervised", choices=["assisted", "supervised", "autonomous"])
     ap.add_argument("--inject-fault", action="store_true", help="deliberately break the app so QA finds and the owner fixes a bug")
     ap.add_argument("--parallel", type=int, default=2)
+    ap.add_argument("--title", default="", help="card title in the Demo picker")
+    ap.add_argument("--app", default="", help="app type shown on the card, e.g. 'Todo app'")
+    ap.add_argument("--feature", default="", help="what the run shows, e.g. 'QA bug fix', 'Approvals', 'Ask employee'")
+    ap.add_argument("--ask", action="append", default=[], metavar="AGENT=TEXT", help="Ask-employee task sent after the build, recorded too (repeatable)")
     ap.add_argument("--timeout", type=int, default=1500, help="give up after this many seconds")
     args = ap.parse_args()
 
@@ -47,7 +51,9 @@ def main() -> int:
                     break
             except httpx.HTTPError:
                 time.sleep(0.5)
-        r = http.post("/api/projects", json={"goal": args.goal, "mode": args.mode, "record_as": args.name, "inject_fault": args.inject_fault, "parallel": args.parallel})
+        r = http.post("/api/projects", json={"goal": args.goal, "mode": args.mode, "record_as": args.name, "inject_fault": args.inject_fault, "parallel": args.parallel,
+                                              "record_info": {k: v for k, v in (("title", args.title), ("app", args.app), ("feature", args.feature)) if v},
+                                              "then_ask": [{"agent": a.split("=", 1)[0], "text": a.split("=", 1)[1]} for a in args.ask]})
         if r.status_code != 201:
             print("could not start:", r.json().get("detail", r.text))
             return 1
@@ -67,7 +73,7 @@ def main() -> int:
                 last = line
             if s["state"] in ("done", "failed"):
                 break
-            time.sleep(2)
+            time.sleep(0.4 if args.mode == "assisted" else 2)
         else:
             print("timed out")
             return 1

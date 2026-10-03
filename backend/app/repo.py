@@ -10,6 +10,8 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+GENERATED_TEST_DIRS = ("tests/api", "tests/ui", "tests/qa")
+
 
 class GitError(RuntimeError):
     """A git command failed; the message is short and safe to show."""
@@ -76,9 +78,13 @@ class Repo:
             run_git(wt, "clean", "-fd")
 
     # -- inspection -----------------------------------------------------------------
-    def diff_vs_main(self, agent_id: str) -> str:
-        """What the agent's branch adds on top of main (three-dot diff)."""
-        return run_git(self.root, "diff", f"main...{self.branch(agent_id)}").stdout
+    def diff_vs_main(self, agent_id: str, skip_generated_tests: bool = False) -> str:
+        """What the agent's branch adds on top of main (three-dot diff).
+
+        `skip_generated_tests` leaves out tests/api, tests/ui and tests/qa (written from the contract on QA's behalf, never by the engineer),
+        so the Reviewer does not ask the engineer to change files the engineer may not edit."""
+        spec = ["--", ".", *(f":(exclude){d}" for d in GENERATED_TEST_DIRS)] if skip_generated_tests else []
+        return run_git(self.root, "diff", f"main...{self.branch(agent_id)}", *spec).stdout
 
     def changed_files(self, agent_id: str) -> list[str]:
         out = run_git(self.root, "diff", "--name-only", f"main...{self.branch(agent_id)}").stdout

@@ -1,0 +1,18 @@
+{
+  "name": "inventory",
+  "goal": "Build an inventory list: item name, quantity, location Warehouse/Shop/Home, status In stock/Low/Out of stock, edit and delete",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-03 23:33:58",
+  "seconds": 108,
+  "events": 292,
+  "llm_calls": 28,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Inventory list",
+  "app": "Inventory",
+  "feature": "Stock status"
+}

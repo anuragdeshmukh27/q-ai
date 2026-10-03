@@ -70,7 +70,7 @@ class Recorder:
             self.n_llm += 1
             self.models.add(d.get("name", ""))
 
-    def finalize(self, project_root: Path | None, ok: bool, problems: list[str] | None = None) -> Path:
+    def finalize(self, project_root: Path | None, ok: bool, problems: list[str] | None = None, info: dict | None = None) -> Path:
         with self._lock:
             self._events.close()
             self._llm.close()
@@ -80,7 +80,8 @@ class Recorder:
             snapshot = True
         meta = {"name": self.name, "goal": self.goal, "ok": ok, "problems": problems or [], "preset": self.preset,
                 "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - self.started),
-                "events": self.n_events, "llm_calls": self.n_llm, "models": sorted(m for m in self.models if m), "snapshot": snapshot}
+                "events": self.n_events, "llm_calls": self.n_llm, "models": sorted(m for m in self.models if m), "snapshot": snapshot,
+                **{k: str(v)[:120] for k, v in (info or {}).items() if k in ("title", "app", "feature")}}
         (self.tmp / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         shutil.rmtree(self.final, ignore_errors=True)
         self.tmp.rename(self.final)

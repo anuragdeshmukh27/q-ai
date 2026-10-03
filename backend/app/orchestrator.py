@@ -36,7 +36,7 @@ from .registry import ModelConfig, ModelRegistry
 from .contract_tests import api_test_source, edge_test_source, ui_page_test_source, ui_script_test_source
 from .scaffold import db_stub, endpoints_for_task, route_stub
 from .uistub import is_placeholder, page_stub, script_stub
-from .schemas import ArchitectOutput, SpecOutput, TaskSpec, spec_text, topo_order
+from .schemas import ArchitectOutput, SpecOutput, TaskSpec, add_spec_features, spec_text, topo_order
 from .tools import ToolBox
 
 ENGINEERS = ("database", "backend", "frontend")
@@ -209,6 +209,7 @@ class Orchestrator:
         self.emit("agent_state", agent="architect", state="thinking")
         design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset, self.spec)
         self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
+        add_spec_features(design, self.spec)
         self._init_project(design, model)
 
     def _init_project(self, design: ArchitectOutput, model: ModelConfig) -> None:
@@ -288,9 +289,15 @@ class Orchestrator:
                 continue
             self._write(agent, path, content, root=wt)
             written.append((path, content))
+        if not written:  # an earlier task (or attempt) already made the page: show its files, so the engineer edits them instead of writing a new script from scratch
+            for p in t["files"]:
+                if p in made and (wt / p).is_file():
+                    text = (wt / p).read_text(encoding="utf-8", errors="replace")
+                    if not is_placeholder(text):
+                        written.append((p, text))
         if not written:
             return None
-        return ", ".join(p for p, _ in written), "\n".join(f"--- {p} ---\n{c}" for p, c in written)
+        return ", ".join(p for p, _ in written),"\n".join(f"--- {p} ---\n{c}" for p, c in written)
 
     def _generated_tests(self, t: dict, design: ArchitectOutput, wt: Path) -> None:
         """Contract tests are written by the system on QA's behalf (not by a model) the moment the area they test is about to be built."""
@@ -308,6 +315,16 @@ class Orchestrator:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(source, encoding="utf-8", newline="\n")
                 self.emit("file_changed", agent="qa", path=name, diff=source, created=True)
+
+    @staticmethod
+    def _request_files(owner: str, wt: Path) -> list[Path]:
+        """The files a direct request will most likely change, shown in the task text."""
+        if owner == "frontend":
+            found = [wt / "static" / "index.html", wt / "static" / "app.js"]
+        else:
+            folder = wt / ("backend/api" if owner == "backend" else "database")
+            found = sorted(f for f in folder.glob("*.py") if f.stem not in ("__init__", "connection")) if folder.is_dir() else []
+        return [f for f in found if f.is_file()]
 
     @staticmethod
     def _db_api(wt: Path) -> str:
@@ -331,7 +348,12 @@ class Orchestrator:
         crit = "\n".join(f"- {c}" for c in t["acceptance"])
         if t.get("kind") == "request":
             text = (f"Task {t['id']}: {t['title']}\nA human on the team asked you directly: {t['request']}\n"
-                    f"Make the smallest change in your own area that does this, then run_tests. Do not rewrite files. A counter, total or badge you add always has a "
+                    f"The request is NOT done yet, even if the app already has something similar and the tests pass: make the change the human described, so it is "
+                    f"visible in the app (for example a card or section where they said), with the smallest edit. "
+                    + ("A new card, section or label is markup: edit static/index.html first (static/app.js already fills the ids on the page, for example the total and the list); "
+                       "change static/app.js only for data the page does not show yet, and never rewrite it. "
+                       "If you move something (the total, a counter) to a new place, delete the old one: an id may appear only once on the page. " if t["owner"] == "frontend" else "")
+                    + f"Then run_tests. Do not rewrite files. A counter, total or badge you add always has a "
                     f"text label (for example '2 pending', never just '2'); anything you add to a list shows every important field of an item.\nAcceptance criteria:\n{crit}")
         elif t.get("kind") == "bugfix":
             text = (f"Task {t['id']}: {t['title']}\nQA found bugs in your area. Read each report, open the failing test and the code it exercises, "
@@ -506,6 +528,9 @@ class Orchestrator:
                 p = wt / rel
                 if p.is_file():
                     task_text += f"\n\nCurrent {rel}:\n```\n{p.read_text(encoding='utf-8')[:5000]}\n```"
+        elif t.get("kind") == "request":  # the engineer edits what exists instead of finishing because the tests already pass
+            for p in self._request_files(t["owner"], wt):
+                task_text += f"\n\nCurrent {p.relative_to(wt).as_posix()}:\n```\n{p.read_text(encoding='utf-8', errors='replace')[:5000]}\n```"
         res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
         self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
         if res.status != "finished":
@@ -533,7 +558,7 @@ class Orchestrator:
         review = None
         for rnd in range(1, rounds + 1):
             self.emit("agent_state", agent=reviewer.id, state="reading")
-            review, st = run_review(reviewer, self.llm, rmodel.id, t, self.repo.diff_vs_main(agent.id),
+            review, st = run_review(reviewer, self.llm, rmodel.id, t, self.repo.diff_vs_main(agent.id, skip_generated_tests=True),
                                     self._automatic_findings(agent, wt, t["owner"]), self.emit)
             self._stat("reviewer", rmodel, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
             self._write(reviewer, f".q/reviews/{t['id']}-r{rnd}.md", review_markdown(t, review, rnd))

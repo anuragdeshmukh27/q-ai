@@ -1,0 +1,18 @@
+{
+  "name": "notes-search",
+  "goal": "Build a notes app: title, content, tag Work/Personal/Ideas, search by text, edit and delete",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-03 23:36:08",
+  "seconds": 109,
+  "events": 298,
+  "llm_calls": 29,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Notes with search",
+  "app": "Notes app",
+  "feature": "Clean fast run"
+}

@@ -1,5 +1,6 @@
 // The one hook the UI uses: backend connection, the current project's event stream, and the controls.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { pickDefault } from './demos'
 import { ApiError, api, openStream, type ConfigInfo, type Metrics, type RecordingMeta } from './api'
 import { OfficeModel, type Tone } from './model'
 
@@ -70,7 +71,7 @@ export function useQ() {
         model.setRoster(agents)
         setConfig(cfg)
         setRecordings(recs)
-        setRecording((cur) => cur || recs.find((r) => r.ok)?.name || '')
+        setRecording((cur) => cur || pickDefault(recs))
         setBackend('ok')
       } catch {
         if (stop) return

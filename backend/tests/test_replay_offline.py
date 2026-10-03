@@ -3,6 +3,7 @@
 The server runs as a subprocess (tests/offline_server.py) exactly as `uvicorn` would for the browser; only loopback is reachable and
 every refused connection is logged. The client is a real HTTP client and a real WebSocket client.
 """
+import json
 import os
 import signal
 import socket
@@ -60,8 +61,10 @@ class OfflineServer:
                 subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True)
 
 
-def play_replay(server: OfflineServer, recording: str | None = None) -> tuple[str, list[dict]]:
-    """Create a replay through HTTP and read its whole event stream over a WebSocket, like the browser."""
+def play_replay(server: OfflineServer, recording: str | None = None, total: int | None = None) -> tuple[str, list[dict]]:
+    """Create a replay through HTTP and read its whole event stream over a WebSocket, like the browser.
+
+    Stops at the first project_done, or after `total` events when the recording has more (an Ask-employee request ends with a second project_done)."""
     http = httpx.Client(base_url=server.url, timeout=10)
     r = http.post("/api/projects", json={"goal": "Build a calculator with history", "speed": 1000, **({"recording": recording} if recording else {})})
     assert r.status_code == 201, r.text
@@ -71,7 +74,7 @@ def play_replay(server: OfflineServer, recording: str | None = None) -> tuple[st
         while True:
             e = __import__("json").loads(ws.recv(timeout=60))
             got.append(e)
-            if e["type"] == "project_done":
+            if e["type"] == "project_done" and (total is None or len(got) >= total):
                 return pid, got
 
 
@@ -126,16 +129,50 @@ def test_full_replayed_build_over_http_and_websocket_with_the_network_blocked(fa
         server.stop()
 
 
-@pytest.mark.skipif(not (REPO_RECORDINGS / "calculator-fault" / "meta.json").is_file(), reason="the shipped recording has not been made yet")
-def test_the_shipped_calculator_recording_replays_offline_exactly_as_recorded(tmp_path):
+SHIPPED = sorted(d.name for d in REPO_RECORDINGS.glob("*") if (d / "meta.json").is_file() and not d.name.startswith("."))
+
+
+def test_the_demo_set_is_complete():
+    """The demo picker needs all of these; an empty list would make the parametrized replay test below pass without testing anything."""
+    assert {"calculator-fault", "todo-approvals", "expense-ask", "notes-search", "contact-book", "inventory"} <= set(SHIPPED)
+
+
+@pytest.mark.parametrize("name", SHIPPED)
+def test_every_shipped_recording_replays_offline_exactly_as_recorded_and_its_app_opens(name, tmp_path):
     server = OfflineServer(REPO_RECORDINGS, tmp_path / "ws", tmp_path / "q.db")
     try:
         server.wait_ready()
-        rec = load_recording(REPO_RECORDINGS, "calculator-fault")
-        assert rec.meta["ok"] and rec.meta["snapshot"]
-        pid, got = play_replay(server, "calculator-fault")
-        check_replay(server, pid, got, rec.events())
-        types = {e["type"] for e in got}
-        assert {"fault_injected", "bug_filed", "bug_fixed", "review_result", "merge_result", "app_running"} <= types
+        rec = load_recording(REPO_RECORDINGS, name)
+        recorded = rec.events()
+        assert rec.meta["ok"] and rec.meta["snapshot"] and rec.meta.get("title") and rec.meta.get("feature")
+        pid, got = play_replay(server, name, total=len(recorded))
+        check_replay(server, pid, got, recorded)
+        types = [e["type"] for e in got]
+        assert {"spec_ready", "review_result", "merge_result", "app_running", "metrics"} <= set(types)
+        # the restored app serves its page, the UI kit and every endpoint of the contract that needs no input
+        app = httpx.get(f"{server.url}/api/projects/{pid}").json()["app"]["url"]
+        page = httpx.get(app + "/", timeout=5).text
+        assert "ui-kit" in page and "app.js" in page
+        assert "UI." in httpx.get(app + "/static/app.js", timeout=5).text
+        contract = httpx.get(f"{server.url}/api/projects/{pid}/file", params={"path": ".q/api_contract.json"}).json()
+        text = contract["content"] if isinstance(contract, dict) and "content" in contract else json.dumps(contract)
+        for ep in json.loads(text)["endpoints"]:
+            if ep["method"] == "GET" and "{" not in ep["path"]:
+                assert httpx.get(app + ep["path"], timeout=5).status_code < 500, ep["path"]
+        # the speed control works on this recording: 1x, then 2x and 4x while it plays
+        http = httpx.Client(base_url=server.url, timeout=10)
+        slow = http.post("/api/projects", json={"goal": rec.meta["goal"], "recording": name, "speed": 1}).json()["id"]
+        for speed in (2, 4):
+            assert http.post(f"/api/projects/{slow}/speed", json={"speed": speed}).json() == {"speed": float(speed)}
+        wait_for(lambda: len(http.get(f"/api/projects/{slow}/events").json()) > 10, 30, "events at 4x")
+        # the recording's story
+        if name == "calculator-fault":
+            assert {"fault_injected", "bug_filed", "bug_fixed"} <= set(types)
+        if name == "todo-approvals":
+            assert types.count("approval_needed") >= 5 and "approval_resolved" in types
+        if name == "expense-ask":
+            assert types.count("project_done") == 2 and "project_resumed" in types
+            assert any(e["type"] == "message_sent" and e["from"] == "human" and e["to"] == "frontend" for e in got)
+            assert any(e["type"] == "file_changed" and e["path"].startswith("static/") and "total spent" in e["diff"].lower() for e in got[types.index("project_resumed"):])
     finally:
         server.stop()

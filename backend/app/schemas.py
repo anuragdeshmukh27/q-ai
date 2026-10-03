@@ -239,6 +239,14 @@ def check_against_spec(a: ArchitectOutput, spec: "SpecOutput") -> list[str]:
     return list(dict.fromkeys(problems))
 
 
+def add_spec_features(a: ArchitectOutput, spec: "SpecOutput | None") -> None:
+    """A search box the spec promises must reach the page even when the Architect left it out of `ui_features` (the generated page builds the box from that list)."""
+    if spec is None or any("search" in f.lower() for f in a.ui_features):
+        return
+    if any(re.search(r"\bsearch", f, re.I) for f in spec.features):
+        a.ui_features.append("Search box that filters the list by text as you type")
+
+
 def check_architecture(a: ArchitectOutput, presets: list[str], spec: "SpecOutput | None" = None) -> list[str]:
     problems: list[str] = check_categories(a.endpoints) + check_caps(a.endpoints)
     if spec is not None:

@@ -1,15 +1,18 @@
 {
   "name": "calculator-fault",
-  "goal": "Build a calculator with history",
+  "goal": "Build a calculator with history: add, subtract, multiply and divide two numbers, show the result, keep a history list, clear the history",
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-03 00:43:40",
-  "seconds": 185,
-  "events": 442,
-  "llm_calls": 59,
+  "recorded_at": "2026-10-04 00:09:07",
+  "seconds": 118,
+  "events": 336,
+  "llm_calls": 32,
   "models": [
     "qwen2.5-coder:7b"
   ],
-  "snapshot": true
+  "snapshot": true,
+  "title": "Calculator with history",
+  "app": "Calculator",
+  "feature": "QA bug fix"
 }

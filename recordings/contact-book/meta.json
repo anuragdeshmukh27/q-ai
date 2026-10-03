@@ -1,0 +1,18 @@
+{
+  "name": "contact-book",
+  "goal": "Build a contact book: name, phone, email, group Family/Friends/Work, search by name, edit and delete",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-03 23:32:07",
+  "seconds": 139,
+  "events": 304,
+  "llm_calls": 29,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Contact book",
+  "app": "Contact book",
+  "feature": "Search and groups"
+}

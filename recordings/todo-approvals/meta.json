@@ -1,0 +1,18 @@
+{
+  "name": "todo-approvals",
+  "goal": "Build a todo app: title, description, priority Low/Medium/High, due date, mark as done, filter by status, edit and delete",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-03 23:11:24",
+  "seconds": 104,
+  "events": 396,
+  "llm_calls": 28,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Todo app with priorities",
+  "app": "Todo app",
+  "feature": "Approvals"
+}

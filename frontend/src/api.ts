@@ -29,6 +29,10 @@ export interface RecordingMeta {
   ok: boolean
   seconds: number
   events: number
+  /** Card text for the Demo picker (absent in old recordings). */
+  title?: string
+  app?: string
+  feature?: string
 }
 
 export interface LoadedModel {
