@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from .schemas import ArchitectOutput, Endpoint, FieldSpec
+from .schemas import ArchitectOutput, Endpoint, FieldSpec, ResourceInfo, _resource
 
 PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool", "array": "list", "object": "dict"}  # arrays carry no item type in the contract: tags are strings as often as objects
 
@@ -40,8 +40,18 @@ def json_columns(design: ArchitectOutput) -> list[str]:
     return [c.name for t in design.tables for c in t.columns if c.name in arrays]
 
 
-def db_stub(design: ArchitectOutput) -> str:
+def functions_of(design: ArchitectOutput, ri: ResourceInfo):
+    """The db functions that belong to one resource's table (its own module)."""
+    s, p = ri.singular, ri.name
+    names = {f"add_{s}", f"get_{s}", f"list_{p}", f"update_{s}", f"delete_{s}", *(f"{a.name}_{s}" for a in ri.actions)}
+    return [f for f in design.db_functions if f.name in names]
+
+
+def db_stub(design: ArchitectOutput, table: str | None = None) -> str:
+    """The data access stub. With `table` (a relational design), only that table's functions; SCHEMA still creates every table so a parent can delete its children."""
     cols = json_columns(design)
+    ri = next((r for r in design.resources if r.name == table), None)
+    funcs = functions_of(design, ri) if ri else design.db_functions
     out = [
         '"""Data access functions (stubs generated from the database schema). Fill in the bodies."""',
         "import json",
@@ -56,7 +66,7 @@ def db_stub(design: ArchitectOutput) -> str:
                 "def _row(r) -> dict:", '    """A row as a dict; list-valued columns (stored as JSON text) are turned back into lists."""',
                 "    d = dict(r)", "    for c in JSON_COLUMNS:", "        if isinstance(d.get(c), str):", "            d[c] = json.loads(d[c])", "    return d", ""]
     shape = "_row(row) / [_row(r) for r in rows]" if cols else "dict(row) / [dict(r) for r in rows]"
-    for f in design.db_functions:
+    for f in funcs:
         out += [
             "",
             f"def {f.signature.strip()}:",
@@ -68,22 +78,26 @@ def db_stub(design: ArchitectOutput) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def _route(e: Endpoint, response_model: str | None, request_model: str | None, func: str) -> str:
+def _route(e: Endpoint, response_model: str | None, request_model: str | None, func: str, hints: list[str] | None = None) -> str:
     params = re.findall(r"\{(\w+)\}", e.path)
     # GET/DELETE have no body: their request fields are query parameters, i.e. plain function arguments (scalar types only).
-    query = [f"{f.name}: {PY_TYPES[f.type]}" for f in e.request_fields if e.method in ("GET", "DELETE") and f.name not in params and f.type in ("string", "number", "integer", "boolean")]
-    args = [f"{p}: int" for p in params] + query + ([f"req: {request_model}"] if request_model else [])
+    query = [f"{f.name}: {PY_TYPES[f.type]}" for f in e.request_fields if e.method in ("GET", "DELETE") and f.name not in params and f.type in ("string", "number", "integer", "boolean") and not f.options]
+    # a query field with options (sort) is optional and limited to its labels: FastAPI answers 422 for anything else
+    optional = [f"{f.name}: Literal[{', '.join(repr(o) for o in f.options)}] = {f.options[0]!r}" for f in e.request_fields if e.method in ("GET", "DELETE") and f.name not in params and f.options]
+    args = [f"{p}: int" for p in params] + query + ([f"req: {request_model}"] if request_model else []) + optional
     deco_extra = (f", status_code={e.response_status}" if e.response_status != 200 else "") + (f", response_model={response_model}" if response_model else "")
     notes = [f"# {e.summary}"] + [f'# error: raise HTTPException(status_code={x.status}, detail="{x.detail}")' for x in e.errors]
+    notes += [f"# body: {h}" for h in hints or []]
     body = "\n".join("    " + n for n in notes)
     return f'@router.{e.method.lower()}("{e.path}"{deco_extra})\ndef {func}({", ".join(args)}):\n{body}\n    raise NotImplementedError\n'
 
 
-def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None) -> str:
+def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None, parent_modules: tuple[str, ...] = ()) -> str:
     out = ['"""Route stubs generated from the API contract. Fill in the bodies; keep paths, models and status codes."""',
            "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
     if db_module:
         out.append(f"from database import {db_module} as db")
+    out += [f"from database import {m} as {m}_db" for m in parent_modules]
     out += ["", "router = APIRouter()", ""]
     for e in endpoints:
         by = re.findall(r"\{(\w+)\}", e.path)
@@ -96,12 +110,49 @@ def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: st
         if e.response_fields:
             res = base + "Response"
             out += [_model(res, e.response_fields)]
-        out += [_route(e, res, req, func)]
+        out += [_route(e, res, req, func, _hints(design, e))]
     return "\n".join(out).rstrip() + "\n"
+
+
+def _hints(design: ArchitectOutput, e: Endpoint) -> list[str]:
+    """For a relational design, the body of each route in plain words (the engineer writes it with `implement`; a 7B copies a hint more reliably than it invents a rule)."""
+    if not design.resources:
+        return []
+    ri = next((r for r in design.resources if r.name == _resource(e.path, {t.name for t in design.tables})), None)
+    if ri is None:
+        return []
+    s, p = ri.singular, ri.name
+    kw = ", ".join(f"{f.name}=req.{f.name}" for f in e.request_fields if f.name != "sort")
+    sort = ", sort=sort" if any(f.name == "sort" for f in e.request_fields) else ""
+    nf = next((f'raise HTTPException(status_code=404, detail="{x.detail}")' for x in e.errors if x.status == 404), "")
+    action = next((a for a in ri.actions if e.method == "POST" and e.path.endswith("/" + a.name)), None)
+    parent = next((r for r in design.resources if r.name == ri.parent), None)
+    if action is not None:
+        return [f"row = db.{action.name}_{s}(id)", f"if row is None: {nf}", "return row"]
+    if parent is not None and e.path.startswith(f"/api/{parent.name}/{{"):
+        check = f"if {parent.name}_db.get_{parent.singular}({ri.fk}) is None: {nf}"
+        if e.method == "GET":
+            return [check, f'return {{"items": db.list_{p}({ri.fk}={ri.fk}{sort})}}']
+        return [check, f"return db.add_{s}({ri.fk}={ri.fk}, {kw})"]
+    if e.method == "GET":
+        return [f'return {{"items": db.list_{p}({sort[2:]})}}']
+    if e.method == "POST":
+        return [f"return db.add_{s}({kw})"]
+    if e.method == "PUT":
+        return [f"row = db.update_{s}({s}_id=id, {kw})", f"if row is None: {nf}", "return row"]
+    if e.method == "DELETE":
+        return [f"if not db.delete_{s}({s}_id=id): {nf}", 'return {"deleted": True}']
+    return []
 
 
 def endpoints_for_task(design: ArchitectOutput, task: dict, same_owner_tasks: int = 1) -> list[Endpoint]:
     """The endpoints a backend task is about. With a single backend task: all of them. Otherwise those named in its title/acceptance."""
+    if design.resources and task.get("files"):  # a relational design: the router named by the task's file owns its resource's endpoints
+        name = task["files"][0].rsplit("/", 1)[-1].removesuffix(".py")
+        tables = {t.name for t in design.tables}
+        mine = [e for e in design.endpoints if _resource(e.path, tables) == name]
+        if mine:
+            return mine
     if same_owner_tasks <= 1:
         return design.endpoints
     text = " ".join([task["title"], *task["acceptance"]])

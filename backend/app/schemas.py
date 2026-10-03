@@ -5,11 +5,13 @@ Every LLM output is validated twice: by the schema (shape) and by `check_*` (mea
 """
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
 RESERVED_PATHS = {"/", "/health", "/static", "/docs", "/openapi.json", "/redoc"}
@@ -64,6 +66,38 @@ class DbFunction(BaseModel):
     description: str
 
 
+def singular(name: str) -> str:
+    """posts -> post, stories -> story, addresses -> address (names are plural snake_case words)."""
+    n = name.lower()
+    if n.endswith("ies") and len(n) > 3:
+        return n[:-3] + "y"
+    if re.search(r"(ss|x|z|ch|sh)es$", n):
+        return n[:-2]
+    if n.endswith("ss") or len(n) < 2:
+        return n
+    return n[:-1] if n.endswith("s") else n
+
+
+class ActionInfo(BaseModel):
+    name: str  # upvote, downvote, like, complete
+    field: str  # the counter (increment) or yes/no field (toggle) it changes
+    kind: Literal["increment", "toggle"]
+
+
+class ResourceInfo(BaseModel):
+    """What the engine knows about one resource of a relational design (filled by `relations.synthesize_design`, never by the model)."""
+    name: str  # plural, also the table name
+    singular: str
+    parent: str = ""  # name of the parent resource, "" for a top-level one
+    fk: str = ""  # the child's link column, for example post_id
+    fields: list[FieldSpec] = Field(default_factory=list, description="what the user enters (no id, no counters, no link)")
+    counters: list[str] = Field(default_factory=list)  # owned by the server, changed only by an increment action
+    flags: list[str] = Field(default_factory=list)  # yes/no fields changed only by a toggle action
+    actions: list[ActionInfo] = Field(default_factory=list)
+    sorts: list[str] = Field(default_factory=list)  # ["new", "top"] or []
+    top_by: str = ""  # SQL ordering expression for sort=top, for example "upvotes - downvotes"
+
+
 class ArchitectOutput(BaseModel):
     preset: str
     architecture: str = Field(description="Short markdown: components and how a request flows through them")
@@ -71,6 +105,8 @@ class ArchitectOutput(BaseModel):
     tables: list[TableSpec] = Field(default_factory=list)
     db_functions: list[DbFunction] = Field(default_factory=list)
     ui_features: list[str] = Field(default_factory=list, description="What the web page must let the user do")
+    # Not part of the model's JSON schema: the engine fills it for relational designs (empty = a plain single-resource design, handled as before).
+    resources: SkipJsonSchema[list[ResourceInfo]] = Field(default_factory=list)
 
 
 # Fields that name a category of things. They are strings with human labels (Low / Medium / High), never bare numbers (1 / 2 / 3).
@@ -181,9 +217,22 @@ def check_examples(e: Endpoint) -> list[str]:
     return out
 
 
-def _resource(path: str) -> str:
+def _resource(path: str, tables: set[str] | None = None) -> str:
+    """The resource an endpoint belongs to: its first path word, or (when the design has tables) the LAST path word that names a table,
+    so /api/posts/{post_id}/comments belongs to comments and /api/posts/{id}/upvote to posts."""
     parts = [p for p in path.split("/") if p and p != "api" and not p.startswith("{")]
+    if tables:
+        named = [p for p in parts if p in tables]
+        if named:
+            return named[-1]
     return parts[0] if parts else path
+
+
+COUNTER_NAME = re.compile(r"^(upvotes?|downvotes?|votes?|likes?|dislikes?|views?)$")
+COUNTERS = ("upvotes", "downvotes", "votes", "likes", "dislikes", "views")
+COUNTER_ACTION = {"upvotes": "upvote", "downvotes": "downvote", "votes": "vote", "likes": "like", "dislikes": "dislike", "views": "view"}
+MAX_ACTIONS_PER_RESOURCE = 2
+MAX_RESOURCES = 2
 
 
 def check_categories(endpoints: list[Endpoint]) -> list[str]:
@@ -202,16 +251,55 @@ def check_categories(endpoints: list[Endpoint]) -> list[str]:
     return list(dict.fromkeys(problems))
 
 
-def check_caps(endpoints: list[Endpoint]) -> list[str]:
-    """Small designs are what a 7B model builds reliably: at most 4 (tolerated: 5) endpoints and 6 fields per resource."""
+def check_caps(endpoints: list[Endpoint], tables: set[str] | None = None, relational: bool = False) -> list[str]:
+    """Small designs are what a 7B model builds reliably: at most 4 (tolerated: 5) endpoints and 6 fields per resource.
+    A relational design adds up to 2 action endpoints per resource, so it may have 6."""
     problems: list[str] = []
-    for r in dict.fromkeys(_resource(e.path) for e in endpoints):
-        mine = [e for e in endpoints if _resource(e.path) == r]
-        if len(mine) > MAX_ENDPOINTS_PER_RESOURCE:
+    cap = MAX_ENDPOINTS_PER_RESOURCE + (1 if relational else 0)
+    for r in dict.fromkeys(_resource(e.path, tables) for e in endpoints):
+        mine = [e for e in endpoints if _resource(e.path, tables) == r]
+        if len(mine) > cap:
             problems.append(f"resource '{r}' has {len(mine)} endpoints; use at most 4 (list, add, edit, delete) and do the rest in the browser")
         names = {f.name for e in mine if e.method in ("POST", "PUT", "PATCH") for f in e.request_fields if f.name != "id" and not f.name.endswith("_id")}
         if len(names) > MAX_FIELDS_PER_RESOURCE:
             problems.append(f"resource '{r}' has {len(names)} fields; keep the {MAX_FIELDS_PER_RESOURCE} most important and drop the rest")
+    return problems
+
+
+_FILTER_BY_ORDER = re.compile(r"\b(filter|sort|order)\w*\b[^.]*\b(upvotes?|downvotes?|votes?|likes?|created_at|created|date|newest|latest|top|popular|recent)\b", re.I)
+
+
+def check_relations(a: "ArchitectOutput") -> list[str]:
+    """Foreign keys are integers that nest under their parent, counters belong to the server and change through action endpoints, sorting is a query field."""
+    problems: list[str] = []
+    tables = {t.name for t in a.tables}
+    parents = {singular(n): n for n in tables}
+    for e in a.endpoints:
+        where = f"{e.method} {e.path}"
+        for f in [*e.request_fields, *e.response_fields]:
+            if f.name != "id" and f.name.endswith("_id") and f.type != "integer":
+                problems.append(f"{where}: '{f.name}' is a foreign key, so its type must be integer (not {f.type})")
+        if e.method in ("POST", "PUT", "PATCH"):
+            for f in e.request_fields:
+                if COUNTER_NAME.match(f.name):
+                    problems.append(f"{where}: '{f.name}' is a counter the server owns, so the client never sends it. Remove it from the request fields and add an action "
+                                    f"endpoint such as POST /api/<things>/{{id}}/{COUNTER_ACTION.get(f.name if f.name.endswith('s') else f.name + 's', f.name)} that adds 1 and returns the updated item")
+                elif e.method == "POST" and "{" not in e.path and f.name.endswith("_id") and f.name[:-3] in parents:
+                    problems.append(f"{where}: '{f.name}' links to {parents[f.name[:-3]]}, so the child list is nested: use POST /api/{parents[f.name[:-3]]}/{{{f.name}}}/<children> "
+                                    f"(the id is a path parameter, not a body field) and answer 404 when that row does not exist")
+        if re.search(r"\{\w+\}/\w+", e.path) and not any(x.status == 404 for x in e.errors):
+            problems.append(f"{where}: it works on a row named in the path, so list the error 404 (for example 'Post not found') with an example for it")
+        if e.method == "GET":
+            for f in e.request_fields:
+                if f.name == "sort" and not f.options:
+                    problems.append(f"{where}: the query field 'sort' needs options, for example [\"new\", \"top\"]")
+    for t in a.tables:
+        for c in t.columns:
+            if c.name != "id" and c.name.endswith("_id") and c.type != "INTEGER":
+                problems.append(f"column {t.name}.{c.name} is a foreign key and must be INTEGER")
+    for f in a.ui_features:
+        if re.search(r"\bfilter", f, re.I) and _FILTER_BY_ORDER.search(f):
+            problems.append(f"ui feature {f!r}: ordering by votes or date is a sort, not a filter. Use the query field `sort` with options [\"new\", \"top\"] on the list endpoint")
     return problems
 
 
@@ -248,7 +336,7 @@ def add_spec_features(a: ArchitectOutput, spec: "SpecOutput | None") -> None:
 
 
 def check_architecture(a: ArchitectOutput, presets: list[str], spec: "SpecOutput | None" = None) -> list[str]:
-    problems: list[str] = check_categories(a.endpoints) + check_caps(a.endpoints)
+    problems: list[str] = check_categories(a.endpoints) + check_caps(a.endpoints, {t.name for t in a.tables} or None, bool(a.resources)) + check_relations(a)
     if spec is not None:
         problems += check_against_spec(a, spec)
     if a.preset not in presets:
@@ -349,10 +437,19 @@ class SpecField(BaseModel):
     options: list[str] = Field(default_factory=list, description="Human labels for a categorical field, e.g. Low, Medium, High")
 
 
+class SpecAction(BaseModel):
+    name: str = Field(description="snake_case verb, e.g. upvote, downvote, like, complete")
+    field: str = Field(description="the counter field it adds 1 to (increment), or the yes/no field it flips (toggle)")
+    kind: Literal["increment", "toggle"]
+
+
 class SpecResource(BaseModel):
     name: str = Field(description="plural snake_case, e.g. todos")
     fields: list[SpecField]
     operations: list[Literal["list", "create", "update", "delete", "clear"]] = Field(description="clear = remove every item at once")
+    parent: str = Field(default="", description="For a child resource (comments of a post): the name of the parent resource. Empty for a top-level resource. Never add a post_id style field: the link is implied")
+    actions: list[SpecAction] = Field(default_factory=list, description="At most 2 one-click actions (vote, like, complete). Counters such as upvotes are fields the server owns, changed only by an action")
+    sorts: list[Literal["new", "top"]] = Field(default_factory=list, description="[new, top] when the list can be ordered by newest or by score; needs a counter")
 
 
 class SpecOutput(BaseModel):
@@ -360,6 +457,105 @@ class SpecOutput(BaseModel):
     summary: str = Field(description="One sentence: what the app does for the user")
     resources: list[SpecResource] = Field(default_factory=list)
     features: list[str] = Field(default_factory=list, description="What the page lets the user do, as short statements")
+    not_included: list[str] = Field(default_factory=list, description="Things the goal suggests that this small version leaves out (login, subreddits, uploads...)")
+
+
+CHILD_WORDS = {"comments", "answers", "replies", "tasks", "subtasks", "reviews", "responses", "entries", "messages", "lessons", "chapters"}
+SERVER_FILLED = re.compile(r"^(id|created_at|updated_at|created|updated|timestamp)$")
+_SORT_FEATURE = re.compile(r"\b(filter|sort|order)\w*\b[^.]*\b(upvotes?|downvotes?|votes?|likes?|score|created_at|created|date|newest|latest|top|popular|recent)\b", re.I)
+_SEARCH_FEATURE = re.compile(r"\b(search|filter)\w*\b", re.I)
+
+
+def relations_enabled() -> bool:
+    """Q_RELATIONS=0 is the fallback: build only the parent resource (with its actions) and list the child under 'not included'."""
+    return os.environ.get("Q_RELATIONS", "1") != "0"
+
+
+def is_relational(spec: SpecOutput) -> bool:
+    return any(r.parent or r.actions for r in spec.resources)
+
+
+def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
+    """Repair what is mechanical instead of asking a 7B model to repeat itself (mutates and returns the spec):
+    a post_id style field is the link to the parent, counters (upvotes...) are integers owned by the server with an action each,
+    at most 2 resources with one parent -> child relation, 'filter by upvotes / created_at' is a sort. What does not fit goes to `not_included`."""
+    from .scope import classify_goal
+
+    left: list[str] = list(spec.not_included)
+    res = spec.resources
+    for r in res:  # 1. a field like post_id names the parent
+        for f in list(r.fields):
+            if f.name.endswith("_id") and f.name != "id":
+                parent = next((p for p in res if p is not r and f.name[:-3] in (singular(p.name), p.name)), None)
+                if parent is not None and (not r.parent or r.parent == parent.name):
+                    r.parent = parent.name
+                    r.fields.remove(f)
+        r.fields = [f for f in r.fields if not SERVER_FILLED.match(f.name)]
+    names = {r.name for r in res}
+    for r in res:
+        if r.parent and (r.parent not in names or r.parent == r.name):
+            r.parent = ""
+    if len(res) > 1 and not any(r.parent for r in res):  # a model often forgets `parent`: comments of posts, tasks of projects are unmistakable
+        text = " ".join(spec.features).lower()
+        kids = [r for r in res if r.name in CHILD_WORDS]
+        child = kids[0] if len(kids) == 1 else None
+        owner = next((p for p in res if p is not child and p.name not in CHILD_WORDS), None) if child else res[0]
+        if child is None and singular(res[1].name) in text and singular(res[0].name) in text and re.search(r"\b(each|every|per|on a|of a|under|belong)", text):
+            child = res[1]
+        if child is not None and owner is not None and owner is not child:
+            child.parent = owner.name
+    # 2. at most 2 resources: the first parent -> child pair, else the first resource
+    keep = res[:1]
+    child = next((r for r in res if r.parent), None)
+    if child is not None and relations_enabled():
+        keep = [next(p for p in res if p.name == child.parent), child]
+    for r in res:
+        if r not in keep:
+            left.append(r.name.replace("_", " "))
+    for r in keep:
+        if r.parent and r.parent not in {k.name for k in keep}:
+            r.parent = ""
+    spec.resources = keep
+    # 3. counters and actions
+    for r in keep:
+        by = {f.name: f for f in r.fields}
+        for f in r.fields:
+            if f.name in COUNTERS and not any(a.field == f.name for a in r.actions):
+                r.actions.append(SpecAction(name=COUNTER_ACTION[f.name], field=f.name, kind="increment"))
+        fixed: list[SpecAction] = []
+        for a in r.actions:
+            if a.kind == "increment" and a.field not in by:
+                guess = next((c for c in (a.field + "s", a.name + "s") if c in COUNTERS), "")
+                if guess:
+                    a.field = guess
+                    if guess not in by:
+                        by[guess] = SpecField(name=guess, type="integer")
+                        r.fields.append(by[guess])
+            if a.field in by and a.name not in {x.name for x in fixed}:
+                by[a.field].type, by[a.field].options = ("integer" if a.kind == "increment" else "boolean"), []
+                fixed.append(a)
+        dropped = fixed[MAX_ACTIONS_PER_RESOURCE:]
+        r.actions = fixed[:MAX_ACTIONS_PER_RESOURCE]
+        r.fields = [f for f in r.fields if not (f.name in COUNTERS and any(a.field == f.name for a in dropped))]
+        r.sorts = ["new", "top"] if any(a.kind == "increment" for a in r.actions) else []
+    # 4. features that cannot be built here
+    if is_relational(spec):
+        features: list[str] = []
+        for x in spec.features:
+            if _SORT_FEATURE.search(x):
+                continue  # ordering by votes or date is the sort select, not a filter
+            if _SEARCH_FEATURE.search(x):
+                left.append("search and filters")
+                continue
+            features.append(x)
+        if any(r.sorts for r in keep):
+            features.append("Sort the list by Newest or Top")
+        spec.features = features[:8]
+    for label in (classify_goal(goal).left_out if goal else []):  # "login" from the model and "login and accounts" from the rules are one thing
+        if not any(label.split()[0].lower() in x.lower() or x.lower() in label.lower() for x in left):
+            left.append(label)
+    spec.not_included = list(dict.fromkeys(x for x in left if x))[:6]
+    return spec
 
 
 def check_spec(spec: SpecOutput) -> list[str]:
@@ -368,8 +564,10 @@ def check_spec(spec: SpecOutput) -> list[str]:
         problems.append("list the features the page offers")
     if len(spec.features) > 8:
         problems.append("at most 8 features")
-    if len(spec.resources) > 3:
-        problems.append("at most 3 resources")
+    if len(spec.resources) > MAX_RESOURCES:
+        problems.append(f"at most {MAX_RESOURCES} resources: keep the main one and its child, and list anything else in `not_included`")
+    if sum(1 for r in spec.resources if r.parent) > 1:
+        problems.append("at most one resource may have a parent")
     for r in spec.resources:
         if not IDENT.match(r.name):
             problems.append(f"resource name {r.name!r} must be snake_case")
@@ -378,13 +576,27 @@ def check_spec(spec: SpecOutput) -> list[str]:
         names = [f.name for f in r.fields]
         if len(names) != len(set(names)):
             problems.append(f"{r.name}: duplicate field names")
-        counted = [f for f in r.fields if f.name != "id"]
+        counted = [f for f in r.fields if f.name != "id" and f.name not in COUNTERS]
         if len(counted) > MAX_FIELDS_PER_RESOURCE:
             problems.append(f"{r.name} has {len(counted)} fields; keep the {MAX_FIELDS_PER_RESOURCE} most important (the cap protects reliability)")
         for f in r.fields:
             if not IDENT.match(f.name):
                 problems.append(f"{r.name}.{f.name} must be snake_case")
+            if f.name.endswith("_id") and f.name != "id":
+                problems.append(f"{r.name}.{f.name}: remove it. A child resource names its `parent`; the link is implied")
             problems += check_options(r.name, f.name, f.type, f.options)
+        if len(r.actions) > MAX_ACTIONS_PER_RESOURCE:
+            problems.append(f"{r.name}: at most {MAX_ACTIONS_PER_RESOURCE} actions")
+        for a in r.actions:
+            f = next((x for x in r.fields if x.name == a.field), None)
+            if not IDENT.match(a.name):
+                problems.append(f"{r.name}: action name {a.name!r} must be a snake_case verb")
+            elif f is None:
+                problems.append(f"{r.name}: action {a.name} changes the field {a.field!r}, which the resource does not have")
+            elif (a.kind == "increment") != (f.type in ("number", "integer")):
+                problems.append(f"{r.name}: action {a.name} ({a.kind}) does not fit the type of {a.field}")
+        if "top" in r.sorts and not any(a.kind == "increment" for a in r.actions):
+            problems.append(f"{r.name}: sorting by top needs a counter with an increment action (upvotes)")
     return problems
 
 
@@ -393,10 +605,14 @@ def spec_text(spec: SpecOutput) -> str:
     lines = [f"# {spec.title}", "", spec.summary.strip(), ""]
     for r in spec.resources:
         fields = ", ".join(f"{f.name} ({' / '.join(f.options) if f.options else f.type})" for f in r.fields)
-        lines.append(f"**{r.name}**: {fields}. Operations: {', '.join(r.operations)}.")
+        extra = (f" Belongs to {r.parent}." if r.parent else "") + (f" Actions: {', '.join(f'{a.name} ({a.field})' for a in r.actions)}." if r.actions else "") \
+            + (f" Sort: {' / '.join(r.sorts)}." if r.sorts else "")
+        lines.append(f"**{r.name}**: {fields}. Operations: {', '.join(r.operations)}.{extra}")
     if spec.resources:
         lines.append("")
     lines += ["Features:", *[f"- {x}" for x in spec.features]]
+    if spec.not_included:
+        lines += ["", f"Not in this version: {', '.join(spec.not_included)}."]
     return "\n".join(lines) + "\n"
 
 
@@ -418,15 +634,21 @@ class PlannerOutput(BaseModel):
 OWNER_PREFIXES = {"database": ("database/",), "backend": ("backend/",), "frontend": ("static/", "frontend/")}
 
 
-def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint]) -> list[str]:
+def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint], tables: int = 1) -> list[str]:
     problems: list[str] = []
     ids = [t.id for t in p.tasks]
     if not p.tasks:
         return ["the plan has no tasks"]
     if len(set(ids)) != len(ids):
         problems.append("task ids must be unique")
-    if sum(1 for t in p.tasks if t.owner == "database") > 1:
+    n_db = sum(1 for t in p.tasks if t.owner == "database")
+    if tables <= 1 and n_db > 1:
         problems.append("use exactly ONE database task with ONE file database/<name>.py for ALL tables and functions: the starting module already contains every table and function")
+    if tables > 1 and n_db != tables:
+        problems.append(f"the schema has {tables} tables: plan exactly one database task per table, each with its own file database/<table>.py (never one task for all tables)")
+    for t in p.tasks:
+        if t.owner == "database" and re.search(r"\ball (the )?tables\b", t.title, re.I):
+            problems.append(f"{t.id}: a database task covers ONE table; never 'all tables'")
     for t in p.tasks:
         if not re.match(r"^t\d+$", t.id):
             problems.append(f"task id {t.id!r} must look like t1, t2, ...")

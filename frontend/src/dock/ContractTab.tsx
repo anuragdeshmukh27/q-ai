@@ -63,6 +63,9 @@ export function ContractTab({ projectId, model }: { projectId: string | null; mo
                   <span className="text-[12px] text-[var(--muted)]">the Architect expanded your goal into this MVP</span>
                 </div>
                 <div className="mt-1 text-[13px] text-[#c9d3ee]">{model.spec.summary}</div>
+                {!!model.spec.notIncluded.length && (
+                  <div className="mt-1 text-[13px] text-[var(--warn)]" data-testid="spec-left-out">Not in this version: {model.spec.notIncluded.join(', ')}</div>
+                )}
                 <pre className="mt-2 whitespace-pre-wrap font-mono text-[12px] leading-snug text-[#9fb0d4]">{specBody(model.spec.text)}</pre>
               </div>
             )}

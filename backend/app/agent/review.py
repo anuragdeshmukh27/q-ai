@@ -54,7 +54,7 @@ def static_findings(files: dict[str, str]) -> list[ReviewItem]:
 
 def missing_tests(files: dict[str, str], owner: str) -> list[ReviewItem]:
     """A database branch must come with its own tests (the generated contract tests cover the API and page, not the data layer)."""
-    if owner == "database" and any(p.startswith("database/") for p in files) and not any(p.startswith("tests/test_db") for p in files):
+    if owner == "database" and any(p.startswith("database/") for p in files) and not any(p.startswith(("tests/test_db", "tests/db/")) for p in files):
         return [ReviewItem(file="tests/test_db.py", problem="the database functions have no tests; add tests/test_db_<name>.py covering every function")]
     return []
 

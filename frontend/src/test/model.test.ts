@@ -172,6 +172,13 @@ describe('office model', () => {
     expect(m.spec).toBeNull()
   })
 
+  it('says what the spec leaves out', () => {
+    const { m, seen } = setup()
+    m.apply(ev('spec_ready', { agent: 'architect', title: 'Reddit', summary: 'Posts and comments.', features: ['Form'], text: '# Reddit', not_included: ['login', 'subreddits'] }))
+    expect(m.spec?.notIncluded).toEqual(['login', 'subreddits'])
+    expect(seen.some((v) => v.kind === 'say' && v.text.includes('Not in this version: login, subreddits'))).toBe(true)
+  })
+
   it('keeps the newest metrics event for the gauges and the loaded-model chip', () => {
     const { m } = setup()
     expect(m.metrics).toBeNull()

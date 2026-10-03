@@ -17,7 +17,7 @@ from .planning import AgentFailed, structured_step
 
 OWNERS = ("backend", "frontend", "database")
 OWNER_BY_PREFIX = (("backend/", "backend"), ("static/", "frontend"), ("frontend/", "frontend"), ("database/", "database"))
-AUTHORITATIVE = ("tests/api/", "tests/ui/", "tests/qa/")
+AUTHORITATIVE = ("tests/api/", "tests/ui/", "tests/qa/", "tests/db/")
 MAX_TRACE_CHARS = 1800
 _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+?)(?: - (.*))?$", re.MULTILINE)
 _SECTION = re.compile(r"^_{3,} (.+?) _{3,}$", re.MULTILINE)
@@ -65,7 +65,7 @@ def guess_owner(f: Failure) -> str:
                 return owner
     if f.file.startswith("tests/ui/"):
         return "frontend"
-    if "test_db" in f.file:
+    if "test_db" in f.file or f.file.startswith("tests/db/"):
         return "database"
     return "backend"
 

@@ -54,20 +54,20 @@ class Shape:
         self.features = " ".join(design.ui_features).lower()
 
 
-def _input(f: FieldSpec) -> str:
-    label = f'<label for="{f.name}">{_label(f.name)}</label>'
+def _input(f: FieldSpec, prefix: str = "") -> str:
+    label = f'<label for="{prefix}{f.name}">{_label(f.name)}</label>'
     if f.options:
         opts = "".join(f"<option>{o}</option>" for o in f.options)
-        return f'<div class="field">{label}<select id="{f.name}">{opts}</select></div>'
+        return f'<div class="field">{label}<select id="{prefix}{f.name}">{opts}</select></div>'
     if f.type == "boolean":
-        return f'<div class="field field-check"><input id="{f.name}" type="checkbox">{label}</div>'
+        return f'<div class="field field-check"><input id="{prefix}{f.name}" type="checkbox">{label}</div>'
     if f.type in ("number", "integer"):
-        return f'<div class="field">{label}<input id="{f.name}" type="number" step="{"1" if f.type == "integer" else "any"}"></div>'
+        return f'<div class="field">{label}<input id="{prefix}{f.name}" type="number" step="{"1" if f.type == "integer" else "any"}"></div>'
     if "date" in f.name:
-        return f'<div class="field">{label}<input id="{f.name}" type="date"></div>'
+        return f'<div class="field">{label}<input id="{prefix}{f.name}" type="date"></div>'
     if LONG_TEXT.search(f.name):
-        return f'<div class="field">{label}<textarea id="{f.name}" rows="2"></textarea></div>'
-    return f'<div class="field">{label}<input id="{f.name}"></div>'
+        return f'<div class="field">{label}<textarea id="{prefix}{f.name}" rows="2"></textarea></div>'
+    return f'<div class="field">{label}<input id="{prefix}{f.name}"></div>'
 
 
 def _filter_field(s: Shape) -> FieldSpec | None:
@@ -77,6 +77,10 @@ def _filter_field(s: Shape) -> FieldSpec | None:
 
 
 def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
+    if design.resources:
+        from .relpage import page
+
+        return page(design, title)
     s = Shape(design)
     if not s.ok:
         return None
@@ -130,8 +134,13 @@ def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
 
 
 def _edit_fields(s: Shape) -> list[dict]:
+    return edit_fields_for(s.put.request_fields if s.put else [])
+
+
+def edit_fields_for(fields: list[FieldSpec]) -> list[dict]:
+    """The fields of the Edit dialog (UI.form) for these request fields."""
     out = []
-    for f in (s.put.request_fields if s.put else []):
+    for f in fields:
         item: dict = {"name": f.name, "label": _label(f.name)}
         if f.options:
             item["options"] = f.options
@@ -167,6 +176,10 @@ def _order(s: Shape) -> list[str]:
 
 
 def script_stub(design: ArchitectOutput, title: str = "") -> str | None:
+    if design.resources:
+        from .relpage import script
+
+        return script(design, title)
     s = Shape(design)
     if not s.ok:
         return None

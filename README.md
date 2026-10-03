@@ -132,6 +132,13 @@ All pixel art is generated in code from palettes; no third-party assets are used
 - **Supervised (default):** autonomous, but pauses for contract changes, installs, deletions and merge conflicts.
 - **Autonomous:** only hard-denied commands are blocked.
 
+## What Q builds, and what it refuses
+
+- **In scope:** one resource (a list with add, edit, delete), or a parent with its children (posts with comments, questions with answers, projects with tasks) with up to two one-click actions per resource (upvote, downvote, like, toggle) and a sort (newest or top).
+- **Bigger goals** (login, real-time, uploads, payments, a third kind of thing) build the small version that fits; the spec and the Contract tab say "Not in this version: ..." so nothing is silently missing.
+- **Impossible for this preset** (games, charts, native or mobile apps) are refused before any model work, with three goals that do work.
+- For related resources the contract is completed by rules from the spec (`backend/app/relations.py`), not written by the model: the 7B kept getting foreign keys, vote counters and nesting wrong. Agents still write every function. `Q_RELATIONS=0` falls back to parent-only builds.
+
 ## Honest limits
 
 - The local 7B model is weak at large multi-file work, so the system keeps files small, tasks narrow and tests in charge. Six app types have built end to end on it (calculator, todo, expense tracker, notes, contact book, inventory); three tried types did not (bookmark manager, habit tracker, quiz).

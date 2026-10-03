@@ -116,7 +116,7 @@ export class OfficeModel {
   changes = new Map<string, FileChange[]>()
   contractVersion = 0
   contractHistory: { version: number; endpoints: string[] }[] = []
-  spec: { title: string; summary: string; features: string[]; text: string } | null = null // the Architect's expanded product spec
+  spec: { title: string; summary: string; features: string[]; text: string; notIncluded: string[] } | null = null // the Architect's expanded product spec
   overrides = new Map<string, string>()
   filesVersion = 0 // bumped when files or branches may have changed: the file tree, git graph and contract refetch on it
   architectureReady = false
@@ -309,9 +309,11 @@ export class OfficeModel {
         break
       case 'spec_ready': {
         const features = Array.isArray(e.features) ? (e.features as string[]) : []
-        this.spec = { title: str(e.title), summary: str(e.summary), features, text: str(e.text) }
-        this.show({ kind: 'say', agent: 'architect', text: clip(`Spec: ${this.spec.summary}`, 88), tone: 'info' }, visuals)
-        this.say(`${this.name('architect')} expanded the goal into a spec: ${clip(this.spec.summary, 90)}`)
+        const notIncluded = Array.isArray(e.not_included) ? (e.not_included as string[]) : []
+        this.spec = { title: str(e.title), summary: str(e.summary), features, text: str(e.text), notIncluded }
+        const left = notIncluded.length ? ` Not in this version: ${notIncluded.join(', ')}.` : ''
+        this.show({ kind: 'say', agent: 'architect', text: clip(`Spec: ${this.spec.summary}${left}`, 88), tone: notIncluded.length ? 'warn' : 'info' }, visuals)
+        this.say(`${this.name('architect')} expanded the goal into a spec: ${clip(this.spec.summary, 90)}${left}`)
         break
       }
       case 'architecture_ready':

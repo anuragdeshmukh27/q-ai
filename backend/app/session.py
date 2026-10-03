@@ -27,6 +27,7 @@ from .leaderboard import SHIPPED_RESULTS, Leaderboard
 from .registry import ModelRegistry
 from .router import Router
 from .scheduler import MetricsSampler, ModelScheduler
+from .scope import classify_goal
 
 MODES = ("assisted", "supervised", "autonomous")
 
@@ -432,6 +433,10 @@ class SessionManager:
         if req.record_as:
             check_name(req.record_as)  # RecordingError -> 400 via the API layer
         demo = req.demo or self.settings.q_mode == "replay"
+        if not demo:
+            scope = classify_goal(goal)
+            if scope.level == "impossible":  # refused before any model work, with goals that do work
+                raise SessionError(scope.message, 422)
         with self._lock:
             if not demo and any(s.kind == "live" and s.state in ("starting", "running") for s in self.sessions.values()):
                 raise SessionError("A build is already running; the GPU runs one build at a time.", 409)

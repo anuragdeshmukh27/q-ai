@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from goals import CHIPS, SHORT  # noqa: E402
+from goals import CHIPS, RELATED, RELATED_DETAILED, SHORT  # noqa: E402
 
 GOALS = SHORT + ["Build a bookmark manager with tags"]  # the original short goals (the bookmark manager never passed)
 
@@ -23,9 +23,18 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--only", help="comma-separated 1-based goal numbers")
 ap.add_argument("--no-polish", action="store_true")
 ap.add_argument("--chips", action="store_true", help="build the detailed example-chip goals instead of the short ones")
+ap.add_argument("--related", action="store_true", help="the related-resource goals (reddit replica, blog, Q&A forum, project tasks)")
+ap.add_argument("--related-detailed", action="store_true", help="the detailed versions of the related-resource goals (chip candidates)")
+ap.add_argument("--rounds", type=int, default=1, help="build each goal this many times")
 args = ap.parse_args()
+TAG = ""
 if args.chips:
-    GOALS = [g for _, g in CHIPS]
+    GOALS, TAG = [g for _, g in CHIPS], "-chips"
+elif args.related:
+    GOALS, TAG = RELATED, "-related"
+elif args.related_detailed:
+    GOALS, TAG = [g for _, g in RELATED_DETAILED], "-related-detailed"
+GOALS = GOALS * args.rounds
 picked = [int(x) for x in args.only.split(",")] if args.only else list(range(1, len(GOALS) + 1))
 
 lines = []
@@ -39,11 +48,11 @@ for n in picked:
     problems = [l.strip() for l in out.splitlines() if l.strip().startswith(("problem:", "!! escalation"))]
     polish = [p.strip(" :") for p in re.findall(r"== polish([^\n]*)", out)]
     slug = (re.findall(r"== project (\S+)", out) or ["?"])[0]
-    (ROOT / "workspace" / f"generality{'-chips' if args.chips else ''}-{n}.log").write_text(out + "\n--- stderr ---\n" + p.stderr[-2000:], encoding="utf-8")
+    (ROOT / "workspace" / f"generality{TAG}-{n}.log").write_text(out + "\n--- stderr ---\n" + p.stderr[-2000:], encoding="utf-8")
     line = (f"{n}. {goal}: {'PASS' if ok else 'FAIL'} in {time.time() - t0:.0f}s [{slug}] polish={polish[-1][:90] if polish else 'n/a'}"
             + ("" if ok else f" | {problems[-1][:200] if problems else '?'}"))
     lines.append(line)
     print(line, flush=True)
 summary = "\n".join(lines)
-(ROOT / "workspace" / f"generality{'-chips' if args.chips else ''}-summary.txt").write_text(summary + "\n", encoding="utf-8")
+(ROOT / "workspace" / f"generality{TAG}-summary.txt").write_text(summary + "\n", encoding="utf-8")
 print(f"\npassed {sum('PASS in' in l for l in lines)}/{len(lines)}")

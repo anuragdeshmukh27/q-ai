@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -35,8 +36,11 @@ from .project import create_project
 from .registry import ModelConfig, ModelRegistry
 from .contract_tests import api_test_source, edge_test_source, ui_page_test_source, ui_script_test_source
 from .scaffold import db_stub, endpoints_for_task, route_stub
+from .relations import plan_for_relations, resource_for_file, synthesize_design
+from .scope import classify_goal
+from .relation_tests import db_test_source
 from .uistub import is_placeholder, page_stub, script_stub
-from .schemas import ArchitectOutput, SpecOutput, TaskSpec, add_spec_features, spec_text, topo_order
+from .schemas import ArchitectOutput, SpecOutput, TaskSpec, add_spec_features, check_architecture, check_plan, is_relational, normalize_plan, normalize_spec, spec_text, topo_order
 from .tools import ToolBox
 
 ENGINEERS = ("database", "backend", "frontend")
@@ -152,7 +156,7 @@ class Orchestrator:
         return a.model_copy(update={
             "owned_paths": [*a.owned_paths, *([TEST_GLOBS[owner]] if owner in TEST_GLOBS else [])],
             "forbidden_paths": [".q/**", *LOCKED],
-            "max_iterations": max(a.max_iterations, ENGINEER_ITERATIONS),
+            "max_iterations": max(a.max_iterations, ENGINEER_ITERATIONS + (6 if self.design is not None and self.design.resources else 0)),
         })
 
     def _write(self, agent: AgentConfig, path: str, content: str, root: Path | None = None) -> None:
@@ -181,6 +185,9 @@ class Orchestrator:
     def run(self) -> BuildResult:
         started = time.time()
         try:
+            scope = classify_goal(self.goal)
+            if scope.level == "impossible":  # before any model work: say what Q cannot build, and what it can
+                raise AgentFailed("architect", scope.message)
             self._design()
             self._plan()
             self._execute_tasks()
@@ -202,15 +209,32 @@ class Orchestrator:
         presets = {n: load_preset(n).description for n in list_presets()}
         try:  # goal enrichment is a bonus: if the model cannot produce a valid spec, the Architect designs from the goal alone
             self.spec, sst = run_spec(arch_agent, self.llm, model.id, self.goal, self.emit)
+            normalize_spec(self.spec, self.goal)
             self._stat("architect", model, sst["iterations"], sst["prompt_tokens"], sst["completion_tokens"], sst["seconds"])
-            self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec))
+            self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec),
+                      not_included=self.spec.not_included)
         except AgentFailed:
             self.spec = None
         self.emit("agent_state", agent="architect", state="thinking")
-        design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset, self.spec)
-        self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
-        add_spec_features(design, self.spec)
+        if self.spec is not None and is_relational(self.spec):
+            design = self._relational_design(presets)
+        else:
+            design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset, self.spec)
+            self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
+            add_spec_features(design, self.spec)
         self._init_project(design, model)
+
+    def _relational_design(self, presets: dict[str, str]) -> ArchitectOutput:
+        """Related resources and actions: the contract follows from the spec by rules (a 7B cannot keep foreign keys, vote counters, nesting and sort consistent)."""
+        assert self.spec is not None
+        design = synthesize_design(self.spec)
+        problems = check_architecture(design, list(presets), self.spec)
+        if problems:  # a bug in the templates, never in the model: stop with a clear message instead of building on a broken contract
+            raise AgentFailed("architect", "the generated contract is inconsistent: " + "; ".join(problems)[:300])
+        names = " and ".join(r.name for r in design.resources)
+        self.emit("agent_thought", agent="architect", text=f"Contract for {names} built from the spec: nested lists, vote actions, sort", model="rules", tokens=0, seconds=0.0)
+        self.emit("agent_state", agent="architect", state="idle")
+        return design
 
     def _init_project(self, design: ArchitectOutput, model: ModelConfig) -> None:
         """Everything that follows a finished design: the project repo, `.q/` memory, the contract documents (the benchmarks start here too)."""
@@ -242,8 +266,16 @@ class Orchestrator:
         model = self._model(agent)
         contract_text = contract_brief(self.memory.contract() or {"version": 1, "endpoints": []})
         schema_text = self.memory.read("database_schema.md")
+        if self.design.resources:  # one task per table and per router follows from the contract
+            plan = normalize_plan(plan_for_relations(self.design))
+            problems = check_plan(plan, True, self.design.endpoints, len(self.design.tables))
+            if problems:
+                raise AgentFailed("planner", "the generated plan is inconsistent: " + "; ".join(problems)[:300])
+            self.emit("agent_thought", agent="planner", text=f"Plan: {len(plan.tasks)} tasks, one per table and per router", model="rules", tokens=0, seconds=0.0)
+            self._adopt_plan(plan.tasks)
+            return
         plan, st = run_planner(agent, self.llm, model.id, self.goal, contract_text, schema_text, bool(self.design.tables),
-                               self.design.endpoints, self.emit)
+                               self.design.endpoints, self.emit, len(self.design.tables))
         self._stat("planner", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
         self._adopt_plan(plan.tasks)
 
@@ -267,12 +299,14 @@ class Orchestrator:
         path = t["files"][0]
         if (wt / path).exists():
             return None
+        ri = resource_for_file(design, path)  # None for a plain single-resource design
         if t["owner"] == "database" and path.endswith(".py"):
-            content = db_stub(design)
+            content = db_stub(design, ri.name if ri else None)
         elif t["owner"] == "backend" and path.startswith("backend/api/"):
             db_files = sorted(f for f in (wt / "database").glob("*.py") if f.stem not in ("__init__", "connection"))
-            db_module = db_files[0].stem if db_files else None
-            content = route_stub(design, endpoints_for_task(design, t, sum(1 for x in self.tasks if x["owner"] == "backend")), db_module)
+            db_module = ri.name if ri else (db_files[0].stem if db_files else None)
+            content = route_stub(design, endpoints_for_task(design, t, sum(1 for x in self.tasks if x["owner"] == "backend")), db_module,
+                                 (ri.parent,) if ri and ri.parent else ())
         else:
             return None
         self._write(agent, path, content, root=wt)
@@ -302,8 +336,16 @@ class Orchestrator:
     def _generated_tests(self, t: dict, design: ArchitectOutput, wt: Path) -> None:
         """Contract tests are written by the system on QA's behalf (not by a model) the moment the area they test is about to be built."""
         files: dict[str, str] = {}
+        if t["owner"] == "database" and design.resources:  # the data access functions of one table are tested by tests written from the resource model
+            ri = resource_for_file(design, t["files"][0]) if t["files"] else None
+            if ri is not None:
+                files[f"tests/db/test_{ri.name}.py"] = db_test_source(design, ri)
         if t["owner"] == "backend":
-            files["tests/api/test_contract_api.py"] = api_test_source(design)
+            ri = resource_for_file(design, t["files"][0]) if t["files"] else None
+            if design.resources and ri:  # one test file per router: a router task sees only its own resource's tests
+                files[f"tests/api/test_contract_{ri.name}.py"] = api_test_source(design, ri.name)
+            else:
+                files["tests/api/test_contract_api.py"] = api_test_source(design)
         elif t["owner"] == "frontend":
             if "static/index.html" in t["files"]:
                 files["tests/ui/test_page.py"] = ui_page_test_source(design)
@@ -326,13 +368,19 @@ class Orchestrator:
             found = sorted(f for f in folder.glob("*.py") if f.stem not in ("__init__", "connection")) if folder.is_dir() else []
         return [f for f in found if f.is_file()]
 
+    def _db_scope(self, t: dict) -> tuple[str | None, set[str] | None]:
+        """For a relational design: the router's own db module (imported as `db`) and the modules it may call (its parent's, imported as `<parent>_db`)."""
+        ri = resource_for_file(self.design, t["files"][0]) if self.design and self.design.resources and t.get("files") else None
+        return (ri.name, {ri.name, ri.parent}) if ri else (None, None)
+
     @staticmethod
-    def _db_api(wt: Path) -> str:
+    def _db_api(wt: Path, own: str | None = None, modules: set[str] | None = None) -> str:
         """The database functions as they exist right now (exact names and parameters), so a backend engineer calls them correctly."""
         lines: list[str] = []
         for f in sorted((wt / "database").glob("*.py")):
-            if f.stem in ("__init__", "connection"):
+            if f.stem in ("__init__", "connection") or (modules is not None and f.stem not in modules):
                 continue
+            alias = "db" if own is None or f.stem == own else f"{f.stem}_db"
             try:
                 tree = ast.parse(f.read_text(encoding="utf-8"))
             except (SyntaxError, OSError):
@@ -341,7 +389,7 @@ class Orchestrator:
                 if isinstance(n, ast.FunctionDef) and not n.name.startswith("_"):
                     ret = f" -> {ast.unparse(n.returns)}" if n.returns else ""
                     doc = (ast.get_docstring(n) or "").splitlines()
-                    lines.append(f"- db.{n.name}({ast.unparse(n.args)}){ret}" + (f"  # {doc[0]}" if doc else ""))
+                    lines.append(f"- {alias}.{n.name}({ast.unparse(n.args)}){ret}" + (f"  # {doc[0]}" if doc else ""))
         return "\n".join(lines)
 
     def _task_text(self, t: dict, previous_failure: str = "", stub: tuple[str, str] | None = None, db_api: str = "") -> str:
@@ -382,15 +430,24 @@ class Orchestrator:
                      f"contract's error yourself.\n{db_api}")
         if stub and t["owner"] == "frontend":
             text += (f"\n\nStarting point: {stub[0]} already exist and are a working page generated from the contract: the form, the list with a button for every "
-                     "item endpoint, labelled selects and badges, the done checkbox and the filter. Do NOT start from scratch. First run_tests. If they pass and the "
+                     "item endpoint, labelled selects and badges, the done checkbox and the filter" + (", vote buttons and a panel that opens an item's child list" if self.design and self.design.resources else "") + ". Do NOT start from scratch. First run_tests. If they pass and the "
                      "acceptance criteria hold, finish. Otherwise change only the lines the failure points to (read the file first, then write the complete corrected file "
                      f"with ONE write_file). Current content:\n```\n{stub[1]}\n```")
         elif stub:
             text += (f"\n\nStarting point: `{stub[0]}` already exists. It was generated from the contract and schema, so its names, paths, "
                      f"models, status codes and SQL are correct. Do NOT rewrite the file. Fill each stub function with the `implement` action "
                      f"(path, function name, and only the lines inside the function), one call per function, replacing its `raise NotImplementedError`. "
-                     f"Then write the tests. Current content:\n```\n{stub[1]}```")
+                     + (self._relational_steps(t, stub[1]) if self.design and self.design.resources else "Then write the tests. Current content:")
+                     + f"\n```\n{stub[1]}```")
         return text
+
+    @staticmethod
+    def _relational_steps(t: dict, stub_text: str) -> str:
+        """The last lines of a database or router task: which functions, how many times, and what to do after the last one (a 7B otherwise re-implements them in a loop)."""
+        names = re.findall(r"^def (\w+)\(", stub_text, re.M)
+        what = "the data access functions" if t["owner"] == "database" else "the route functions"
+        return (f"There are {len(names)} functions to implement, each ONCE: {', '.join(names)}. The tests for {what} are already written; "
+                "after the last function call run_tests, fix only what fails, and when run_tests passes call finish. Current content:")
 
     def _context(self, owner: str) -> str:
         assert self.memory and self.messages
@@ -522,7 +579,8 @@ class Orchestrator:
             return AgentResult("error", "sync_failed", summary=str(e))
         tools = self._toolbox(agent, preset.test_cmd, [preset.run_cmd], root=wt)
         stub = self._scaffold(t, agent, wt)
-        task_text = self._task_text(t, t.get("failure", ""), stub, self._db_api(wt) if t["owner"] == "backend" else "")
+        own, modules = self._db_scope(t)
+        task_text = self._task_text(t, t.get("failure", ""), stub, self._db_api(wt, own, modules) if t["owner"] == "backend" else "")
         if t.get("kind") == "polish":
             for rel in ("static/index.html", "static/app.js"):
                 p = wt / rel
@@ -531,8 +589,10 @@ class Orchestrator:
         elif t.get("kind") == "request":  # the engineer edits what exists instead of finishing because the tests already pass
             for p in self._request_files(t["owner"], wt):
                 task_text += f"\n\nCurrent {p.relative_to(wt).as_posix()}:\n```\n{p.read_text(encoding='utf-8', errors='replace')[:5000]}\n```"
-        res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
-        self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
+        res = self._generated_page_is_enough(t, stub, wt, agent)
+        if res is None:
+            res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
+            self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
         if res.status != "finished":
             return res
         self.repo.commit(wt, f"[{agent.id}] {t['title']}"[:72])
@@ -544,6 +604,20 @@ class Orchestrator:
         elif self.review and t["owner"] in ENGINEERS:
             res = self._review_loop(t, agent, res, wt, model, preset, task_text, context)
         return res
+
+    def _generated_page_is_enough(self, t: dict, stub, wt: Path, agent: AgentConfig) -> AgentResult | None:
+        """A relational page generated from the contract that already passes every UI test needs no engineer: asked to "finish", a 7B rewrites the page
+        and breaks it (two of the first eight related builds). The engineer is called only when a test fails. Single-resource designs are unchanged."""
+        if not (self.design and self.design.resources and t["owner"] == "frontend" and stub and t.get("kind", "feature") == "feature"):
+            return None
+        self.emit("agent_state", agent=agent.id, state="testing")
+        passed, summary, _ = run_suite(wt)
+        if not passed:
+            return None
+        text = f"The page generated from the contract already passes every test ({summary}); nothing to change."
+        self.emit("agent_thought", agent=agent.id, text=text, model="rules", tokens=0, seconds=0.0)
+        self.emit("agent_state", agent=agent.id, state="idle")
+        return AgentResult("finished", summary=text)
 
     # -- review ---------------------------------------------------------------------
     def _review_loop(self, t: dict, agent: AgentConfig, res: AgentResult, wt: Path, model: ModelConfig, preset, task_text: str, context: str) -> AgentResult:

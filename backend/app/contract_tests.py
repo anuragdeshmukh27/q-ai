@@ -76,12 +76,20 @@ def _test_for(e: Endpoint, i: int, ex, design: ArchitectOutput | None = None) ->
     return lines + ["", ""]
 
 
-def api_test_source(design: ArchitectOutput) -> str:
+def api_test_source(design: ArchitectOutput, resource: str | None = None) -> str:
+    """The contract tests. A relational design has one file per resource (`resource` names it), so a router task sees only its own tests."""
+    from .relations import endpoints_for_resource
+    from .relation_tests import relation_tests
+
+    mine = [r for r in design.resources if resource in (None, r.name)]
+    endpoints = [e for r in mine for e in endpoints_for_resource(design, r.name)] if design.resources else design.endpoints
     out = ['"""Contract tests generated from the API contract examples. Do not edit; fix the code instead."""',
            "import pytest", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", ""]
-    for e in design.endpoints:
+    for e in endpoints:
         for i, ex in enumerate(e.examples, 1):
             out += _test_for(e, i, ex, design)
+    for r in mine:
+        out += relation_tests(design, r)
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -115,6 +123,8 @@ def list_view_fields(design: ArchitectOutput) -> list[str]:
     if not lists:
         return []
     names: list[str] = []
+    for r in design.resources:  # a relational page shows what the user entered and the counters, for the parent and for the child
+        names += [f.name for f in r.fields] + r.counters
     for e in design.endpoints:
         if e.method == "POST" and "{" not in e.path:
             names += [f.name for f in e.request_fields]
@@ -141,8 +151,10 @@ def category_fields(design: ArchitectOutput) -> dict[str, list[str]]:
 
 
 def item_endpoints(design: ArchitectOutput) -> list[Endpoint]:
-    """Endpoints that act on ONE listed item (PUT/PATCH/DELETE with an id in the path): every one needs a button in the list."""
-    return [e for e in design.endpoints if e.method in ("PUT", "PATCH", "DELETE") and "{" in e.path]
+    """Endpoints that act on ONE listed item (PUT/PATCH/DELETE with an id in the path, and a vote/toggle action): every one needs a button in the list."""
+    actions = {a.name for r in design.resources for a in r.actions}
+    return [e for e in design.endpoints if (e.method in ("PUT", "PATCH", "DELETE") and "{" in e.path)
+            or (e.method == "POST" and e.path.rsplit("/", 1)[-1] in actions and e.path.count("{") == 1 and "{" in e.path)]
 
 
 _CATEGORY_TEST = r'''
@@ -205,6 +217,13 @@ def ui_script_test_source(design: ArchitectOutput) -> str:
             calls.append(f"    assert 'onToggle' in js, \"{booleans[0]} is a yes/no field: show a checkbox in each row so ticking it saves at once (done: '{booleans[0]}', onToggle: (checked) => save(item.id, {{ ...item, {booleans[0]}: checked }}))\"")
         helpers = (Path(__file__).parent / "ui_script_checks.py").read_text(encoding="utf-8").split("import re\n", 1)[1]
         out += ["", "", helpers.strip("\n"), _ACTIONS_TEST.replace("__CALLS__", "\n".join(calls))]
+    for r in (r for r in design.resources if r.parent):
+        out += ["", "", f"def test_script_loads_the_{r.name}_of_the_open_{r.parent}_from_the_nested_path():",
+                "    js = client.get('/static/app.js').text",
+                f"    assert '/api/{r.parent}/' in js and '/{r.name}' in js, \"the open item's {r.name} come from GET /api/{r.parent}/<id>/{r.name}; adding one POSTs to the same path\""]
+    if any(r.sorts for r in design.resources):
+        out += ["", "", "def test_the_list_can_be_sorted():", "    js = client.get('/static/app.js').text",
+                "    assert 'sort=' in js, \"the page must offer the sort it promises: a select (new / top) sent to the API as ?sort=\""]
     if any(re.search(r"\bfilter", f, re.I) for f in design.ui_features):
         out += ["", "", "def test_the_list_can_be_filtered():",
                 "    js = client.get('/static/app.js').text",
@@ -258,6 +277,8 @@ def edge_test_source(design: ArchitectOutput) -> str:
                     "            assert items[0][k] == (pytest.approx(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)",
                     "", ""]
             for e in item_endpoints(design):
+                if design.resources and not e.path.startswith(post.path + "/"):
+                    continue  # PUT/DELETE of another resource (the comments of a post) are covered by the relation tests
                 params = re.findall(r"\{(\w+)\}", e.path)
                 if len(params) != 1 or not e.path.endswith("}") or "{" in e.path.split("/{")[0]:
                     continue

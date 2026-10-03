@@ -1,5 +1,5 @@
 """The goals the scripts build. CHIPS are the detailed example goals offered in the UI (frontend/src/examples.ts keeps the same list; only goals that built end to end are listed,
-the habit tracker and quiz goals failed their one run and are not offered);
+the habit tracker and quiz goals failed their one run and are not offered; the last four are the related-resource goals of P9a);
 SHORT are the original one-line goals the generality check and the earlier comparisons used."""
 
 CHIPS = [
@@ -21,3 +21,21 @@ SHORT = [
     "Build a contact book",
     "Build an inventory list",
 ]
+
+# Related resources (a parent and its children, votes, sort): the short goals a user would type, used for the P9a proof runs.
+RELATED = [
+    "Build a reddit replica",
+    "Build a blog with comments",
+    "Build a Q&A forum with answers and votes",
+    "Build a project tracker where each project has tasks",
+]
+
+# Detailed versions of the same goals. All four built end to end (P9a), so they are appended to CHIPS below.
+RELATED_DETAILED = [
+    ("reddit replica", "Build a reddit-style forum: posts with title, content and author, comments on each post, upvote and downvote posts, sort by top or newest, edit and delete"),
+    ("blog with comments", "Build a blog: posts with title, content and author, readers add comments to a post, edit and delete posts and comments"),
+    ("Q&A forum", "Build a Q&A forum: questions with title, details and author, answers to each question, upvote questions and answers, sort by top or newest"),
+    ("project tasks", "Build a project tracker: projects with name and description, tasks for each project with title and status To do/In progress/Done, edit and delete"),
+]
+
+CHIPS += RELATED_DETAILED
