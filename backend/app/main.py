@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from .approvals import UnknownApproval
 from .config import load_env
 from .leaderboard import Leaderboard
+from .metrics import read_metrics
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
 from .recording import RecordingError, list_recordings
@@ -106,6 +107,10 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     def models():
         reg = mgr.registry
         return [{**m.model_dump(), "available": reg.is_available(m.id), "local": m.local} for m in reg.models.values()]
+
+    @app.get("/api/metrics")
+    def metrics():
+        return read_metrics()
 
     @app.get("/api/leaderboard")
     def leaderboard():

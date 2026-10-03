@@ -284,3 +284,10 @@ def test_approvals_are_decided_over_http_and_autonomous_mode_releases_pending_on
         assert not c.get(f"/api/projects/{pid}").json()["pending_approvals"]
     finally:
         mgr.shutdown()
+
+
+def test_metrics_endpoint_has_ram_and_never_fails(tmp_path):
+    c, _, _ = make_client(tmp_path)
+    m = c.get("/api/metrics").json()
+    assert m["ram"]["total_gb"] > 0 and 0 <= m["ram"]["used_gb"] <= m["ram"]["total_gb"]
+    assert m["gpu"] is None or m["gpu"]["total_gb"] > 0
