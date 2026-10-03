@@ -303,7 +303,8 @@ def test_implement_action_fills_one_function_and_reports_syntax_errors(root):
     text = (root / "backend" / "m.py").read_text()
     assert "return a + b" in text and "def sub(a, b):\n    raise NotImplementedError" in text
     bad = tb.execute(act("implement", path="backend/m.py", function="sub", content="return (a -"))
-    assert not bad.ok and bad.data.get("wrote") and "not valid Python" in bad.output
+    assert not bad.ok and "invalid Python" in bad.output and not bad.data.get("wrote")
+    assert (root / "backend" / "m.py").read_text() == text  # the broken body was refused, the file is untouched
     assert not tb.execute(act("implement", path="backend/missing.py", function="f", content="pass")).ok
     assert not tb.execute(act("implement", path="README.md", function="f", content="pass")).ok  # outside owned paths
 
@@ -331,3 +332,23 @@ def test_eval_and_exec_are_refused_in_python_files(root):
         r = tb.execute(act("write_file", path="backend/e.py", content=code))
         assert not r.ok and "injection" in r.output and not (root / "backend" / "e.py").exists()
     assert tb.execute(act("write_file", path="backend/ok.py", content="def evaluate(x):\n    return x.eval_count\n")).ok
+
+
+def test_ask_human_in_autonomous_mode_returns_guidance_instead_of_ending_the_task(root):
+    tb, _ = box(root, mode="autonomous")
+    r = tb.execute(act("ask_human", question="please edit database/x.py"))
+    assert not r.ok and not r.needs_human and "Autonomous mode" in r.output and "send_message" in r.output
+    tb2, _ = box(root, mode="autonomous", human=lambda q: "yes")
+    assert tb2.execute(act("ask_human", question="ok?")).ok  # a connected human still answers
+
+
+def test_implement_refuses_a_route_or_typed_function_body_that_never_returns(root):
+    tb, _ = box(root)
+    stub = ('from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.post("/api/x")\ndef handle_post_x():\n    raise NotImplementedError\n\n\n'
+            'def helper(a) -> dict:\n    raise NotImplementedError\n\n\ndef side_effect(a):\n    raise NotImplementedError\n')
+    assert tb.execute(act("write_file", path="backend/api/x.py", content=stub)).ok
+    for fn in ("handle_post_x", "helper"):
+        r = tb.execute(act("implement", path="backend/api/x.py", function=fn, content="row = {'a': 1}"))
+        assert not r.ok and "must return" in r.output, fn
+    assert tb.execute(act("implement", path="backend/api/x.py", function="handle_post_x", content="return {'ok': True}")).ok
+    assert tb.execute(act("implement", path="backend/api/x.py", function="side_effect", content="print(a)")).ok  # untyped, undecorated: free to return nothing

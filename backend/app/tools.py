@@ -5,6 +5,7 @@ autonomy mode, and is logged (agent, args, result, duration, approval decision).
 """
 from __future__ import annotations
 
+import ast
 import difflib
 import hashlib
 import os
@@ -41,6 +42,13 @@ class ToolResult:
     data: dict = field(default_factory=dict)
     finished: bool = False
     needs_human: bool = False
+
+
+def _must_return(fn: ast.FunctionDef) -> bool:
+    """Route handlers (decorated with router.*) and functions annotated with a return type other than None have to return a value."""
+    routed = any(isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and isinstance(d.func.value, ast.Name) and d.func.value.id == "router" for d in fn.decorator_list)
+    typed = fn.returns is not None and ast.unparse(fn.returns) != "None"
+    return routed or typed
 
 
 def _fail(msg: str, **data) -> ToolResult:
@@ -184,6 +192,15 @@ class ToolBox:
         new_source, problem = replace_function_body(p.read_text(encoding="utf-8", errors="replace"), a.function or "", a.content or "")
         if problem:
             return _fail(problem)
+        try:
+            tree = ast.parse(new_source)
+        except SyntaxError as e:  # never leave a half-broken file behind: later `implement` calls could not even parse it
+            return _fail(f"not applied: your body makes the file invalid Python (line {e.lineno}: {e.msg}). Send only valid Python lines for the inside of "
+                         f"{a.function}; SQL goes in a string passed to conn.execute(...).")
+        fn = next((n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == a.function), None)
+        if fn is not None and _must_return(fn) and not any(isinstance(n, ast.Return) and n.value is not None for n in ast.walk(fn)):
+            return _fail(f"not applied: {a.function} must return its result (a route returns the response, a database function returns the row, list or flag) "
+                         "but your body has no `return <value>`. Add it.")
         return self._store(p, new_source, f"implemented {a.function} in")
 
     def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:
@@ -302,6 +319,10 @@ class ToolBox:
     def _ask_human(self, a: Action) -> ToolResult:
         q = a.question or ""
         answer = self.human(q) if self.human else None
+        if answer is None and self.mode == "autonomous":
+            # Autonomous mode means nobody is watching: pausing the task would only end it. Keep working within the area you own.
+            return _fail("No human is available in Autonomous mode, so decide yourself. You cannot edit files outside your own area: if you need a change "
+                         "there, use send_message to its owner, or adapt your own code to what already exists (read the other file to see its exact names).")
         if answer is None:
             return ToolResult(False, "waiting for a human answer", {"question": q}, needs_human=True)
         return ToolResult(True, f"human answered: {answer}", {"question": q})

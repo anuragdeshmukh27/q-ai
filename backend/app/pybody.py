@@ -41,6 +41,9 @@ def replace_function_body(source: str, name: str, body: str) -> tuple[str, str]:
     matches = [n for n in funcs if n.name == name]
     if not matches:
         names = sorted({n.name for n in funcs})
+        asked = [w for w in re.split(r"[\s,;]+", name.strip()) if w]
+        if len(asked) > 1 and all(w in names for w in asked):
+            return "", f"implement takes ONE function name per call; you sent {len(asked)} ({', '.join(asked)}). Call implement once for each of them."
         return "", f"no function named {name!r} in the file. Functions there: {', '.join(names) or 'none'}"
     if not body.strip():
         return "", "the body is empty"

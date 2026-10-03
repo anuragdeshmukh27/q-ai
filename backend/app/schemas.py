@@ -6,6 +6,7 @@ Every LLM output is validated twice: by the schema (shape) and by `check_*` (mea
 from __future__ import annotations
 
 import re
+import sqlite3
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -111,10 +112,12 @@ def check_examples(e: Endpoint) -> list[str]:
             if p not in x.request:
                 out.append(f"{where}: example '{x.description}' must give the path parameter {p}")
         if x.status < 400:
-            echoed = {v for v in x.request.values()}
-            computed = {k: v for k, v in x.response.items() if isinstance(v, (int, float)) and not isinstance(v, bool) and v not in echoed}
+            echoed = list(x.request.values())  # values may be lists (tags), so no set
+            # Server-generated identifiers (id, user_id, ...) are not "computed from the input"; an empty request has nothing to compute from at all.
+            computed = {k: v for k, v in x.response.items() if isinstance(v, (int, float)) and not isinstance(v, bool) and v not in echoed
+                        and k != "id" and not k.endswith("_id")}
             has_numeric_input = any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in x.request.values())
-            if computed and not has_numeric_input:
+            if computed and x.request and not has_numeric_input:
                 out.append(f"{where}: example '{x.description}' expects the computed value(s) {computed} but its request contains no numbers to compute them from. "
                            "Add the missing input fields (for example numbers a and b) to `request_fields` and to the example request")
             bad = set(x.response) - resp_names
@@ -134,6 +137,15 @@ def check_architecture(a: ArchitectOutput, presets: list[str]) -> list[str]:
         problems.append(f"preset must be one of {presets}")
     if not a.endpoints:
         problems.append("define at least one endpoint")
+    if a.tables:
+        # The schema is run for real: invalid SQL (an inline FOREIGN KEY, a made-up type) would otherwise only surface as a database engineer stuck in a loop.
+        from .scaffold import schema_sql
+
+        try:
+            sqlite3.connect(":memory:").executescript(schema_sql(a))
+        except sqlite3.Error as e:
+            problems.append(f"the tables are not valid SQLite ({e}). Use plain columns only: INTEGER, TEXT, REAL, TIMESTAMP; no FOREIGN KEY or REFERENCES. "
+                            "Keep ONE table per resource and store lists (tags) as a TEXT column of JSON text")
     seen: set[tuple[str, str]] = set()
     for e in a.endpoints:
         if not e.path.startswith("/api/"):
@@ -152,8 +164,17 @@ def check_architecture(a: ArchitectOutput, presets: list[str]) -> list[str]:
             if not 400 <= err.status < 500:
                 problems.append(f"{e.method} {e.path}: error status {err.status} must be 4xx")
         problems += check_examples(e)
+        if a.db_functions and a.tables and e.method in ("POST", "PUT", "PATCH"):
+            # What a client sends and stores must flow through the database layer, or the backend ends up calling functions that do not exist.
+            sigs = " ".join(f.signature for f in a.db_functions)
+            cols = {c.name for t in a.tables for c in t.columns}
+            for f in e.request_fields:
+                if not re.search(r"\b" + re.escape(f.name) + r"\b", sigs):
+                    problems.append(f"{e.method} {e.path}: request field '{f.name}' is not a parameter of any db_function. Add it to the signature of the function that stores it")
+                if f.name not in cols:
+                    problems.append(f"{e.method} {e.path}: request field '{f.name}' is not a column of any table. Add the column (a list is stored as TEXT)")
         for f in e.request_fields:
-            if f.type == "string" and re.search(r"expression|formula|equation|\bcode\b|\bscript\b|\bquery\b", f"{f.name} {f.description}", re.I):
+            if f.type == "string" and re.search(r"expression|formula|equation|\bcode\b|\bscript\b|\bsql\b", f"{f.name} {f.description}", re.I):
                 problems.append(f"{e.method} {e.path}: request field '{f.name}' is free text that the server would have to parse or evaluate. "
                                 "That is unsafe and hard to implement. Use explicit typed fields instead (for a calculation: numbers `a`, `b` and a string `operation` "
                                 "whose allowed values are listed in its description)")
@@ -226,6 +247,8 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint]) -> l
         return ["the plan has no tasks"]
     if len(set(ids)) != len(ids):
         problems.append("task ids must be unique")
+    if sum(1 for t in p.tasks if t.owner == "database") > 1:
+        problems.append("use exactly ONE database task with ONE file database/<name>.py for ALL tables and functions: the starting module already contains every table and function")
     for t in p.tasks:
         if not re.match(r"^t\d+$", t.id):
             problems.append(f"task id {t.id!r} must look like t1, t2, ...")
@@ -234,7 +257,7 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint]) -> l
         for f in t.files:
             if not f.startswith(OWNER_PREFIXES[t.owner]):
                 problems.append(f"{t.id}: file {f!r} is not in {t.owner}'s area {OWNER_PREFIXES[t.owner]}")
-            if f.startswith(("backend/main.py", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__")):
+            if f.startswith(("backend/main.py", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__", "static/ui-kit")):
                 problems.append(f"{t.id}: {f} is a locked preset file and cannot be a task target")
         if not t.acceptance:
             problems.append(f"{t.id}: add acceptance criteria")

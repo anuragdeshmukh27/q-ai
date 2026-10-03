@@ -4,10 +4,11 @@ Every module in backend/api/ that defines a `router` is included automatically.
 """
 import importlib
 import pkgutil
+import re
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import api
@@ -28,9 +29,17 @@ for _mod in pkgutil.iter_modules(api.__path__):
         app.include_router(_router)
 
 
+_KIT = '<link rel="stylesheet" href="/static/ui-kit.css"><script src="/static/ui-kit.js"></script>'
+
+
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+def index() -> HTMLResponse:
+    """The page, always carrying the UI kit: it is added to <head> when the page does not already link it."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    if "ui-kit.css" not in html:
+        html, n = re.subn(r"<head[^>]*>", lambda m: m.group(0) + _KIT, html, count=1, flags=re.IGNORECASE)
+        html = html if n else _KIT + html
+    return HTMLResponse(html)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

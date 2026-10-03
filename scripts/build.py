@@ -54,6 +54,8 @@ def printer(e: dict) -> None:
         print(f"!! QA filed bug {e['bug']:03d} for {e['owner']}: {e['title']} ({e['test']})")
     elif t == "bug_fixed":
         print(f"   bug {e['bug']:03d} fixed ({e['owner']})")
+    elif t == "polish_result":
+        print(("== polish applied" if e.get("changed", True) else "== polish: nothing to change (the page already uses the UI kit)") if e["ok"] else f"== polish skipped (main unchanged): {e['reason']}")
     elif t == "app_running":
         print(f"== app running at {e['url']}")
     elif t == "agent_state" and e["state"] in ("thinking",) and e["agent"] in ("architect", "planner"):
@@ -71,6 +73,7 @@ def main() -> int:
     ap.add_argument("--consultant", action="store_true", help="after two local escalations, retry the task once on a cloud model (needs GEMINI_API_KEY); logged as a senior-consultant event")
     ap.add_argument("--parallel", type=int, default=2, help="how many engineers may work at the same time (default 2)")
     ap.add_argument("--inject-fault", action="store_true", help="after the build, deliberately break the app so QA must find the bug and the owner must fix it")
+    ap.add_argument("--no-polish", action="store_true", help="skip the final UI polish task")
     ap.add_argument("--serve", action="store_true", help="keep the built app running until Ctrl-C")
     args = ap.parse_args()
 
@@ -81,7 +84,7 @@ def main() -> int:
     started = time.time()
     orch = Orchestrator(args.goal, registry, LLMClient(registry), bus, mode=args.mode, approver=cli_approver,
                         preset=args.preset, local_only=not args.allow_cloud, consultant=args.consultant,
-                        max_parallel=args.parallel, inject_fault=args.inject_fault)
+                        max_parallel=args.parallel, inject_fault=args.inject_fault, polish=not args.no_polish)
     res = orch.run()
 
     print(f"\n== {'BUILD OK' if res.ok else 'BUILD FAILED'} in {time.time() - started:.0f}s | tests: {res.test_summary}")

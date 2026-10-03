@@ -68,6 +68,13 @@ class Repo:
         run_git(cwd, "commit", "-m", message)
         return True
 
+    def discard_unmerged(self, agent_id: str) -> None:
+        """Throw away everything on the agent's branch and in its worktree that is not in main (an abandoned optional task)."""
+        wt = self.worktree(agent_id)
+        with self.lock:
+            run_git(wt, "reset", "--hard", "main")
+            run_git(wt, "clean", "-fd")
+
     # -- inspection -----------------------------------------------------------------
     def diff_vs_main(self, agent_id: str) -> str:
         """What the agent's branch adds on top of main (three-dot diff)."""

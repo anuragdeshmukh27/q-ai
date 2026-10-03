@@ -17,6 +17,7 @@ Your task starts from a STUB file generated from the contract: request/response 
 4. `finish` with a one-line summary naming the endpoints.
 
 ## FastAPI conventions (follow these, they avoid most failures)
+- For GET and DELETE the request fields are query parameters: they are plain arguments of the route function (for example `def handle_get_notes_search(query: str):`), so use `query` directly; there is no `req`.
 - The request model in the stub already makes FastAPI answer 422 for missing or mistyped fields. Never check yourself whether a field exists or has the right type (no `if 'a' not in req`, no `isinstance`): `req.a` always exists and has the right type.
 - Use `HTTPException(status_code=400, detail="...")` only for the contract's business-rule errors, with the exact detail text.
 - Routes are plain `def`, never `async def`; never `await` a database call.

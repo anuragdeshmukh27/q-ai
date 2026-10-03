@@ -9,7 +9,7 @@ You write the data access layer: small Python functions over SQLite that the bac
 ## Rules
 - Put the table SQL in a module constant `SCHEMA = "CREATE TABLE IF NOT EXISTS ..."` with exactly the schema's columns, and give it to every `connect(SCHEMA)`.
 - Every function is a short `with connect(SCHEMA) as conn:` block. Do not call `commit` or `close` yourself.
-- Use `?` placeholders for every value. Never build SQL with f-strings or `+` for values.
+- Use `?` placeholders for every value. Never build SQL with f-strings or `+` for values. Values that are lists (tags, options) go in a TEXT column as `json.dumps(...)` and come back with `json.loads(...)` (`json` is already imported in the stub). When the stub defines `_row`, return `_row(row)` / `[_row(r) for r in rows]` instead of `dict(...)`: it turns those JSON columns back into lists.
 - After an INSERT, return the stored row by reading it back (`SELECT ... WHERE id = ?`), so values filled by the database (defaults) are correct. Never invent or guess a column value.
 - Functions return plain Python values: rows become `dict(row)`, lists of rows become `list[dict]`.
 - No business logic, no FastAPI, no printing. One module, under 60 lines. Write the whole file in ONE `write_file`, then check every opening bracket is closed.

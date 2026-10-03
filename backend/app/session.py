@@ -44,6 +44,7 @@ class Settings:
     q_mode: str = "live"  # live | record | replay
     approval_timeout: float = 600.0
     max_gap: float = 3.0  # replay never waits longer than this (at 1x) between two events
+    polish: bool = True  # live builds end with the Frontend UI polish task (Q_POLISH=0 turns it off)
 
     @classmethod
     def from_env(cls, env=None) -> "Settings":
@@ -55,6 +56,7 @@ class Settings:
             s.workspace = Path(env["Q_WORKSPACE_DIR"])
         if env.get("Q_DB"):
             s.leaderboard_db = Path(env["Q_DB"])
+        s.polish = env.get("Q_POLISH", "1").strip().lower() not in ("0", "false", "no", "off")
         mode = env.get("Q_MODE", "live").strip().lower()
         s.q_mode = mode if mode in ("live", "record", "replay") else "live"
         return s
@@ -175,7 +177,7 @@ class Session:
         llm = mgr.make_llm(self.recorder.on_llm if self.recorder else None)
         self.orch = Orchestrator(req.goal, mgr.registry, llm, self.bus, mode=self.mode, approver=self.approvals, preset=req.preset,
                                  base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports,
-                                 max_parallel=req.parallel, inject_fault=req.inject_fault)
+                                 max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish)
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
         self._thread.start()
 

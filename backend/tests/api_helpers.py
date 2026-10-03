@@ -33,7 +33,7 @@ class ObservedFake(FakeLLM):
 
 
 def make_settings(tmp_path) -> Settings:
-    return Settings(workspace=tmp_path / "ws", recordings=tmp_path / "rec", leaderboard_db=tmp_path / "q.db", approval_timeout=5.0, max_gap=0.0)
+    return Settings(workspace=tmp_path / "ws", recordings=tmp_path / "rec", leaderboard_db=tmp_path / "q.db", approval_timeout=5.0, max_gap=0.0, polish=False)
 
 
 def make_manager(tmp_path, gate=None, llm_holder: list | None = None):

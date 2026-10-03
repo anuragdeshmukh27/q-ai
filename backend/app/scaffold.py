@@ -9,7 +9,7 @@ import re
 
 from .schemas import ArchitectOutput, Endpoint, FieldSpec
 
-PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool", "array": "list[dict]", "object": "dict"}
+PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool", "array": "list", "object": "dict"}  # arrays carry no item type in the contract: tags are strings as often as objects
 
 
 def _words(path: str) -> list[str]:
@@ -33,20 +33,34 @@ def schema_sql(design: ArchitectOutput) -> str:
     return " ".join(stmts)
 
 
+def json_columns(design: ArchitectOutput) -> list[str]:
+    """Table columns that hold lists: the contract says the field is an array, but SQLite only stores text, so they are kept as JSON text."""
+    arrays = {f.name for e in design.endpoints for f in [*e.request_fields, *e.response_fields] if f.type == "array"}
+    return [c.name for t in design.tables for c in t.columns if c.name in arrays]
+
+
 def db_stub(design: ArchitectOutput) -> str:
+    cols = json_columns(design)
     out = [
         '"""Data access functions (stubs generated from the database schema). Fill in the bodies."""',
+        "import json",
+        "",
         "from database.connection import connect",
         "",
         f'SCHEMA = "{schema_sql(design)}"',
         "",
     ]
+    if cols:
+        out += [f"JSON_COLUMNS = {tuple(cols)!r}  # list-valued columns: store them with json.dumps(...)", "", "",
+                "def _row(r) -> dict:", '    """A row as a dict; list-valued columns (stored as JSON text) are turned back into lists."""',
+                "    d = dict(r)", "    for c in JSON_COLUMNS:", "        if isinstance(d.get(c), str):", "            d[c] = json.loads(d[c])", "    return d", ""]
+    shape = "_row(row) / [_row(r) for r in rows]" if cols else "dict(row) / [dict(r) for r in rows]"
     for f in design.db_functions:
         out += [
             "",
             f"def {f.signature.strip()}:",
             f'    """{f.description}"""',
-            "    # with connect(SCHEMA) as conn:  ... use ? placeholders, return dict(row) / [dict(r) for r in rows]",
+            f"    # with connect(SCHEMA) as conn:  ... use ? placeholders, return {shape}",
             "    raise NotImplementedError",
             "",
         ]
@@ -55,7 +69,9 @@ def db_stub(design: ArchitectOutput) -> str:
 
 def _route(e: Endpoint, response_model: str | None, request_model: str | None, func: str) -> str:
     params = re.findall(r"\{(\w+)\}", e.path)
-    args = [f"{p}: int" for p in params] + ([f"req: {request_model}"] if request_model else [])
+    # GET/DELETE have no body: their request fields are query parameters, i.e. plain function arguments (scalar types only).
+    query = [f"{f.name}: {PY_TYPES[f.type]}" for f in e.request_fields if e.method in ("GET", "DELETE") and f.name not in params and f.type in ("string", "number", "integer", "boolean")]
+    args = [f"{p}: int" for p in params] + query + ([f"req: {request_model}"] if request_model else [])
     deco_extra = (f", status_code={e.response_status}" if e.response_status != 200 else "") + (f", response_model={response_model}" if response_model else "")
     notes = [f"# {e.summary}"] + [f'# error: raise HTTPException(status_code={x.status}, detail="{x.detail}")' for x in e.errors]
     body = "\n".join("    " + n for n in notes)
@@ -64,7 +80,7 @@ def _route(e: Endpoint, response_model: str | None, request_model: str | None, f
 
 def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None) -> str:
     out = ['"""Route stubs generated from the API contract. Fill in the bodies; keep paths, models and status codes."""',
-           "import operator", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
+           "import json", "import operator", "import re", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
     if db_module:
         out.append(f"from database import {db_module} as db")
     out += ["", "router = APIRouter()", ""]

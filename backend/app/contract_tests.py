@@ -18,7 +18,19 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:40] or "case"
 
 
-def _test_for(e: Endpoint, i: int, ex) -> list[str]:
+def _server_filled(key: str) -> bool:
+    """Response fields whose value the server decides (timestamps): a test can check they exist but not what they say."""
+    return key.endswith(("_at", "_on", "_time", "_date")) or key in ("timestamp", "created", "updated", "date", "time", "datetime")
+
+
+def _seed_for(design: ArchitectOutput, e: Endpoint) -> Endpoint | None:
+    """The POST that creates the thing a `/{id}` endpoint works on (same collection path, or any valid POST as a fallback)."""
+    posts = [p for p in design.endpoints if p.method == "POST" and "{" not in p.path and _payload(p) is not None]
+    base = e.path.split("/{")[0]
+    return next((p for p in posts if p.path == base), posts[0] if posts else None)
+
+
+def _test_for(e: Endpoint, i: int, ex, design: ArchitectOutput | None = None) -> list[str]:
     params = re.findall(r"\{(\w+)\}", e.path)
     path = e.path
     for p in params:
@@ -27,16 +39,35 @@ def _test_for(e: Endpoint, i: int, ex) -> list[str]:
     verb = e.method.lower()
     name = f"test_{verb}_{_slug(e.path)}_{i}_{_slug(ex.description)}"
     call = f"client.{verb}({path!r}"
+    lists = ex.status < 300 and any(isinstance(v, list) and v for v in ex.response.values())  # a populated list in the example
+    seed = _seed_for(design, e) if design is not None and (params or lists) and ex.status < 300 and e.method != "POST" else None
+    if seed is not None and params:
+        # A success case on `/{id}` needs a row to exist: create one through the contract's own POST and use the id it returns.
+        key = next((f.name for f in seed.response_fields if f.name in params), "id")
+        path_expr = e.path
+        for p in params:
+            path_expr = path_expr.replace("{" + p + "}", "{seed[" + repr(key) + "]}")
+        call = f"client.{verb}(f{path_expr!r}"
     if rest:
         call += f", {'params' if e.method in ('GET', 'DELETE') else 'json'}={rest!r}"
     call += ")"
-    lines = [f"def {name}():", f"    r = {call}", f"    assert r.status_code == {ex.status}, r.text"]
+    lines = [f"def {name}():"]
+    if seed is not None:
+        lines += [f"    seed = client.post({seed.path!r}, json={_payload(seed)!r})",
+                  "    assert seed.status_code < 300, seed.text", "    seed = seed.json()"]
+    lines += [f"    r = {call}", f"    assert r.status_code == {ex.status}, r.text"]
     if ex.status < 300:
         lines.append("    data = r.json()")
         lines += [f"    assert {f.name!r} in data" for f in e.response_fields]
         for k, v in ex.response.items():
-            lines.append(f"    assert data[{k!r}] == pytest.approx({v!r})" if isinstance(v, (int, float)) and not isinstance(v, bool)
-                         else f"    assert data[{k!r}] == {v!r}")
+            if _server_filled(k):
+                continue  # the database fills it in (a timestamp): the example's value is invented, and "k in data" above already checks it exists
+            if isinstance(v, list) and v:
+                # The example's rows were invented by the Architect; what the app stores comes from the seeding POST, so check the shape, not the rows.
+                lines.append(f"    assert isinstance(data[{k!r}], list)" + (f" and len(data[{k!r}]) >= 1" if seed is not None else ""))
+            else:
+                lines.append(f"    assert data[{k!r}] == pytest.approx({v!r})" if isinstance(v, (int, float)) and not isinstance(v, bool)
+                             else f"    assert data[{k!r}] == {v!r}")
     else:
         for k, v in ex.response.items():
             lines.append(f"    assert r.json()[{k!r}] == {v!r}")
@@ -48,7 +79,7 @@ def api_test_source(design: ArchitectOutput) -> str:
            "import pytest", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", ""]
     for e in design.endpoints:
         for i, ex in enumerate(e.examples, 1):
-            out += _test_for(e, i, ex)
+            out += _test_for(e, i, ex, design)
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -59,9 +90,11 @@ def ui_page_test_source(design: ArchitectOutput) -> str:
         "def test_page_is_served_and_loads_its_assets():",
         "    r = client.get('/')",
         "    assert r.status_code == 200 and '/static/app.js' in r.text and '/static/style.css' in r.text",
+        "    assert '/static/ui-kit.css' in r.text  # the UI kit is always linked",
         "", "",
         "def test_assets_are_served():",
         "    assert client.get('/static/style.css').status_code == 200",
+        "    assert client.get('/static/ui-kit.css').status_code == 200",
         "    assert client.get('/static/app.js').status_code == 200",
     ]) + "\n"
 

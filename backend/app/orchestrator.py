@@ -5,6 +5,7 @@ all task bookkeeping (status, re-plans, merges into main) happens on the orchest
 """
 from __future__ import annotations
 
+import ast
 import json
 import shutil
 import subprocess
@@ -40,12 +41,14 @@ from .tools import ToolBox
 ENGINEERS = ("database", "backend", "frontend")
 # The Database engineer tests its own functions; QA owns every other test (generated contract tests and tests/test_qa_*.py).
 TEST_GLOBS = {"database": "tests/test_db*.py"}  # backend and frontend are tested by generated contract tests
-LOCKED = ["backend/main.py", "backend/__init__.py", "backend/api/__init__.py", "database/__init__.py", "database/connection.py"]
+LOCKED = ["backend/main.py", "backend/__init__.py", "backend/api/__init__.py", "database/__init__.py", "database/connection.py",
+          "static/ui-kit.css", "static/ui-kit.js"]
 ENGINEER_ITERATIONS = 12
 MAX_REPLANS = 1
 MAX_REVIEW_ROUNDS = 3  # the first review plus two revisions
 MAX_QA_ROUNDS = 3
 MAX_BUGS_PER_ROUND = 4
+POLISH_FILES = ["static/index.html", "static/app.js", "static/style.css"]
 
 
 @dataclass
@@ -82,6 +85,7 @@ class Orchestrator:
         review: bool = True,
         qa: bool = True,
         inject_fault: bool = False,
+        polish: bool = False,
     ):
         self.goal, self.registry, self.llm = goal, registry, llm
         self.bus = bus or EventBus()
@@ -89,6 +93,7 @@ class Orchestrator:
         self.overrides, self.local_only = overrides if overrides is not None else {}, local_only  # the UI keeps a handle on this dict
         self.ports, self.start_app, self.consultant = ports, start_app, consultant
         self.max_parallel, self.review, self.qa, self.fault_injection = max(1, max_parallel), review, qa, inject_fault
+        self.polish = polish
         self.repo: Repo | None = None
         self.integrator: Integrator | None = None
         self.fault = None
@@ -152,7 +157,7 @@ class Orchestrator:
 
     def _progress(self) -> None:
         total = len(self.tasks)
-        done = sum(1 for t in self.tasks if t["status"] == "done")
+        done = sum(1 for t in self.tasks if t["status"] in ("done", "skipped"))  # a skipped optional task (polish) is finished work
         self.emit("project_progress", done=done, total=total, percent=round(100 * done / total) if total else 0,
                   tasks={t["id"]: t["status"] for t in self.tasks})
 
@@ -168,6 +173,7 @@ class Orchestrator:
             self._plan()
             self._execute_tasks()
             self._qa_phase()
+            self._polish()
             self._verify()
         except AgentFailed as e:
             self.problems.append(str(e))
@@ -257,7 +263,25 @@ class Orchestrator:
                 target.write_text(source, encoding="utf-8", newline="\n")
                 self.emit("file_changed", agent="qa", path=name, diff=source, created=True)
 
-    def _task_text(self, t: dict, previous_failure: str = "", stub: tuple[str, str] | None = None) -> str:
+    @staticmethod
+    def _db_api(wt: Path) -> str:
+        """The database functions as they exist right now (exact names and parameters), so a backend engineer calls them correctly."""
+        lines: list[str] = []
+        for f in sorted((wt / "database").glob("*.py")):
+            if f.stem in ("__init__", "connection"):
+                continue
+            try:
+                tree = ast.parse(f.read_text(encoding="utf-8"))
+            except (SyntaxError, OSError):
+                continue
+            for n in tree.body:
+                if isinstance(n, ast.FunctionDef) and not n.name.startswith("_"):
+                    ret = f" -> {ast.unparse(n.returns)}" if n.returns else ""
+                    doc = (ast.get_docstring(n) or "").splitlines()
+                    lines.append(f"- db.{n.name}({ast.unparse(n.args)}){ret}" + (f"  # {doc[0]}" if doc else ""))
+        return "\n".join(lines)
+
+    def _task_text(self, t: dict, previous_failure: str = "", stub: tuple[str, str] | None = None, db_api: str = "") -> str:
         crit = "\n".join(f"- {c}" for c in t["acceptance"])
         if t.get("kind") == "request":
             text = (f"Task {t['id']}: {t['title']}\nA human on the team asked you directly: {t['request']}\n"
@@ -266,11 +290,27 @@ class Orchestrator:
             text = (f"Task {t['id']}: {t['title']}\nQA found bugs in your area. Read each report, open the failing test and the code it exercises, "
                     f"and make the smallest change that fixes the code (the tests are right). Do not rewrite files. If you use `implement`, it replaces the "
                     f"WHOLE function body: send the complete body with only the faulty line changed.\nAcceptance criteria:\n{crit}\n\n{t['bug']}")
+        elif t.get("kind") == "polish":
+            text = (f"Task {t['id']}: {t['title']}\nThe app already works and every test passes. Make it look finished WITHOUT changing behaviour. "
+                    "Their current content is below, so do not read them again. Most of the work is in static/app.js: write the complete new app.js with ONE write_file, "
+                    "then run_tests, then finish. static/index.html usually already uses the kit: rewrite it only if something from the list is missing (an identical rewrite is refused).\n"
+                    "1. Use the UI kit classes from your prompt: each section in a `card`, inputs in `field` / `form-row`, results as `list` / `list-item` or `table`, "
+                    "`badge` for status, priority or category, `alert alert-error` for the error box.\n"
+                    "2. If the page shows an operation word (add, subtract, multiply, divide), display its symbol with `UI.symbol(word)`; keep the values sent to the API unchanged.\n"
+                    "3. Format every number shown on the page with `UI.num(n)` (money amounts with `UI.money(n)`).\n"
+                    "4. Show `UI.loading(box)` while data is being fetched and `UI.empty(box, text)` when a list is empty.\n"
+                    "5. Call `UI.toast(text, 'success')` after a successful action.\n"
+                    "Hard rules: keep every element id, every fetch URL and every request/response key exactly as they are; keep using textContent (never innerHTML); "
+                    f"run_tests must still pass.\nAcceptance criteria:\n{crit}")
         else:
             text = f"Task {t['id']}: {t['title']}\nFiles to create: {', '.join(t['files'])}\nAcceptance criteria:\n{crit}"
         if previous_failure:
             text += (f"\n\nA previous attempt at this area failed ({previous_failure}). Some files may already exist and be partly "
                      "correct: read them first and make the smallest fix instead of starting over.")
+        if db_api:
+            text += ("\n\nThe database functions you can call (EXACT names and parameters; call them as shown, with keyword arguments). Do not invent other "
+                     "functions, parameters or exceptions: you cannot change the database module. A function that finds no row returns False or None, so raise the "
+                     f"contract's error yourself.\n{db_api}")
         if stub:
             text += (f"\n\nStarting point: `{stub[0]}` already exists. It was generated from the contract and schema, so its names, paths, "
                      f"models, status codes and SQL are correct. Do NOT rewrite the file. Fill each stub function with the `implement` action "
@@ -408,13 +448,23 @@ class Orchestrator:
             return AgentResult("error", "sync_failed", summary=str(e))
         tools = self._toolbox(agent, preset.test_cmd, [preset.run_cmd], root=wt)
         stub = self._scaffold(t, agent, wt)
-        task_text = self._task_text(t, t.get("failure", ""), stub)
+        task_text = self._task_text(t, t.get("failure", ""), stub, self._db_api(wt) if t["owner"] == "backend" else "")
+        if t.get("kind") == "polish":
+            for rel in ("static/index.html", "static/app.js"):
+                p = wt / rel
+                if p.is_file():
+                    task_text += f"\n\nCurrent {rel}:\n```\n{p.read_text(encoding='utf-8')[:5000]}\n```"
         res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
         self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
         if res.status != "finished":
             return res
         self.repo.commit(wt, f"[{agent.id}] {t['title']}"[:72])
-        if self.review and t["owner"] in ENGINEERS:
+        if t.get("kind") == "polish":
+            # The Reviewer's static checks still apply (innerHTML, eval, ...); the LLM review is skipped: it judges polish against generic criteria.
+            found = static_findings({rel: (wt / rel).read_text(encoding="utf-8", errors="replace") for rel in self.repo.changed_files(agent.id) if (wt / rel).is_file()})
+            if found:
+                return AgentResult("escalated", "review_unresolved", summary="; ".join(f"{i.file}: {i.problem}" for i in found)[:300], iterations=res.iterations)
+        elif self.review and t["owner"] in ENGINEERS:
             res = self._review_loop(t, agent, res, wt, model, preset, task_text, context)
         return res
 
@@ -513,6 +563,72 @@ class Orchestrator:
             self.problems.append(f"QA edge-case tests could not be merged: {merged.reason}")
         self._save_tasks()
         self._progress()
+
+    # -- polish ---------------------------------------------------------------------
+    def _polish(self) -> None:
+        """After QA passed: one extra Frontend task that applies the UI kit (symbols, number formats, empty and loading states).
+
+        It never puts the build at risk: the branch is merged only if the full suite (every contract and QA test) and `node --check` pass in the
+        engineer's worktree first. Any failure skips the polish and leaves main exactly as QA left it."""
+        if not (self.polish and self.root and self.repo and self.integrator) or self.problems:
+            return
+        if any(t["status"] in ("failed", "blocked") for t in self.tasks):
+            return
+        if not (self.root / "static" / "ui-kit.css").is_file() or not (self.root / "static" / "app.js").is_file():
+            return
+        preset = load_preset(self.design.preset)
+        t = {"id": "p1", "title": "Polish the UI with the UI kit", "owner": "frontend", "depends_on": [], "files": list(POLISH_FILES), "kind": "polish",
+             "acceptance": ["the page uses the UI kit components", "numbers are formatted and operation words show symbols",
+                            "lists have loading and empty states", "run_tests passes"],
+             "status": "pending", "summary": "", "attempts": 0}
+        self.tasks.append(t)
+        self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True, reason="polish")
+        summary, changed = "", False
+        try:
+            model = self._model(self._engineer("frontend"))
+            self._begin(t, model)
+            res = self._work(t, preset, model, "frontend", self._context("frontend"))
+            summary = res.summary
+            reason = ((res.reason or res.status) + (f" ({res.summary[:120]})" if res.summary else "")) if res.status != "finished" else ""
+            changed = bool(self.repo.changed_files("frontend")) if res.status == "finished" else False
+            if res.status != "finished" and res.reason in ("repeated_action", "no_improvement") and not self.repo.changed_files("frontend"):
+                reason = ""  # the engineer kept re-sending the file it already had: the page is as polished as it will get
+            if not reason and changed:
+                reason = self._polish_check(self.repo.worktree("frontend"))
+            if not reason and changed:
+                merged = self.integrator.merge("frontend", t["title"])
+                reason = "" if merged.ok else f"merge failed: {merged.reason}"
+        except AgentFailed as e:
+            reason = e.reason
+        except Exception as e:  # polish is optional: whatever goes wrong, the finished build stays as it is
+            reason = f"unexpected error ({type(e).__name__})"
+        if reason or not changed:
+            self.repo.discard_unmerged("frontend")  # no half-polished edits are left in the worktree for later requests
+        if reason:
+            t.update(status="skipped", summary=f"polish skipped: {reason}"[:200])
+            if self.memory:
+                self.memory.append_decision(f"Polish skipped, main unchanged ({reason})")
+            self.emit("polish_result", ok=False, reason=reason[:200])
+        else:
+            t.update(status="done", summary=summary if changed else "the page already uses the UI kit; nothing to change")
+            self.emit("polish_result", ok=True, changed=changed, reason="")
+        self._save_tasks()
+        self._progress()
+
+    def _polish_check(self, wt: Path) -> str:
+        """Empty string when the polished branch is safe to merge, else why not."""
+        passed, summary, _ = run_suite(wt)
+        if not passed:
+            return f"tests failed on the polished branch ({summary})"
+        js = wt / "static" / "app.js"
+        if shutil.which("node") and js.is_file():
+            syntax = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
+            if syntax.returncode != 0:
+                return "static/app.js has a JavaScript syntax error"
+        source = js.read_text(encoding="utf-8") if js.is_file() else ""
+        if not any(f"UI.{h}(" in source for h in ("loading", "empty", "num", "money", "symbol", "toast")):
+            return "the polished script does not use any UI kit helper"
+        return ""
 
     def _inject(self) -> None:
         assert self.root and self.memory
