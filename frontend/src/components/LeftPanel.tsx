@@ -65,7 +65,7 @@ function Heading({ children }: { children: string }) {
 }
 
 export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, onStart }: Props) {
-  const [goal, setGoal] = useState(EXAMPLES[0])
+  const [goal, setGoal] = useState(EXAMPLES[0].goal)
   const good = recordings.filter((r) => r.ok)
   const submit = () => goal.trim() && !busy && onStart(goal.trim())
   const byId = new Map(model.tasks.map((t) => [t.id, t]))
@@ -84,8 +84,8 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
         />
         <div className="mt-2 flex flex-wrap gap-1.5">
           {EXAMPLES.map((x) => (
-            <button key={x} onClick={() => setGoal(x)} className="rounded-full border border-[var(--line)] bg-[#0b0e17] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]">
-              {x.replace(/^Build an? /, '')}
+            <button key={x.label} onClick={() => setGoal(x.goal)} title={x.goal} className="rounded-full border border-[var(--line)] bg-[#0b0e17] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]">
+              {x.label}
             </button>
           ))}
         </div>

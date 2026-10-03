@@ -16,8 +16,11 @@
 html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(--text); }
 body { font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
 canvas { image-rendering: pixelated; }
-button { font: inherit; cursor: pointer; }
-input, select { font: inherit; }
+/* In the base layer so Tailwind's text-* utilities can still set a size on buttons and inputs. */
+@layer base {
+  button { font: inherit; cursor: pointer; }
+  input, select, textarea { font: inherit; }
+}
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #2a3350; border-radius: 4px; }
