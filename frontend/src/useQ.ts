@@ -1,10 +1,11 @@
 // The one hook the UI uses: backend connection, the current project's event stream, and the controls.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ApiError, api, openStream, type Metrics, type RecordingMeta } from './api'
+import { ApiError, api, openStream, type ConfigInfo, type Metrics, type RecordingMeta } from './api'
 import { OfficeModel, type Tone } from './model'
 
 export interface Toast {
   id: number
+  key?: string
   level: Tone
   title: string
   text: string
@@ -22,22 +23,40 @@ export function useQ() {
   const [mode, setModeState] = useState('supervised')
   const [recordings, setRecordings] = useState<RecordingMeta[]>([])
   const [recording, setRecording] = useState('')
+  const [config, setConfig] = useState<ConfigInfo | null>(null)
+  const [preset, setPreset] = useState('fastapi-vanilla')
+  const [replay, setReplay] = useState(false) // the current project is a replay, not a live build
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [builds, setBuilds] = useState(0)
   const [busy, setBusy] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
 
-  const toast = useCallback((level: Tone, title: string, text = '') => {
+  const toast = useCallback((level: Tone, title: string, text = '', key?: string) => {
     const id = ++toastId.current
-    setToasts((t) => [...t.slice(-3), { id, level, title, text }])
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), level === 'good' ? 6000 : 9000)
+    setToasts((t) => [...t.slice(-3), { id, key, level, title, text }])
+    // A toast waiting on a decision stays long enough to be answered; the rest fade.
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), key ? 60000 : level === 'good' ? 6000 : 9000)
+  }, [])
+
+  /** Rewrite a toast in place (an approval that has now been decided), then let it fade. */
+  const updateToast = useCallback((key: string, level: Tone, title: string, text: string) => {
+    let id = 0
+    setToasts((t) => t.map((x) => (x.key === key ? ((id = x.id), { ...x, level, title, text }) : x)))
+    if (id) window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000)
   }, [])
 
   const fail = useCallback((e: unknown) => toast('bad', 'Could not do that', e instanceof ApiError ? e.message : 'Something went wrong. Please try again.'), [toast])
 
   // The model turns events into visuals; toasts are one kind of visual.
-  useEffect(() => model.onVisual((v) => { if (v.kind === 'toast') toast(v.level, v.title, v.text) }), [model, toast])
+  useEffect(
+    () =>
+      model.onVisual((v) => {
+        if (v.kind === 'toast') toast(v.level, v.title, v.text, v.key)
+        else if (v.kind === 'toast_update') updateToast(v.key, v.level, v.title, v.text)
+      }),
+    [model, toast, updateToast],
+  )
 
   // Team + recordings: retry until the backend answers.
   useEffect(() => {
@@ -45,9 +64,10 @@ export function useQ() {
     let timer: number | undefined
     const load = async () => {
       try {
-        const [agents, recs] = await Promise.all([api.agents(), api.recordings()])
+        const [agents, recs, cfg] = await Promise.all([api.agents(), api.recordings(), api.config()])
         if (stop) return
         model.setRoster(agents)
+        setConfig(cfg)
         setRecordings(recs)
         setRecording((cur) => cur || recs.find((r) => r.ok)?.name || '')
         setBackend('ok')
@@ -91,11 +111,12 @@ export function useQ() {
     async (goal: string) => {
       setBusy(true)
       try {
-        const s = await api.create({ goal, mode, demo, recording: demo ? recording || undefined : undefined, speed })
+        const s = await api.create({ goal, mode, demo, recording: demo ? recording || undefined : undefined, speed, preset: demo ? undefined : preset })
         model.reset()
         model.setGoal(goal)
         model.setMode(s.mode)
         setProjectId(s.id)
+        setReplay(demo)
         setBuilds((await api.projects().catch(() => [])).length || builds + 1)
       } catch (e) {
         fail(e)
@@ -103,7 +124,7 @@ export function useQ() {
         setBusy(false)
       }
     },
-    [mode, demo, recording, speed, model, fail, builds],
+    [mode, demo, recording, speed, preset, model, fail, builds],
   )
 
   const setMode = useCallback(
@@ -123,7 +144,15 @@ export function useQ() {
     [projectId, demo, fail],
   )
 
+  const decide = useCallback(
+    async (aid: string, approve: boolean) => {
+      if (projectId) await api.decide(projectId, aid, approve).catch(fail)
+    },
+    [projectId, fail],
+  )
+
   return {
+    config, preset, setPreset, replay, decide, toast, fail,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
     metrics, builds, busy, start, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }

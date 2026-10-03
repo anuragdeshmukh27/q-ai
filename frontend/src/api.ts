@@ -46,12 +46,60 @@ export interface ProjectStatus {
   app: { running: boolean; url?: string }
 }
 
+export interface ModelInfo {
+  id: string
+  name: string
+  provider: string
+  capabilities: string[]
+  available: boolean
+  local: boolean
+  vram_gb: number
+}
+
+export interface ConfigInfo {
+  q_mode: string
+  presets: Record<string, string>
+}
+
+export interface TreeFile {
+  path: string
+  size: number
+}
+
+export interface Commit {
+  hash: string
+  parents: string[]
+  refs: string[]
+  subject: string
+  author: string
+}
+
+export interface Leaderboard {
+  runs: number
+  roles: string[]
+  models: string[]
+  matrix: Record<string, Record<string, { runs: number; pass_rate: number; avg_iterations: number; avg_seconds: number }>>
+}
+
+const post = (path: string, body: unknown) => call<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })
+
 export const api = {
+  config: () => call<ConfigInfo>('/api/config'),
+  models: () => call<ModelInfo[]>('/api/models'),
+  leaderboard: () => call<Leaderboard>('/api/leaderboard'),
+  files: (id: string) => call<TreeFile[]>(`/api/projects/${id}/files`),
+  file: (id: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
+  commits: (id: string) => call<Commit[]>(`/api/projects/${id}/commits`),
+  commit: (id: string, sha: string) => call<{ sha: string; merge: boolean; diff: string; truncated: boolean }>(`/api/projects/${id}/commits/${sha}`),
+  decide: (id: string, aid: string, approve: boolean) => post(`/api/projects/${id}/approvals/${aid}`, { approve }),
+  override: (id: string, agent: string, model: string | null) => post(`/api/projects/${id}/agents/${agent}/model`, { model }),
+  ask: (id: string, agent: string, text: string, asTask: boolean) => post(`/api/projects/${id}/agents/${agent}/ask`, { text, as_task: asTask }),
+  startApp: (id: string) => post(`/api/projects/${id}/app`, {}),
   agents: () => call<AgentInfo[]>('/api/agents'),
   recordings: () => call<RecordingMeta[]>('/api/recordings'),
   metrics: () => call<Metrics>('/api/metrics'),
   projects: () => call<ProjectStatus[]>('/api/projects'),
-  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number }) =>
+  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string }) =>
     call<ProjectStatus>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
   setMode: (id: string, mode: string) => call<unknown>(`/api/projects/${id}/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   setSpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),

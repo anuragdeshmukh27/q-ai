@@ -1,6 +1,8 @@
-import { useState } from 'react'
-import { GoalBar } from './components/GoalBar'
+import { useEffect, useState } from 'react'
+import { api, type ModelInfo } from './api'
+import { Dock } from './components/Dock'
 import { Inspector } from './components/Inspector'
+import { LeftPanel } from './components/LeftPanel'
 import { OfficeCanvas } from './components/OfficeCanvas'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
@@ -11,6 +13,10 @@ export default function App() {
   const { model } = q
   const [selected, setSelected] = useState<string | null>(null)
   const agent = selected ? model.agents.get(selected) : undefined
+  const [models, setModels] = useState<ModelInfo[]>([])
+  useEffect(() => {
+    if (q.backend === 'ok') api.models().then(setModels).catch(() => {})
+  }, [q.backend])
 
   return (
     <div className="flex h-full flex-col">
@@ -33,6 +39,19 @@ export default function App() {
         done={model.finished ? model.finished.ok : null}
       />
       <div className="flex min-h-0 flex-1">
+        <LeftPanel
+          model={model}
+          busy={q.busy}
+          demo={q.demo}
+          hasProject={!!q.projectId}
+          recordings={q.recordings}
+          recording={q.recording}
+          onRecording={q.setRecording}
+          config={q.config}
+          preset={q.preset}
+          onPreset={q.setPreset}
+          onStart={q.start}
+        />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>
           <OfficeCanvas model={model} selected={selected} tempo={q.demo ? q.speed : 1} onSelect={setSelected} />
           {q.backend === 'down' && (
@@ -42,18 +61,9 @@ export default function App() {
           )}
           <Toasts toasts={q.toasts} onDismiss={q.dismissToast} />
         </main>
-        {agent && <Inspector agent={agent} onClose={() => setSelected(null)} />}
+        {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} />}
       </div>
-      <GoalBar
-        busy={q.busy}
-        demo={q.demo}
-        recordings={q.recordings}
-        recording={q.recording}
-        onRecording={q.setRecording}
-        onStart={q.start}
-        ticker={model.ticker}
-        hasProject={!!q.projectId}
-      />
+      <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} />
     </div>
   )
 }
