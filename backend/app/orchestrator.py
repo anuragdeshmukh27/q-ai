@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .agent.actions import Action
 from .agent.loop import AgentResult, run_agent
-from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner
+from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner, run_spec
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
 from .agent.review import ReviewOutput, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
@@ -35,7 +35,8 @@ from .project import create_project
 from .registry import ModelConfig, ModelRegistry
 from .contract_tests import api_test_source, edge_test_source, ui_page_test_source, ui_script_test_source
 from .scaffold import db_stub, endpoints_for_task, route_stub
-from .schemas import ArchitectOutput, TaskSpec, topo_order
+from .uistub import is_placeholder, page_stub, script_stub
+from .schemas import ArchitectOutput, SpecOutput, TaskSpec, spec_text, topo_order
 from .tools import ToolBox
 
 ENGINEERS = ("database", "backend", "frontend")
@@ -114,6 +115,7 @@ class Orchestrator:
         self.problems: list[str] = []
         self.tasks: list[dict] = []
         self.design: ArchitectOutput | None = None
+        self.spec: SpecOutput | None = None
         self.tests_passed, self.test_summary, self.app_url = False, "", ""
 
     # -- helpers --------------------------------------------------------------------
@@ -198,7 +200,14 @@ class Orchestrator:
         model = self._model(arch_agent)
         self.emit("agent_state", agent="architect", state="thinking")
         presets = {n: load_preset(n).description for n in list_presets()}
-        design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset)
+        try:  # goal enrichment is a bonus: if the model cannot produce a valid spec, the Architect designs from the goal alone
+            self.spec, sst = run_spec(arch_agent, self.llm, model.id, self.goal, self.emit)
+            self._stat("architect", model, sst["iterations"], sst["prompt_tokens"], sst["completion_tokens"], sst["seconds"])
+            self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec))
+        except AgentFailed:
+            self.spec = None
+        self.emit("agent_state", agent="architect", state="thinking")
+        design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset, self.spec)
         self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
         self._init_project(design, model)
 
@@ -216,7 +225,9 @@ class Orchestrator:
         self.memory.append_decision(f"Architect ({model.name}) chose preset {design.preset}")
 
         contract = contract_dict(design)
-        self._write(arch_agent, ".q/architecture.md", architecture_md(design, self.goal))
+        self._write(arch_agent, ".q/architecture.md", architecture_md(design, self.goal, self.spec))
+        if self.spec is not None:
+            self._write(arch_agent, ".q/spec.md", spec_text(self.spec))
         self._write(arch_agent, ".q/api_contract.json", json.dumps(contract, indent=2))
         self._write(arch_agent, ".q/database_schema.md", schema_md(design))
         self.memory.write("design.json", design.model_dump_json(indent=2))
@@ -250,6 +261,8 @@ class Orchestrator:
         if design is None or not t["files"] or t["owner"] not in ENGINEERS:
             return None
         self._generated_tests(t, design, wt)
+        if t["owner"] == "frontend":
+            return self._page_stub(t, agent, wt, design)
         path = t["files"][0]
         if (wt / path).exists():
             return None
@@ -263,6 +276,21 @@ class Orchestrator:
             return None
         self._write(agent, path, content, root=wt)
         return path, content
+
+    def _page_stub(self, t: dict, agent: AgentConfig, wt: Path, design: ArchitectOutput) -> tuple[str, str] | None:
+        """The starting page for a frontend task, generated from the contract (only over the preset's placeholder, never over somebody's work)."""
+        title = self.spec.title if self.spec else ""
+        made = {"static/index.html": page_stub(design, title), "static/app.js": script_stub(design, title)}
+        written = []
+        for path, content in made.items():  # always the pair: a task that lists only index.html would otherwise leave app.js a placeholder it then writes itself
+            target = wt / path
+            if content is None or (target.exists() and not is_placeholder(target.read_text(encoding="utf-8", errors="replace"))):
+                continue
+            self._write(agent, path, content, root=wt)
+            written.append((path, content))
+        if not written:
+            return None
+        return ", ".join(p for p, _ in written), "\n".join(f"--- {p} ---\n{c}" for p, c in written)
 
     def _generated_tests(self, t: dict, design: ArchitectOutput, wt: Path) -> None:
         """Contract tests are written by the system on QA's behalf (not by a model) the moment the area they test is about to be built."""
@@ -330,7 +358,12 @@ class Orchestrator:
             text += ("\n\nThe database functions you can call (EXACT names and parameters; call them as shown, with keyword arguments). Do not invent other "
                      "functions, parameters or exceptions: you cannot change the database module. A function that finds no row returns False or None, so raise the "
                      f"contract's error yourself.\n{db_api}")
-        if stub:
+        if stub and t["owner"] == "frontend":
+            text += (f"\n\nStarting point: {stub[0]} already exist and are a working page generated from the contract: the form, the list with a button for every "
+                     "item endpoint, labelled selects and badges, the done checkbox and the filter. Do NOT start from scratch. First run_tests. If they pass and the "
+                     "acceptance criteria hold, finish. Otherwise change only the lines the failure points to (read the file first, then write the complete corrected file "
+                     f"with ONE write_file). Current content:\n```\n{stub[1]}\n```")
+        elif stub:
             text += (f"\n\nStarting point: `{stub[0]}` already exists. It was generated from the contract and schema, so its names, paths, "
                      f"models, status codes and SQL are correct. Do NOT rewrite the file. Fill each stub function with the `implement` action "
                      f"(path, function name, and only the lines inside the function), one call per function, replacing its `raise NotImplementedError`. "

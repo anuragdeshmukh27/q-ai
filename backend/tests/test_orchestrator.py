@@ -13,7 +13,7 @@ from app.integrator import Resolution
 from app.llm import StructuredResult
 from app.orchestrator import Orchestrator
 from app.registry import ModelRegistry
-from app.schemas import ArchitectOutput, PlannerOutput
+from app.schemas import ArchitectOutput, PlannerOutput, SpecOutput
 
 DESIGN = {
     "preset": "fastapi-vanilla", "architecture": "Store calculations in SQLite and expose two endpoints.", "ui_features": ["form", "history list"],
@@ -94,6 +94,9 @@ class FakeLLM:
         system = messages[0]["content"]
         if schema_model is ArchitectOutput:
             parsed = ArchitectOutput.model_validate(DESIGN)
+        elif schema_model is SpecOutput:
+            parsed = SpecOutput.model_validate({"title": "Calculator", "summary": "Calculate with two numbers and keep a history.", "features": ["Calculate form", "History list"],
+                                                "resources": [{"name": "calculations", "fields": [{"name": "a", "type": "number"}, {"name": "b", "type": "number"}], "operations": ["list", "create"]}]})
         elif schema_model is PlannerOutput:
             parsed = PlannerOutput.model_validate(PLAN)
         elif schema_model is AmendOutput:

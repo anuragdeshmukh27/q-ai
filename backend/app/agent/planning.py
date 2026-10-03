@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from ..config import PROMPTS_DIR, AgentConfig
 from ..llm import InvalidOutputError, LLMClient, agent_context
 from ..providers.base import ProviderError
-from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, check_acceptance, check_architecture, check_plan
+from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, SpecOutput, check_acceptance, check_architecture, check_plan, check_spec, normalize_plan, spec_text
 
 T = TypeVar("T", bound=BaseModel)
 MAX_ATTEMPTS = 3
@@ -59,7 +59,7 @@ def structured_step(
         emit("agent_state", agent=agent.id, state="thinking")
         try:
             with agent_context(agent.id):
-                out = llm.call(model_id, messages, schema)
+                out = llm.call(model_id, messages, schema, temperature=min(0.2 + 0.3 * (n - 1), 0.8))  # a repair attempt must be free to differ from the rejected answer
         except InvalidOutputError as e:
             last = f"model returned invalid output: {e}"
             emit("error", agent=agent.id, message=last)
@@ -89,20 +89,28 @@ def structured_step(
     raise AgentFailed(agent.id, last)
 
 
-def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit, forced_preset: str | None = None):
+def run_spec(agent, llm, model_id, goal: str, emit):
+    """Goal enrichment: a short goal becomes a small MVP spec; a detailed goal is followed as written. Both stay inside the size caps."""
+    system = (PROMPTS_DIR / "spec.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", agent.role)
+    return structured_step(agent, llm, model_id, system, f"Goal: {goal}", SpecOutput, check_spec, emit)
+
+
+def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit, forced_preset: str | None = None, spec: SpecOutput | None = None):
     listing = "\n".join(f"- {n}: {d}" for n, d in presets.items())
     user = f"Goal: {goal}\n\nAvailable presets:\n{listing}"
+    if spec is not None:
+        user += f"\n\nProduct spec (design exactly this: these fields with these option labels, these operations, nothing more):\n{spec_text(spec)}"
     if forced_preset:
         user += f"\n\nUse preset `{forced_preset}`."
     return structured_step(agent, llm, model_id, role_prompt(agent), user, ArchitectOutput,
-                           lambda a: check_architecture(a, list(presets)) + ([f"preset must be {forced_preset}"] if forced_preset and a.preset != forced_preset else []),
+                           lambda a: check_architecture(a, list(presets), spec) + ([f"preset must be {forced_preset}"] if forced_preset and a.preset != forced_preset else []),
                            emit)
 
 
 def run_planner(agent, llm, model_id, goal: str, contract_text: str, schema_text: str, needs_db: bool, endpoints: list[Endpoint], emit):
     user = f"Goal: {goal}\n\n{contract_text}\n\n{schema_text}"
     return structured_step(agent, llm, model_id, role_prompt(agent), user, PlannerOutput,
-                           lambda p: check_plan(p, needs_db, endpoints), emit)
+                           lambda p: check_plan(normalize_plan(p), needs_db, endpoints), emit)
 
 
 def run_replanner(agent, llm, model_id, goal: str, failed: dict, reason: str, recent: list[str], contract_text: str, schema_text: str,

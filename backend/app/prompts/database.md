@@ -11,6 +11,7 @@ You write the data access layer: small Python functions over SQLite that the bac
 - Every function is a short `with connect(SCHEMA) as conn:` block. Do not call `commit` or `close` yourself.
 - Use `?` placeholders for every value. Never build SQL with f-strings or `+` for values. Values that are lists (tags, options) go in a TEXT column as `json.dumps(...)` and come back with `json.loads(...)` (`json` is already imported in the stub). When the stub defines `_row`, return `_row(row)` / `[_row(r) for r in rows]` instead of `dict(...)`: it turns those JSON columns back into lists.
 - After an INSERT, return the stored row by reading it back (`SELECT ... WHERE id = ?`), so values filled by the database (defaults) are correct. Never invent or guess a column value.
+- Update: `cur = conn.execute("UPDATE t SET a = ?, b = ? WHERE id = ?", (...))`; if `cur.rowcount == 0` return None, else read the row back and return it. Delete: return `cur.rowcount > 0`. A boolean (done) is stored as `int(done)` (0 or 1); labelled categories (priority, status) are stored as the label text, e.g. "High".
 - Functions return plain Python values: rows become `dict(row)`, lists of rows become `list[dict]`.
 - No business logic, no FastAPI, no printing. One module, under 60 lines. Write the whole file in ONE `write_file`, then check every opening bracket is closed.
 - Tests: do not assert values the database fills in (timestamps). Check the fields you passed in, and `"id" in row`.

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, Text, create_engine, insert, select, update
 
-from .schemas import ArchitectOutput, Endpoint
+from .schemas import ArchitectOutput, Endpoint, spec_text
 
 # --- rendering ----------------------------------------------------------------------
 
@@ -38,7 +38,10 @@ def contract_dict(a: ArchitectOutput, version: int = 1) -> dict:
 
 
 def _fields(fields: list[dict]) -> str:
-    return "{" + ", ".join(f"{f['name']}: {f['type']}" for f in fields) + "}" if fields else "none"
+    def one(f: dict) -> str:
+        # a categorical field shows its labels, so engineers send and display "High", never a number
+        return f"{f['name']}: " + (" | ".join(f'"{o}"' for o in f["options"]) if f.get("options") else f["type"])
+    return "{" + ", ".join(one(f) for f in fields) + "}" if fields else "none"
 
 
 def contract_brief(contract: dict) -> str:
@@ -56,12 +59,13 @@ def contract_brief(contract: dict) -> str:
     return "\n".join(lines)
 
 
-def architecture_md(a: ArchitectOutput, goal: str) -> str:
+def architecture_md(a: ArchitectOutput, goal: str, spec=None) -> str:
     feats = "\n".join(f"- {f}" for f in a.ui_features)
     eps = "\n".join(f"- `{e.method} {e.path}`: {e.summary}" for e in a.endpoints)
     return (
         f"# Architecture\n\n**Goal:** {goal}\n\n**Preset:** {a.preset}\n\n{a.architecture.strip()}\n\n"
-        f"## Endpoints\n{eps}\n\n## Web page must\n{feats}\n"
+        + (f"## Product spec\n\n{spec_text(spec).replace('# ', '### ', 1)}\n" if spec is not None else "")
+        + f"## Endpoints\n{eps}\n\n## Web page must\n{feats}\n"
     )
 
 

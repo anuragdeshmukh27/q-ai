@@ -44,7 +44,7 @@ export type Visual =
   | { kind: 'message'; from: string; to: string; text: string; tone: Tone }
   | { kind: 'say'; agent: string; text: string; tone: Tone }
   | { kind: 'test'; agent: string; ok: boolean }
-  | { kind: 'celebrate' }
+  | { kind: 'celebrate'; agents?: string[] } // agents: only these employees get a small burst (an Ask-employee request); none: the whole office
   | { kind: 'reset' }
   | { kind: 'alert'; agent: string }
   | { kind: 'toast'; level: Tone; title: string; text: string; key?: string }
@@ -116,6 +116,7 @@ export class OfficeModel {
   changes = new Map<string, FileChange[]>()
   contractVersion = 0
   contractHistory: { version: number; endpoints: string[] }[] = []
+  spec: { title: string; summary: string; features: string[]; text: string } | null = null // the Architect's expanded product spec
   overrides = new Map<string, string>()
   filesVersion = 0 // bumped when files or branches may have changed: the file tree, git graph and contract refetch on it
   architectureReady = false
@@ -173,6 +174,7 @@ export class OfficeModel {
     this.changes = new Map()
     this.contractVersion = this.filesVersion = 0
     this.contractHistory = []
+    this.spec = null
     this.overrides = new Map()
     this.architectureReady = false
     this.reviewed = new Set()
@@ -305,6 +307,13 @@ export class OfficeModel {
         this.goal = str(e.goal) || this.goal
         this.say(`Project ${this.slug} created (${this.preset})`)
         break
+      case 'spec_ready': {
+        const features = Array.isArray(e.features) ? (e.features as string[]) : []
+        this.spec = { title: str(e.title), summary: str(e.summary), features, text: str(e.text) }
+        this.show({ kind: 'say', agent: 'architect', text: clip(`Spec: ${this.spec.summary}`, 88), tone: 'info' }, visuals)
+        this.say(`${this.name('architect')} expanded the goal into a spec: ${clip(this.spec.summary, 90)}`)
+        break
+      }
       case 'architecture_ready':
         this.show({ kind: 'message', from: 'architect', to: 'planner', text: `Contract ready: ${num(e.endpoints)} endpoints, ${num(e.tables)} table${num(e.tables) === 1 ? '' : 's'}`, tone: 'good' }, visuals)
         this.architectureReady = true
@@ -461,7 +470,7 @@ export class OfficeModel {
         const involved = Array.isArray(e.involved) ? (e.involved as string[]) : null // set for an Ask-employee request: only they did the work
         if (e.ok === true) {
           for (const v of this.agents.values()) v.state = involved && !involved.includes(v.id) ? 'idle' : 'celebrating'
-          this.show({ kind: 'celebrate' }, visuals)
+          this.show({ kind: 'celebrate', agents: involved ?? undefined }, visuals)
           this.show({ kind: 'toast', level: 'good', title: involved ? 'Request complete' : 'Build complete', text: `Finished in ${num(e.seconds)} s` }, visuals)
         } else {
           for (const v of this.agents.values()) if (v.state === 'celebrating') v.state = 'idle'

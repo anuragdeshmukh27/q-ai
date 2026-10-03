@@ -21,7 +21,8 @@ def _camel(parts: list[str]) -> str:
 
 
 def _model(name: str, fields: list[FieldSpec]) -> str:
-    body = "\n".join(f"    {f.name}: {PY_TYPES[f.type]}" for f in fields)
+    # a categorical field is a Literal of its labels, so FastAPI answers 422 for a value that is not one of them
+    body = "\n".join(f"    {f.name}: " + (f"Literal[{', '.join(repr(o) for o in f.options)}]" if f.options and f.type == "string" else PY_TYPES[f.type]) for f in fields)
     return f"class {name}(BaseModel):\n{body}\n"
 
 
@@ -80,7 +81,7 @@ def _route(e: Endpoint, response_model: str | None, request_model: str | None, f
 
 def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None) -> str:
     out = ['"""Route stubs generated from the API contract. Fill in the bodies; keep paths, models and status codes."""',
-           "import json", "import operator", "import re", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
+           "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
     if db_module:
         out.append(f"from database import {db_module} as db")
     out += ["", "router = APIRouter()", ""]

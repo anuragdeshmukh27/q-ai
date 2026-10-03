@@ -10,6 +10,7 @@ The first three exist before the engineers start; the edge cases are added when 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .schemas import ArchitectOutput, Endpoint
 
@@ -19,8 +20,9 @@ def _slug(text: str) -> str:
 
 
 def _server_filled(key: str) -> bool:
-    """Response fields whose value the server decides (timestamps): a test can check they exist but not what they say."""
-    return key.endswith(("_at", "_on", "_time", "_date")) or key in ("timestamp", "created", "updated", "date", "time", "datetime")
+    """Response fields whose value the server decides (timestamps, ids): a test can check they exist but not what they say.
+    Every test starts with an empty database, so an Architect example that expects id 2 or 3 could never pass."""
+    return key == "id" or key.endswith("_id") or key.endswith(("_at", "_on", "_time", "_date")) or key in ("timestamp", "created", "updated", "date", "time", "datetime")
 
 
 def _seed_for(design: ArchitectOutput, e: Endpoint) -> Endpoint | None:
@@ -121,9 +123,48 @@ def list_view_fields(design: ArchitectOutput) -> list[str]:
     return out
 
 
+def category_fields(design: ArchitectOutput) -> dict[str, list[str]]:
+    """Categorical fields (priority, status, category...) and their human labels, from the contract."""
+    out: dict[str, list[str]] = {}
+    for e in design.endpoints:
+        for f in [*e.request_fields, *e.response_fields]:
+            if f.options:
+                out.setdefault(f.name, f.options)
+    return out
+
+
+def item_endpoints(design: ArchitectOutput) -> list[Endpoint]:
+    """Endpoints that act on ONE listed item (PUT/PATCH/DELETE with an id in the path): every one needs a button in the list."""
+    return [e for e in design.endpoints if e.method in ("PUT", "PATCH", "DELETE") and "{" in e.path]
+
+
+_CATEGORY_TEST = r'''
+
+def test_categories_are_shown_as_labels_not_numbers():
+    js = client.get('/static/app.js').text
+    page = client.get('/').text
+    for field, labels in __CATEGORIES__.items():
+        for label in labels:
+            assert label in page + js, f"the label '{label}' of '{field}' appears nowhere: build the select from the contract's labels"
+        assert not re.search(r'<option[^>]*value=["\']\d+["\']', page), f"a select has a numeric option value; '{field}' must send its label (High), not a number (3)"
+        assert not re.search(r'(?:parseInt|parseFloat|Number)\([^)]*\b' + field + r'\b', js), f"'{field}' is converted to a number; send and show the label as it is"
+        assert not re.search(r'\b' + field + r'\s*:\s*-?\d', js), f"'{field}' is given a numeric value; use one of its labels {labels}"
+'''
+
+_ACTIONS_TEST = r'''
+
+def test_every_item_endpoint_has_a_button_in_the_list():
+    js = client.get('/static/app.js').text
+    assert 'actions' in js, "the list rows have no buttons: pass actions: [{ label: 'Delete', ... }] to UI.renderList"
+__CALLS__
+'''
+
+
 def ui_script_test_source(design: ArchitectOutput) -> str:
     paths = sorted({re.sub(r"/\{.*$", "", e.path) for e in design.endpoints})
     fields = list_view_fields(design)
+    cats = category_fields(design)
+    items = item_endpoints(design)
     out = ['"""UI script test generated from the API contract. Do not edit; fix the script instead."""',
            "import re", "", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", "",
            "def test_script_calls_every_endpoint():",
@@ -140,7 +181,28 @@ def ui_script_test_source(design: ArchitectOutput) -> str:
                 "        assert re.search(r'(?:[.]|\\[\\s*[\\'\"])' + field + r'\\b|[\\'\"]' + field + r'[\\'\"]\\s*[\\],}]', js), (",
                 "            f\"the list never uses the item field '{field}'. Show EVERY important field of each item, not just the title \"",
                 "            \"(for example the description as muted text and a priority, status or category as a badge).\")"]
-    return "\n".join(out) + "\n"
+    if cats:
+        out.append(_CATEGORY_TEST.replace("__CATEGORIES__", repr(cats)))
+    if items:
+        calls = []
+        for e in items:
+            base, _, rest = e.path.partition("/{")
+            calls += [f"    assert called_from_a_button(js, {e.method!r}, {base + '/'!r}, {rest.partition('}')[2]!r}), (",
+                      f"        \"{e.method} {e.path} is never called from a list button: add a button to `actions` of every row whose onClick leads to this call\")"]
+        if any(e.method in ("PUT", "PATCH") and e.path.endswith("}") for e in items):
+            calls.append("    assert re.search(r'edit', js, re.I), \"add an Edit button to every row\"")
+        if any(e.method == "DELETE" and e.path.endswith("}") for e in items):
+            calls.append("    assert re.search(r'delete|remove', js, re.I), \"add a Delete button to every row\"")
+        booleans = [f.name for e in design.endpoints if e.method in ("PUT", "PATCH") for f in e.request_fields if f.type == "boolean"]
+        if booleans:
+            calls.append(f"    assert 'onToggle' in js, \"{booleans[0]} is a yes/no field: show a checkbox in each row so ticking it saves at once (done: '{booleans[0]}', onToggle: (checked) => save(item.id, {{ ...item, {booleans[0]}: checked }}))\"")
+        helpers = (Path(__file__).parent / "ui_script_checks.py").read_text(encoding="utf-8").split("import re\n", 1)[1]
+        out += ["", "", helpers.strip("\n"), _ACTIONS_TEST.replace("__CALLS__", "\n".join(calls))]
+    if any(re.search(r"\bfilter", f, re.I) for f in design.ui_features):
+        out += ["", "", "def test_the_list_can_be_filtered():",
+                "    js = client.get('/static/app.js').text",
+                "    assert '.filter(' in js, \"the page must offer the filter it promises: a select with All plus the labels, applied with items.filter(...) before UI.renderList\""]
+    return "\n".join(out).rstrip() + "\n"
 
 
 # --- QA edge cases ---------------------------------------------------------------------------------------------------
@@ -188,6 +250,30 @@ def edge_test_source(design: ArchitectOutput) -> str:
                     "        if k in items[0]:",
                     "            assert items[0][k] == (pytest.approx(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)",
                     "", ""]
+            for e in item_endpoints(design):
+                params = re.findall(r"\{(\w+)\}", e.path)
+                if len(params) != 1 or not e.path.endswith("}") or "{" in e.path.split("/{")[0]:
+                    continue
+                path_expr = e.path.replace("{" + params[0] + "}", "{seed['id']}")
+                head = [f"    r = client.{post.method.lower()}({post.path!r}, json={payload!r})", "    assert r.status_code < 300, r.text", "    seed = r.json()"]
+                if e.method == "DELETE":
+                    out += [f"def test_delete_{_slug(e.path)}_removes_the_item():", *head,
+                            f"    r = client.delete(f{path_expr!r})", f"    assert r.status_code == {e.response_status}, r.text",
+                            f"    assert client.get({get.path!r}).json()[{key!r}] == []", "", ""]
+                    continue
+                names = [f.name for f in e.request_fields]
+                if not names or not set(names) <= set(payload):
+                    continue
+                body = {k: payload[k] for k in names}
+                text = next((f.name for f in e.request_fields if f.type == "string" and not f.options and body[f.name]), None)
+                if text:
+                    body[text] = body[text] + " v2"
+                out += [f"def test_{e.method.lower()}_{_slug(e.path)}_updates_the_item():", *head,
+                        f"    r = client.{e.method.lower()}(f{path_expr!r}, json={body!r})", f"    assert r.status_code == {e.response_status}, r.text",
+                        f"    items = client.get({get.path!r}).json()[{key!r}]", "    assert len(items) == 1"]
+                if text:
+                    out += [f"    assert items[0][{text!r}] == {body[text]!r}"]
+                out += ["", ""]
             for c in clears[:1]:
                 out += [f"def test_clearing_empties_the_list():",
                         f"    client.{post.method.lower()}({post.path!r}, json={payload!r})",

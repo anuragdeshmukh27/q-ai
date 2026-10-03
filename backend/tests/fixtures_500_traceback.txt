@@ -1,0 +1,559 @@
+FFFFF.............                                                       [100%]
+================================== FAILURES ===================================
+________________ test_post_api_calculations_1_adds_two_numbers ________________
+
+    def test_post_api_calculations_1_adds_two_numbers():
+>       r = client.post('/api/calculations', json={'a': 5, 'b': 3, 'operation': 'add'})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\api\test_contract_api.py:11: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:362: in run_endpoint_function
+    return await run_in_threadpool(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_api.py:240: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+req = PostCalculationsRequest(a=5.0, b=3.0, operation='add')
+
+    @router.post("/api/calculations", status_code=201, response_model=PostCalculationsResponse)
+    def handle_post_calculations(req: PostCalculationsRequest):
+        # Perform a calculation
+        # error: raise HTTPException(status_code=400, detail="Division by zero")
+>       if not req.a.strip():
+               ^^^^^^^^^^^
+E       AttributeError: 'float' object has no attribute 'strip'
+
+backend\api\calculations.py:28: AttributeError
+_____________ test_post_api_calculations_2_subtracts_two_numbers ______________
+
+    def test_post_api_calculations_2_subtracts_two_numbers():
+>       r = client.post('/api/calculations', json={'a': 5, 'b': 3, 'operation': 'subtract'})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\api\test_contract_api.py:27: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:362: in run_endpoint_function
+    return await run_in_threadpool(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_api.py:240: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+req = PostCalculationsRequest(a=5.0, b=3.0, operation='subtract')
+
+    @router.post("/api/calculations", status_code=201, response_model=PostCalculationsResponse)
+    def handle_post_calculations(req: PostCalculationsRequest):
+        # Perform a calculation
+        # error: raise HTTPException(status_code=400, detail="Division by zero")
+>       if not req.a.strip():
+               ^^^^^^^^^^^
+E       AttributeError: 'float' object has no attribute 'strip'
+
+backend\api\calculations.py:28: AttributeError
+_____________ test_post_api_calculations_3_multiplies_two_numbers _____________
+
+    def test_post_api_calculations_3_multiplies_two_numbers():
+>       r = client.post('/api/calculations', json={'a': 5, 'b': 3, 'operation': 'multiply'})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\api\test_contract_api.py:43: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:362: in run_endpoint_function
+    return await run_in_threadpool(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_api.py:240: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+req = PostCalculationsRequest(a=5.0, b=3.0, operation='multiply')
+
+    @router.post("/api/calculations", status_code=201, response_model=PostCalculationsResponse)
+    def handle_post_calculations(req: PostCalculationsRequest):
+        # Perform a calculation
+        # error: raise HTTPException(status_code=400, detail="Division by zero")
+>       if not req.a.strip():
+               ^^^^^^^^^^^
+E       AttributeError: 'float' object has no attribute 'strip'
+
+backend\api\calculations.py:28: AttributeError
+______________ test_post_api_calculations_4_divides_two_numbers _______________
+
+    def test_post_api_calculations_4_divides_two_numbers():
+>       r = client.post('/api/calculations', json={'a': 5, 'b': 3, 'operation': 'divide'})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\api\test_contract_api.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:362: in run_endpoint_function
+    return await run_in_threadpool(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_api.py:240: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+req = PostCalculationsRequest(a=5.0, b=3.0, operation='divide')
+
+    @router.post("/api/calculations", status_code=201, response_model=PostCalculationsResponse)
+    def handle_post_calculations(req: PostCalculationsRequest):
+        # Perform a calculation
+        # error: raise HTTPException(status_code=400, detail="Division by zero")
+>       if not req.a.strip():
+               ^^^^^^^^^^^
+E       AttributeError: 'float' object has no attribute 'strip'
+
+backend\api\calculations.py:28: AttributeError
+____________ test_post_api_calculations_5_rejects_division_by_zero ____________
+
+    def test_post_api_calculations_5_rejects_division_by_zero():
+>       r = client.post('/api/calculations', json={'a': 5, 'b': 0, 'operation': 'divide'})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\api\test_contract_api.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1204: in post
+    return self.request(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:463: in request
+    return super().request(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:980: in send
+    response = self._send_handling_auth(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\httpx2\_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:360: in handle_request
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\anura\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\applications.py:1215: in __call__
+    await super().__call__(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2786: in app
+    await route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:727: in app
+    raw_response = await run_endpoint_function(
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\routing.py:362: in run_endpoint_function
+    return await run_in_threadpool(
+..\..\..\..\backend\.venv\Lib\site-packages\starlette\concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\backend\.venv\Lib\site-packages\fastapi\telemetry\_api.py:240: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+req = PostCalculationsRequest(a=5.0, b=0.0, operation='divide')
+
+    @router.post("/api/calculations", status_code=201, response_model=PostCalculationsResponse)
+    def handle_post_calculations(req: PostCalculationsRequest):
+        # Perform a calculation
+        # error: raise HTTPException(status_code=400, detail="Division by zero")
+>       if not req.a.strip():
+               ^^^^^^^^^^^
+E       AttributeError: 'float' object has no attribute 'strip'
+
+backend\api\calculations.py:28: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/api/test_contract_api.py::test_post_api_calculations_1_adds_two_numbers
+FAILED tests/api/test_contract_api.py::test_post_api_calculations_2_subtracts_two_numbers
+FAILED tests/api/test_contract_api.py::test_post_api_calculations_3_multiplies_two_numbers
+FAILED tests/api/test_contract_api.py::test_post_api_calculations_4_divides_two_numbers
+FAILED tests/api/test_contract_api.py::test_post_api_calculations_5_rejects_division_by_zero
+5 failed, 13 passed in 1.54s

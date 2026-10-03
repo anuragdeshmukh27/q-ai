@@ -8,7 +8,7 @@ You receive the goal, the API contract and the database schema. Reply with ONE J
 - `owner`: `database`, `backend` or `frontend`.
 - `depends_on`: ids of tasks that must be finished first.
 - `files`: the source file(s) this task creates. Allowed areas: database -> `database/<name>.py`; backend -> `backend/api/<name>.py` (a router module) or `backend/<name>.py` (pure logic); frontend -> `static/index.html`, `static/style.css`, `static/app.js`.
-- `acceptance`: 2-5 concrete, checkable statements taken ONLY from the contract and schema (exact paths, success status, response keys, each listed error with its exact status and detail, function names). Do not invent behaviour. Never ask for 400 on missing fields or wrong types: FastAPI answers 422 for those by itself and needs no code. Tests are written by the engineer for these.
+- `acceptance`: 2-5 concrete, checkable statements taken ONLY from the contract and schema (exact paths, success status, response keys, each listed error with its exact status and detail, function names). Do not invent behaviour: an error may appear in an acceptance statement ONLY if the contract lists it (its status and exact detail). Never add checks such as "empty a returns 400" for number fields; 0 is a valid number. Never ask for 400 on missing fields or wrong types: FastAPI answers 422 for those by itself and needs no code. Tests are written by the engineer for these.
 
 ## Rules
 - Locked files nobody may touch: `backend/main.py`, `backend/__init__.py`, `backend/api/__init__.py`, `database/__init__.py`, `database/connection.py`. Routers in `backend/api/` are picked up automatically.

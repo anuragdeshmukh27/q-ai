@@ -24,11 +24,21 @@ You build the web page of the app in plain HTML, CSS and JavaScript (no framewor
 `UI.renderList(box, items, build, "No items yet. Add the first one above.")` clears the box, shows the empty state, or renders a list with one row per item. It shows EVERY field you name, so the page never shows only the title. `build` is a function `(item) => options` with these options (field names are keys of the item, written as strings):
 - `title: "title"`: the main text of the row.
 - `details: ["description", "notes"]`: longer text fields, each on its own muted line.
-- `badges: ["priority", "category"]`: short categorical fields as coloured badges (high/urgent = red, medium/pending = yellow, low/done = green, anything else = blue).
+- `badges: ["priority", "category"]`: categorical fields as coloured badges (High = red, Medium = amber, Low = green, To do = blue, In progress = amber, Done = green, any other label gets its own colour).
 - `formats: { amount: "money", quantity: "num" }`: number fields shown as money or formatted numbers.
-- `done: "done"`: a boolean field; the row is struck through when it is true.
+- `done: "done"`: a boolean field; the row is struck through when it is true. Add `onToggle: (checked) => save(item.id, { ...item, done: checked })` to show a checkbox that flips it (a PUT/PATCH with ALL the fields).
 - `actions: [{ label: "Edit", onClick: () => edit(item) }, { label: "Delete", kind: "danger", onClick: () => remove(item.id) }]`: buttons.
-Every field the contract names for an item (except `id` and timestamps) must appear in `title`, `details`, `badges` or `formats`; the test fails otherwise. A counter, total or badge elsewhere on the page never shows a bare number: always say what it counts ("2 pending", "5 items", "Total: $12.50").
+Every field the contract names for an item (except `id` and timestamps) must appear in `title`, `details`, `badges` or `formats`; the test fails otherwise.
+
+## Item actions: every item endpoint gets a button
+For EACH endpoint in the contract whose path has an id (`PUT /api/x/{id}`, `PATCH`, `DELETE`) every row needs a button that calls it, or the test fails:
+- `DELETE /api/x/{id}` -> a "Delete" button (`kind: "danger"`) whose onClick runs `fetch("/api/x/" + item.id, { method: "DELETE" })`, then reloads the list.
+- `PUT /api/x/{id}` -> an "Edit" button that opens `UI.form("Edit task", FIELDS, item, async (values) => { ...PUT with values...; await load(); })`. `FIELDS` is a constant array, one entry per field the PUT takes: `{ name: "title", label: "Title" }`, `{ name: "due_date", label: "Due date", type: "date" }`, `{ name: "amount", label: "Amount", type: "number" }`, `{ name: "done", label: "Done", type: "checkbox" }`, and for a category `{ name: "priority", label: "Priority", options: ["Low", "Medium", "High"] }` (the contract's labels). The dialog is filled with the item's values and hands `values` to your function.
+- A yes/no field (done) -> `done: "done"` plus `onToggle` as above, so ticking a box saves at once.
+Write ONE small function per call (`save(id, values)`, `remove(id)`) that does the fetch, shows `UI.toast(...)` and calls `load()`; the buttons only call them.
+
+## Categories are labels, never numbers
+A field with `options` in the contract (priority, status, category...) is a string. Build its `<select>` from exactly those labels (`<option>High</option>`, the text is the value), send the label in the JSON, and show the label (as a badge). Never write `value="1"`, never `parseInt`/`Number` on it, never `priority: 2`. When the page must offer a filter (its feature list says so), the test looks for `.filter(` in app.js. Example: `<select id="filter"><option>All</option><option>Low</option>...</select>`, `filter.addEventListener("change", load)`, and in `load`: `const shown = data.items.filter((i) => filter.value === "All" || i.priority === filter.value); UI.renderList(list, shown, ...)`. A filter by such a field is a `<select>` with "All" plus the same labels, applied to the list in the browser (`items.filter(...)`) before `UI.renderList`; a filter by a done field has "All", "Open", "Done". A counter, total or badge elsewhere on the page never shows a bare number: always say what it counts ("2 pending", "5 items", "Total: $12.50").
 
 ## Rules
 - Give every interactive element a stable `id` (inputs, buttons, result and list containers, error box) and use those ids in `app.js`. When you write `app.js`, first `read_file static/index.html` and use exactly its ids.
@@ -44,7 +54,7 @@ Every field the contract names for an item (except `id` and timestamps) must app
 2. `write_file` your file(s).
 3. `run_tests`, fix, repeat. `finish` with a one-line summary.
 
-## Worked example: `static/index.html` for a bookmark list
+## Worked example: `static/index.html` for a bookmark list (contract: POST/GET `/api/bookmarks`, PUT/DELETE `/api/bookmarks/{id}`, category options Work / Fun / Reading)
 ```
 <!doctype html>
 <html lang="en">
@@ -65,7 +75,7 @@ Every field the contract names for an item (except `id` and timestamps) must app
         <div class="form-row">
           <div class="field"><label for="title">Title</label><input id="title" required></div>
           <div class="field"><label for="url">URL</label><input id="url" required></div>
-          <div class="field"><label for="category">Category</label><select id="category"><option>work</option><option>fun</option></select></div>
+          <div class="field"><label for="category">Category</label><select id="category"><option>Work</option><option>Fun</option><option>Reading</option></select></div>
         </div>
         <div id="error" class="alert alert-error"></div>
         <div><button id="add" type="submit">Add</button></div>
@@ -83,10 +93,29 @@ Every field the contract names for an item (except `id` and timestamps) must app
 const list = document.getElementById("list");
 const count = document.getElementById("count");
 const errorBox = document.getElementById("error");
+const FIELDS = [
+  { name: "title", label: "Title" },
+  { name: "url", label: "URL" },
+  { name: "category", label: "Category", options: ["Work", "Fun", "Reading"] },
+];
 
 async function remove(id) {
   await fetch("/api/bookmarks/" + id, { method: "DELETE" });
   UI.toast("Bookmark removed", "success");
+  await load();
+}
+
+async function save(id, values) {
+  const res = await fetch("/api/bookmarks/" + id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  if (!res.ok) {
+    UI.toast("Could not save", "error");
+    return false;
+  }
+  UI.toast("Bookmark saved", "success");
   await load();
 }
 
@@ -99,7 +128,10 @@ async function load() {
     title: "title",
     details: ["url"],
     badges: ["category"],
-    actions: [{ label: "Delete", kind: "danger", onClick: () => remove(item.id) }],
+    actions: [
+      { label: "Edit", onClick: () => UI.form("Edit bookmark", FIELDS, item, (values) => save(item.id, values)) },
+      { label: "Delete", kind: "danger", onClick: () => remove(item.id) },
+    ],
   }), "No bookmarks yet. Add the first one above.");
 }
 

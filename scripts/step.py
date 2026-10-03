@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from app.agent.planning import AgentFailed, run_architect, run_planner  # noqa: E402
+from app.agent.planning import AgentFailed, run_architect, run_planner, run_spec  # noqa: E402
 from app.config import load_agents, load_env  # noqa: E402
 from app.events import EventBus  # noqa: E402
 from app.llm import LLMClient  # noqa: E402
@@ -55,7 +55,12 @@ def main() -> int:
         design = None
         for i in range(1 if args.step == "planner" else args.n):
             try:
-                design, _ = run_architect(agents["architect"], llm, mid, args.target, presets, bus.emit)
+                try:  # goal enrichment first, like the orchestrator
+                    spec, _ = run_spec(agents["architect"], llm, mid, args.target, bus.emit)
+                    print(f"      spec: {spec.summary} | {[(r.name, [f.name + ('=' + '/'.join(f.options) if f.options else '') for f in r.fields], r.operations) for r in spec.resources]}")
+                except AgentFailed:
+                    spec = None
+                design, _ = run_architect(agents["architect"], llm, mid, args.target, presets, bus.emit, spec=spec)
                 if args.step == "architect":
                     passed += 1
                     print(f"run {i + 1}: PASS  {[f'{e.method} {e.path}' for e in design.endpoints]} funcs={[f.name for f in design.db_functions]}")

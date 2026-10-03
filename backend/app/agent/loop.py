@@ -202,6 +202,9 @@ def _step(n: int, action: Action, tr: ToolResult, repeat_warning: bool, stalled:
     text = trim_observation(tr.output)
     if action.action == "run_tests" and tr.data.get("passed"):
         text = f"All tests passed. {tr.data.get('summary', '')}\n" + text[-600:]
+    elif action.action == "run_tests" and tr.data.get("digest"):
+        # the exception of each failing test comes first: in a long traceback it would be cut away by the trimming below
+        text = "What failed (read this first):\n" + tr.data["digest"][:1500] + "\n\nFull output (trimmed):\n" + text
     obs = f"Result of {action.action} ({'ok' if tr.ok else 'FAILED'}):\n{text}"
     if repeat_warning:
         obs += "\n\nWARNING: you repeated the same action. Do something different or the task will be escalated."

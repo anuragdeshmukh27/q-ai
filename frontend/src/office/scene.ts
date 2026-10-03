@@ -347,6 +347,14 @@ export class OfficeScene {
         this.confettiUntil = 0
         break
       case 'celebrate':
+        if (v.agents) {
+          // An Ask-employee request: confetti around the people who did the work, not over the whole office.
+          for (const id of v.agents) {
+            const a = this.actors.get(id)
+            if (a) this.burstAround(a.pos.x, a.pos.y - 8)
+          }
+          break
+        }
         this.actors.forEach((a) => a.dropErrands())
         this.confettiUntil = this.now + 7
         this.burst()
@@ -369,6 +377,18 @@ export class OfficeScene {
     for (const [id, a] of this.actors) if (id !== visitor) a.claimed.forEach((t) => taken.add(`${t.x},${t.y}`))
     const spots = visitSpots(seat).filter((t) => !this.blocked[t.y]?.[t.x])
     return spots.find((t) => !taken.has(`${t.x},${t.y}`)) ?? spots[0]
+  }
+
+  /** A small confetti burst centred on one employee. */
+  private burstAround(cx: number, cy: number) {
+    for (let i = 0; i < 28; i++) {
+      const ang = Math.random() * Math.PI * 2
+      const speed = 8 + Math.random() * 16
+      this.particles.spawn({
+        x: cx + Math.cos(ang) * 4, y: cy + Math.sin(ang) * 3, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed - 14,
+        life: 1.1 + Math.random() * 0.7, color: CONFETTI[i % CONFETTI.length], w: 1, h: 2, gravity: 40, fade: true,
+      })
+    }
   }
 
   private burst() {

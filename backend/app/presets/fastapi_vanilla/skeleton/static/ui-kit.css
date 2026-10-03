@@ -73,6 +73,7 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid r
 .list-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.9rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
 .list-item .item-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; } .list-item .item-actions { display: flex; gap: 0.4rem; }
 .list-item .item-title { font-weight: 700; } .list-item .item-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.list-item .item-check { width: 1.15rem; height: 1.15rem; flex: none; accent-color: var(--primary); cursor: pointer; }
 .list-item.done .item-main { color: var(--muted); text-decoration: line-through; }
 
 /* badges: <span class="badge badge-success"> */
@@ -80,6 +81,9 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid r
 .badge-success { color: var(--success); background: rgba(74, 222, 128, 0.12); border-color: rgba(74, 222, 128, 0.35); }
 .badge-warning { color: var(--warning); background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.35); }
 .badge-danger { color: var(--danger); background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.35); }
+.badge-accent { color: #c4b5fd; background: rgba(167, 139, 250, 0.12); border-color: rgba(167, 139, 250, 0.35); }
+.badge-teal { color: #5eead4; background: rgba(45, 212, 191, 0.12); border-color: rgba(45, 212, 191, 0.35); }
+.badge-pink { color: #f9a8d4; background: rgba(244, 114, 182, 0.12); border-color: rgba(244, 114, 182, 0.35); }
 .badge-info { color: var(--info); background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.35); }
 
 /* alerts (inline messages) and toasts */
@@ -91,6 +95,12 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid r
 .toast { padding: 0.7rem 1rem; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); box-shadow: var(--shadow); animation: toast-in 0.2s ease-out; }
 .toast-success { border-color: var(--success); } .toast-error { border-color: var(--danger); } .toast-info { border-color: var(--info); }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* dialog opened by UI.form */
+.modal-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(5, 7, 18, 0.7); }
+.modal { width: min(460px, 100%); max-height: 90vh; overflow-y: auto; }
+.field-check { flex-direction: row; align-items: center; gap: 0.5rem; }
+.field-check input { width: auto; }
 
 /* empty and loading states */
 .empty-state { padding: 2rem 1rem; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius); }

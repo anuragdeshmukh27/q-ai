@@ -152,6 +152,26 @@ describe('office model', () => {
     expect(seen.some((v) => v.kind === 'toast' && v.title === 'Request complete')).toBe(true)
   })
 
+  it('celebrates the whole office for a build but only the involved people (as a small burst) for an Ask-employee request', () => {
+    const { m, seen } = setup()
+    m.apply(ev('project_done', { ok: true, seconds: 100 }))
+    expect(seen.find((v) => v.kind === 'celebrate')).toEqual({ kind: 'celebrate', agents: undefined })
+    seen.length = 0
+    m.apply(ev('project_done', { ok: true, seconds: 20, request: true, involved: ['backend'] }))
+    expect(seen.find((v) => v.kind === 'celebrate')).toEqual({ kind: 'celebrate', agents: ['backend'] })
+  })
+
+  it("shows the expanded spec in the Architect's bubble and keeps it for the Contract tab", () => {
+    const { m, seen } = setup()
+    const text = ['# Todo app', '', 'Tasks.', '', '**todos**: title (string)'].join(String.fromCharCode(10))
+    m.apply(ev('spec_ready', { agent: 'architect', title: 'Todo app', summary: 'Tasks with a priority and a due date.', features: ['Form', 'List'], text }))
+    expect(m.spec?.title).toBe('Todo app')
+    expect(m.spec?.features).toEqual(['Form', 'List'])
+    expect(seen.some((v) => v.kind === 'say' && v.agent === 'architect' && v.text.startsWith('Spec: Tasks with a priority'))).toBe(true)
+    m.reset()
+    expect(m.spec).toBeNull()
+  })
+
   it('keeps the newest metrics event for the gauges and the loaded-model chip', () => {
     const { m } = setup()
     expect(m.metrics).toBeNull()

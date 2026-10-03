@@ -20,6 +20,7 @@ class FieldSpec(BaseModel):
     name: str
     type: FieldType
     description: str = ""
+    options: list[str] = Field(default_factory=list, description="For a categorical string field: the allowed values, as human labels in display order (for example Low, Medium, High)")
 
 
 class ErrorSpec(BaseModel):
@@ -72,6 +73,50 @@ class ArchitectOutput(BaseModel):
     ui_features: list[str] = Field(default_factory=list, description="What the web page must let the user do")
 
 
+# Fields that name a category of things. They are strings with human labels (Low / Medium / High), never bare numbers (1 / 2 / 3).
+MUST_HAVE_OPTIONS = re.compile(r"(^|_)(priority|status|category|severity|state|stage)$")
+NEVER_NUMERIC = re.compile(r"(^|_)(priority|status|category|severity|state|stage|kind|type)$")
+# Words SQLite refuses (or misreads) as a bare column name: a field called `group` or `order` breaks the generated SQL.
+SQL_RESERVED = {"group", "order", "index", "table", "key", "values", "default", "limit", "check", "references", "select", "where", "from", "by", "primary",
+                "unique", "constraint", "column", "references", "transaction", "between", "case", "when", "then", "end", "join", "like", "in", "is", "not",
+                "null", "and", "or", "as", "on", "set", "update", "delete", "insert", "into", "drop", "create", "alter", "add", "all", "distinct", "having",
+                "offset", "union", "exists", "desc", "asc", "to", "with", "view", "trigger", "match", "natural", "cross", "left", "right", "inner", "outer"}
+
+
+def reserved_problem(where: str, name: str) -> list[str]:
+    if name.lower() in SQL_RESERVED:
+        return [f"{where}: '{name}' is an SQL keyword and breaks the generated database code. Rename the field, for example '{name}_name' or '{name}_value'"]
+    return []
+
+
+MAX_ENDPOINTS_PER_RESOURCE = 5  # the prompts ask for 4; one extra is tolerated
+MAX_FIELDS_PER_RESOURCE = 6  # without id and timestamps
+
+
+def check_options(where: str, name: str, ftype: str, options: list[str]) -> list[str]:
+    """A categorical field is a string enum with human labels; the UI shows the labels and colours badges by them."""
+    reserved = reserved_problem(where, name)
+    if reserved:
+        return reserved
+    if ftype in ("number", "integer") and NEVER_NUMERIC.search(name):
+        return [f"{where}: '{name}' is a category, so it must be a string with human labels in `options` (for example Low, Medium, High), not a number"]
+    if ftype == "string" and not options and MUST_HAVE_OPTIONS.search(name):
+        return [f"{where}: '{name}' is a category: give it `options`, the allowed values as human labels (for example [\"Low\", \"Medium\", \"High\"])"]
+    if not options:
+        return []
+    out: list[str] = []
+    if ftype != "string":
+        out.append(f"{where}: '{name}' has options, so its type must be string")
+    if not 2 <= len(options) <= 8:
+        out.append(f"{where}: '{name}' needs between 2 and 8 options")
+    if len({o.strip().lower() for o in options}) != len(options):
+        out.append(f"{where}: the options of '{name}' must be different from each other")
+    for o in options:
+        if not o.strip() or re.fullmatch(r"[\d.\s]+", o) or "_" in o or o != o.strip():
+            out.append(f"{where}: option {o!r} of '{name}' is not a human label. Write words such as \"High\" or \"In progress\" (no numbers, no snake_case)")
+    return out
+
+
 def _type_ok(ftype: str, value: Any) -> bool:
     if ftype in ("number", "integer"):
         return isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -99,6 +144,8 @@ def check_examples(e: Endpoint) -> list[str]:
         if x.status not in statuses:
             out.append(f"{where}: example '{x.description}' has status {x.status}, which is neither {e.response_status} nor a listed error")
         for f in e.request_fields:
+            if f.options and f.name in x.request and x.request[f.name] not in f.options:
+                out.append(f"{where}: example '{x.description}' sends {x.request[f.name]!r} for '{f.name}', which is not one of its options {f.options}")
             if f.name in x.request and not _type_ok(f.type, x.request[f.name]):
                 out.append(f"{where}: example '{x.description}' sends {x.request[f.name]!r} for the {f.type} field '{f.name}'. Wrong types are answered "
                            "with 422 by FastAPI, not with your error; use a correctly typed value, or remove this example")
@@ -120,6 +167,9 @@ def check_examples(e: Endpoint) -> list[str]:
             if computed and x.request and not has_numeric_input:
                 out.append(f"{where}: example '{x.description}' expects the computed value(s) {computed} but its request contains no numbers to compute them from. "
                            "Add the missing input fields (for example numbers a and b) to `request_fields` and to the example request")
+            for f in e.response_fields:
+                if f.options and f.name in x.response and x.response[f.name] not in f.options:
+                    out.append(f"{where}: example '{x.description}' expects {x.response[f.name]!r} for '{f.name}', which is not one of its options {f.options}")
             bad = set(x.response) - resp_names
             if bad:
                 out.append(f"{where}: example '{x.description}' expects {sorted(bad)} which are not response fields")
@@ -131,8 +181,68 @@ def check_examples(e: Endpoint) -> list[str]:
     return out
 
 
-def check_architecture(a: ArchitectOutput, presets: list[str]) -> list[str]:
+def _resource(path: str) -> str:
+    parts = [p for p in path.split("/") if p and p != "api" and not p.startswith("{")]
+    return parts[0] if parts else path
+
+
+def check_categories(endpoints: list[Endpoint]) -> list[str]:
+    """Categorical fields are labelled string enums everywhere they appear, with the same labels in every endpoint."""
     problems: list[str] = []
+    seen: dict[str, list[str]] = {}
+    for e in endpoints:
+        for f in [*e.request_fields, *e.response_fields]:
+            problems += check_options(f"{e.method} {e.path}", f.name, f.type, f.options)
+            if f.options:
+                seen.setdefault(f.name, f.options)
+    for e in endpoints:
+        for f in [*e.request_fields, *e.response_fields]:
+            if f.name in seen and f.options != seen[f.name] and f.type == "string":
+                problems.append(f"{e.method} {e.path}: field '{f.name}' must list the same options everywhere: {seen[f.name]}")
+    return list(dict.fromkeys(problems))
+
+
+def check_caps(endpoints: list[Endpoint]) -> list[str]:
+    """Small designs are what a 7B model builds reliably: at most 4 (tolerated: 5) endpoints and 6 fields per resource."""
+    problems: list[str] = []
+    for r in dict.fromkeys(_resource(e.path) for e in endpoints):
+        mine = [e for e in endpoints if _resource(e.path) == r]
+        if len(mine) > MAX_ENDPOINTS_PER_RESOURCE:
+            problems.append(f"resource '{r}' has {len(mine)} endpoints; use at most 4 (list, add, edit, delete) and do the rest in the browser")
+        names = {f.name for e in mine if e.method in ("POST", "PUT", "PATCH") for f in e.request_fields if f.name != "id" and not f.name.endswith("_id")}
+        if len(names) > MAX_FIELDS_PER_RESOURCE:
+            problems.append(f"resource '{r}' has {len(names)} fields; keep the {MAX_FIELDS_PER_RESOURCE} most important and drop the rest")
+    return problems
+
+
+def check_against_spec(a: ArchitectOutput, spec: "SpecOutput") -> list[str]:
+    """The design must implement the product spec it was given: its fields, its labelled options and its operations."""
+    problems: list[str] = []
+    writes = [f for e in a.endpoints if e.method in ("POST", "PUT", "PATCH") for f in e.request_fields]
+    reads = [f for e in a.endpoints for f in e.response_fields]
+    for r in spec.resources:
+        for f in r.fields:
+            # a stored value may be computed by the server (a calculator's result), so it need not be something the client sends
+            if not any(w.name == f.name for w in [*writes, *reads]) and not any(f.name in x.description for x in reads if x.type == "array"):
+                problems.append(f"the spec's field '{f.name}' of {r.name} appears in no endpoint: add it to the request fields (what the user enters) or to the response fields")
+            if f.options:
+                for w in [*writes, *reads]:
+                    if w.name == f.name and w.options != f.options:
+                        problems.append(f"field '{f.name}' must have options {f.options} exactly, as in the spec")
+                        break
+        ops = {"update": ("PUT", "PATCH"), "delete": ("DELETE",)}
+        for op, methods in ops.items():
+            if op in r.operations and not any(e.method in methods and "{" in e.path for e in a.endpoints):
+                problems.append(f"the spec says {r.name} can be {op}d, so add a {'/'.join(methods)} endpoint with an {{id}} in its path")
+        if "create" in r.operations and not any(e.method == "POST" for e in a.endpoints):
+            problems.append(f"the spec says {r.name} can be added, so add a POST endpoint")
+    return list(dict.fromkeys(problems))
+
+
+def check_architecture(a: ArchitectOutput, presets: list[str], spec: "SpecOutput | None" = None) -> list[str]:
+    problems: list[str] = check_categories(a.endpoints) + check_caps(a.endpoints)
+    if spec is not None:
+        problems += check_against_spec(a, spec)
     if a.preset not in presets:
         problems.append(f"preset must be one of {presets}")
     if not a.endpoints:
@@ -192,6 +302,7 @@ def check_architecture(a: ArchitectOutput, presets: list[str]) -> list[str]:
         for c in t.columns:
             if not IDENT.match(c.name):
                 problems.append(f"column {t.name}.{c.name} must be snake_case")
+            problems += reserved_problem(f"column {t.name}.{c.name}", c.name)
     if a.tables and not a.db_functions:
         problems.append("tables are defined but db_functions is empty; list the data access functions the backend will call")
     if a.db_functions and not a.tables:
@@ -220,6 +331,65 @@ def check_architecture(a: ArchitectOutput, presets: list[str]) -> list[str]:
     if not a.ui_features:
         problems.append("list at least one ui_feature")
     return problems
+
+
+# --- product spec (goal enrichment) ---------------------------------------------------
+
+class SpecField(BaseModel):
+    name: str = Field(description="snake_case")
+    type: Literal["string", "number", "integer", "boolean"]
+    options: list[str] = Field(default_factory=list, description="Human labels for a categorical field, e.g. Low, Medium, High")
+
+
+class SpecResource(BaseModel):
+    name: str = Field(description="plural snake_case, e.g. todos")
+    fields: list[SpecField]
+    operations: list[Literal["list", "create", "update", "delete", "clear"]] = Field(description="clear = remove every item at once")
+
+
+class SpecOutput(BaseModel):
+    title: str
+    summary: str = Field(description="One sentence: what the app does for the user")
+    resources: list[SpecResource] = Field(default_factory=list)
+    features: list[str] = Field(default_factory=list, description="What the page lets the user do, as short statements")
+
+
+def check_spec(spec: SpecOutput) -> list[str]:
+    problems: list[str] = []
+    if not spec.features:
+        problems.append("list the features the page offers")
+    if len(spec.features) > 8:
+        problems.append("at most 8 features")
+    if len(spec.resources) > 3:
+        problems.append("at most 3 resources")
+    for r in spec.resources:
+        if not IDENT.match(r.name):
+            problems.append(f"resource name {r.name!r} must be snake_case")
+        if not r.operations:
+            problems.append(f"{r.name}: list its operations")
+        names = [f.name for f in r.fields]
+        if len(names) != len(set(names)):
+            problems.append(f"{r.name}: duplicate field names")
+        counted = [f for f in r.fields if f.name != "id"]
+        if len(counted) > MAX_FIELDS_PER_RESOURCE:
+            problems.append(f"{r.name} has {len(counted)} fields; keep the {MAX_FIELDS_PER_RESOURCE} most important (the cap protects reliability)")
+        for f in r.fields:
+            if not IDENT.match(f.name):
+                problems.append(f"{r.name}.{f.name} must be snake_case")
+            problems += check_options(r.name, f.name, f.type, f.options)
+    return problems
+
+
+def spec_text(spec: SpecOutput) -> str:
+    """The spec as plain markdown: shown in the Contract tab and given to the Architect."""
+    lines = [f"# {spec.title}", "", spec.summary.strip(), ""]
+    for r in spec.resources:
+        fields = ", ".join(f"{f.name} ({' / '.join(f.options) if f.options else f.type})" for f in r.fields)
+        lines.append(f"**{r.name}**: {fields}. Operations: {', '.join(r.operations)}.")
+    if spec.resources:
+        lines.append("")
+    lines += ["Features:", *[f"- {x}" for x in spec.features]]
+    return "\n".join(lines) + "\n"
 
 
 # --- planner ------------------------------------------------------------------------
@@ -261,7 +431,7 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint]) -> l
                 problems.append(f"{t.id}: {f} is a locked preset file and cannot be a task target")
         if not t.acceptance:
             problems.append(f"{t.id}: add acceptance criteria")
-        problems += check_acceptance(t)
+        problems += check_acceptance(t, endpoints)
         for d in t.depends_on:
             if d not in ids:
                 problems.append(f"{t.id} depends on unknown task {d}")
@@ -292,10 +462,27 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint]) -> l
 _BAD_INPUT_400 = re.compile(r"(missing|not provided|required|wrong type|non-?numeric|invalid (number|type|input))[^.]*\b400\b|\b400\b[^.]*(missing|not provided|required|non-?numeric)", re.I)
 
 
-def check_acceptance(t: TaskSpec) -> list[str]:
-    """Missing or mistyped fields are answered with 422 by FastAPI itself; a 400 criterion for them cannot be met by simple code."""
-    return [f"{t.id}: acceptance {a!r} asks for 400 on missing/wrong-type input; FastAPI returns 422 for that automatically, so remove it"
-            for a in t.acceptance if _BAD_INPUT_400.search(a)]
+_DETAIL_TEXT = re.compile(r'"detail"\s*:\s*\\?"([^"\\]+)')
+
+
+def check_acceptance(t: TaskSpec, endpoints: list[Endpoint] | None = None) -> list[str]:
+    """Missing or mistyped fields are answered with 422 by FastAPI itself; a 400 criterion for them cannot be met by simple code.
+    With the endpoints at hand, an error the criterion names must be one the contract lists: an engineer follows the task text, and an
+    invented 'a must not be empty' check on a number field rejects 0 and breaks the real error case (division by zero)."""
+    out = [f"{t.id}: acceptance {a!r} asks for 400 on missing/wrong-type input; FastAPI returns 422 for that automatically, so remove it"
+           for a in t.acceptance if _BAD_INPUT_400.search(a)]
+    if endpoints is not None:
+        details = {x.detail.strip().lower() for e in endpoints for x in e.errors}
+        statuses = {x.status for e in endpoints for x in e.errors}
+        for a in t.acceptance:
+            for d in _DETAIL_TEXT.findall(a):
+                if d.strip().lower() not in details:
+                    out.append(f"{t.id}: acceptance {a!r} expects the error detail {d!r}, which is not in the API contract. Use only the contract's errors "
+                               f"({sorted(details) or 'none'}); do not invent validation, 0 is a valid number")
+            for code in re.findall(r"\b(4\d\d)\b", a):
+                if int(code) not in statuses and int(code) != 422:
+                    out.append(f"{t.id}: acceptance {a!r} expects status {code}, but the contract lists no such error. Remove it")
+    return list(dict.fromkeys(out))
 
 
 def _ancestors(tasks: list[TaskSpec], task_id: str) -> set[str]:
@@ -348,3 +535,33 @@ def topo_order(tasks: list[TaskSpec]) -> list[TaskSpec]:
         done.add(ready[0].id)
         remaining.remove(ready[0])
     return out
+
+
+def normalize_plan(p: PlannerOutput) -> PlannerOutput:
+    """Repair what is mechanical instead of asking a 7B model to repeat itself (it often sends the same rejected plan three times):
+    a file named by two tasks stays with the first one, and a task left with no files is dropped, its dependencies passed on to the tasks that waited for it."""
+    seen: set[str] = set()
+    dropped: dict[str, list[str]] = {}
+    kept: list[TaskSpec] = []
+    for t in p.tasks:
+        files = [f for f in dict.fromkeys(t.files) if f not in seen]
+        if t.files and not files:
+            dropped[t.id] = t.depends_on
+            continue
+        seen.update(files)
+        t.files = files
+        kept.append(t)
+    for t in kept:
+        deps: list[str] = []
+        for d in t.depends_on:
+            seen_ids: set[str] = set()
+            while d in dropped and d not in seen_ids:  # follow a dropped task to what it was waiting for
+                seen_ids.add(d)
+                deps += dropped[d]
+                d = ""
+                break
+            if d:
+                deps.append(d)
+        t.depends_on = [d for d in dict.fromkeys(deps) if d != t.id and any(k.id == d for k in kept)]
+    p.tasks = kept
+    return p

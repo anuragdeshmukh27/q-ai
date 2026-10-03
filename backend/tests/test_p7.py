@@ -368,6 +368,7 @@ def test_a_request_on_a_finished_project_reopens_it_and_only_the_involved_agents
 
 def test_ui_kit_renders_a_whole_list_in_one_call_with_every_field_badge_and_button():
     import shutil
+    import re
     import subprocess
     from pathlib import Path
     kit = Path(__file__).parents[1] / "app" / "presets" / "fastapi_vanilla" / "skeleton" / "static" / "ui-kit.js"
@@ -378,7 +379,7 @@ def test_ui_kit_renders_a_whole_list_in_one_call_with_every_field_badge_and_butt
     assert out.returncode == 0, out.stderr
     text = out.stdout
     assert 'class="list-item done"' in text and "Buy milk" in text and "two litres" in text  # title, detail line, done strike-through
-    assert 'badge badge-danger">High' in text and 'badge badge-info">whatever' in text  # priority badges, coloured by value
+    assert 'badge badge-danger">High' in text and re.search(r'badge badge-(info|accent|teal|pink)">whatever', text)  # priority badges, coloured by value
     assert text.count("Delete") == 2 and "clicked 1" in text and "None yet" in text  # buttons are wired; the empty state shows
 
 

@@ -21,7 +21,7 @@ from .agent.actions import Action
 from .approvals import request_approval
 from .config import AgentConfig
 from .sandbox.commands import ALLOW, ASK, DENY, CommandPolicy, apply_mode
-from .pybody import replace_function_body
+from .pybody import replace_function_body, undefined_calls
 from .sandbox.paths import PathPolicy, SandboxError
 from .sandbox.runner import resolve_argv, run_command
 
@@ -31,6 +31,29 @@ MAX_SEARCH_HITS = 50
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".pytest_cache", ".worktrees"}
 _UNSAFE_CALL = re.compile(r"(?<![\w.])(eval|exec)\s*\(")
 _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
+_SECTION = re.compile(r"^_{3,} (.+?) _{3,}$", re.MULTILINE)
+_FINAL_LINE = re.compile(r"^=+ .*\b(?:passed|failed|errors?|no tests ran)\b.* in [\d.]+s.*=+$|^\d+ (?:passed|failed).* in [\d.]+s", re.MULTILINE)
+_LOCATION = re.compile(r"^(\S+\.py):(\d+): (\w+)", re.MULTILINE)
+
+
+def failure_digest(output: str, limit: int = 6) -> str:
+    """For each failing test: the exception message (the `E ` lines) and the last frame inside the project's own code.
+
+    A request that ends in a server error (500) puts the real exception in the middle of a long framework traceback, which
+    trimming an observation to head and tail would cut away. The digest is what the engineer must read first.
+    """
+    marks = list(_SECTION.finditer(output))
+    parts = []
+    for i, m in enumerate(marks[:limit]):
+        body = output[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(output)]
+        errors = [l[1:].strip()[:220] for l in body.splitlines() if l.startswith("E ") and l[1:].strip()]
+        own = [x for x in _LOCATION.finditer(body) if ".venv" not in x.group(1) and "site-packages" not in x.group(1)]
+        where = f"{own[-1].group(1)}:{own[-1].group(2)}" if own else ""
+        if errors or where:
+            parts.append(f"- {m.group(1)}" + (f" at {where}" if where else "") + ":\n    " + "\n    ".join(errors[:4]))
+    if len(marks) > limit:
+        parts.append(f"- ... and {len(marks) - limit} more failing tests")
+    return "\n".join(parts)
 
 Approver = Callable[[str, str, str, dict], bool]
 
@@ -201,6 +224,12 @@ class ToolBox:
         if fn is not None and _must_return(fn) and not any(isinstance(n, ast.Return) and n.value is not None for n in ast.walk(fn)):
             return _fail(f"not applied: {a.function} must return its result (a route returns the response, a database function returns the row, list or flag) "
                          "but your body has no `return <value>`. Add it.")
+        missing = undefined_calls(tree)
+        if missing:
+            alias = next((x.asname for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "database" for x in n.names if x.asname), None)
+            hint = (f" The database functions are called through the module alias: write `{alias}.{missing[0]}(...)`, not `{missing[0]}(...)`." if alias else
+                    " Define or import it first, or call the function that exists.")
+            return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}")
         return self._store(p, new_source, f"implemented {a.function} in")
 
     def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:
@@ -301,9 +330,11 @@ class ToolBox:
         else:
             tail = re.sub(r"[\d.]+s\b|\d+", "#", "\n".join(r.output.splitlines()[-15:]))
             signature = "unstructured:" + hashlib.sha1(tail.encode()).hexdigest()[:12]
-        summary = next((l for l in reversed(r.output.splitlines()) if re.search(r"passed|failed|error|no tests", l)), "")
+        final = _FINAL_LINE.findall(r.output)
+        summary = final[-1] if final else next((l for l in reversed(r.output.splitlines()) if re.search(r"passed|failed|no tests", l)), "")
         r.ok = passed
-        r.data.update(passed=passed, failed=sorted(failed), signature=signature, summary=summary.strip())
+        r.data.update(passed=passed, failed=sorted(failed), signature=signature, summary=summary.strip(" ="),
+                      digest="" if passed else failure_digest(r.output))
         return r
 
     # -- communication / control ----------------------------------------------------

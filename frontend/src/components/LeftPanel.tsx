@@ -38,24 +38,25 @@ function PresetPicker({ config, value, onChange, locked, shown }: { config: Conf
         const ok = available.includes(n)
         const on = current === n
         return (
+          <div key={n} title={ok ? undefined : 'needs npm per build; planned'}>
           <button
-            key={n}
             role="radio"
             aria-checked={on}
             disabled={!ok || locked}
             onClick={() => onChange(n)}
-            title={ok ? (locked ? 'This replay was recorded with this preset' : PRESET_INFO[n]?.stack) : 'Planned: not built yet'}
-            className="rounded-lg border px-3 py-1.5 text-left transition-colors disabled:cursor-default"
+            title={ok ? (locked ? 'This replay was recorded with this preset' : PRESET_INFO[n]?.stack) : undefined}
+            className="w-full rounded-lg border px-3 py-1.5 text-left transition-colors disabled:pointer-events-none disabled:cursor-default"
             style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', background: on ? '#16213f' : '#0b0e17', opacity: ok || on ? 1 : 0.5 }}
           >
             <div className="flex items-center gap-2 text-[14px] font-bold">
               <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: on ? 'var(--accent)' : '#3a4466', background: on ? 'var(--accent)' : 'transparent' }} />
               {PRESET_INFO[n]?.label ?? n}
-              {!ok && <span className="ml-auto rounded bg-[#243055] px-1.5 py-[1px] text-[10px] font-bold tracking-wide text-[var(--muted)]">PLANNED</span>}
+              {!ok && <span className="ml-auto rounded bg-[#243055] px-1.5 py-[1px] text-[10px] font-bold tracking-wide text-[var(--muted)]">COMING SOON</span>}
               {ok && on && locked && <span className="ml-auto text-[10px] font-bold tracking-wide text-[var(--muted)]">FROM RECORDING</span>}
             </div>
             <div className="ml-5 text-[11.5px] leading-tight text-[var(--muted)]">{PRESET_INFO[n]?.stack ?? config?.presets[n]}</div>
           </button>
+          </div>
         )
       })}
     </div>

@@ -14,21 +14,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-GOALS = [
-    "Build a todo app with priorities",
-    "Build an expense tracker with categories and totals",
-    "Build a notes app with search",
-    "Build a habit tracker",
-    "Build a quiz app",
-    "Build a bookmark manager with tags",
-    "Build a contact book",
-    "Build an inventory list",
-]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from goals import CHIPS, SHORT  # noqa: E402
+
+GOALS = SHORT + ["Build a bookmark manager with tags"]  # the original short goals (the bookmark manager never passed)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--only", help="comma-separated 1-based goal numbers")
 ap.add_argument("--no-polish", action="store_true")
+ap.add_argument("--chips", action="store_true", help="build the detailed example-chip goals instead of the short ones")
 args = ap.parse_args()
+if args.chips:
+    GOALS = [g for _, g in CHIPS]
 picked = [int(x) for x in args.only.split(",")] if args.only else list(range(1, len(GOALS) + 1))
 
 lines = []
@@ -42,11 +39,11 @@ for n in picked:
     problems = [l.strip() for l in out.splitlines() if l.strip().startswith(("problem:", "!! escalation"))]
     polish = [p.strip(" :") for p in re.findall(r"== polish([^\n]*)", out)]
     slug = (re.findall(r"== project (\S+)", out) or ["?"])[0]
-    (ROOT / "workspace" / f"generality-{n}.log").write_text(out + "\n--- stderr ---\n" + p.stderr[-2000:], encoding="utf-8")
+    (ROOT / "workspace" / f"generality{'-chips' if args.chips else ''}-{n}.log").write_text(out + "\n--- stderr ---\n" + p.stderr[-2000:], encoding="utf-8")
     line = (f"{n}. {goal}: {'PASS' if ok else 'FAIL'} in {time.time() - t0:.0f}s [{slug}] polish={polish[-1][:90] if polish else 'n/a'}"
             + ("" if ok else f" | {problems[-1][:200] if problems else '?'}"))
     lines.append(line)
     print(line, flush=True)
 summary = "\n".join(lines)
-(ROOT / "workspace" / "generality-summary.txt").write_text(summary + "\n", encoding="utf-8")
+(ROOT / "workspace" / f"generality{'-chips' if args.chips else ''}-summary.txt").write_text(summary + "\n", encoding="utf-8")
 print(f"\npassed {sum('PASS in' in l for l in lines)}/{len(lines)}")

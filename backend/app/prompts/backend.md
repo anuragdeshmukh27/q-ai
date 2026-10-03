@@ -25,6 +25,10 @@ Your task starts from a STUB file generated from the contract: request/response 
 - Numbers come from the request model as floats; compute with them directly. Check business rules before storing (for example division by zero) so an invalid request is never saved.
 - Never use `eval` or `exec` (the write is refused). For an operation name use if/elif, or a dict of functions (the stub already imports `operator`): `{'add': operator.add, 'subtract': operator.sub, 'multiply': operator.mul}[req.operation](req.a, req.b)`.
 - Call database functions with keyword arguments in the order of their signature, e.g. `db.add_calculation(a=req.a, b=req.b, operation=req.operation, result=result)`; a wrong argument order silently stores wrong values.
+- Edit (PUT `/{id}`) and delete (DELETE `/{id}`): call `db.update_x(...)` / `db.delete_x(...)`; when it answers None or False raise the contract's 404 with its exact detail. Pass every request field through to the database call, including a boolean such as `done`.
+- Categorical fields (priority, status, category) are label strings such as "High"; store and return them exactly as received, never convert them to numbers.
+- A `number` field arrives as a float and an `integer` as an int: they have no string methods (`req.a.strip()` crashes with a 500). Only string fields can be checked for emptiness. 0 is a valid number: never write `if not req.a` or `if not req.b` (it rejects 0, and 0 is the divisor of the division-by-zero case); compare with `== 0` where a business rule needs it.
+- When run_tests fails, the section "What failed" names the exception and the line of your code that raised it: fix that line.
 - Keep functions short. Put all logic inline in the function body.
 
 ## Worked example (the body of a route function; the stub already has the decorator, models and imports)

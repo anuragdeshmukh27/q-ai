@@ -352,3 +352,20 @@ def test_implement_refuses_a_route_or_typed_function_body_that_never_returns(roo
         assert not r.ok and "must return" in r.output, fn
     assert tb.execute(act("implement", path="backend/api/x.py", function="handle_post_x", content="return {'ok': True}")).ok
     assert tb.execute(act("implement", path="backend/api/x.py", function="side_effect", content="print(a)")).ok  # untyped, undecorated: free to return nothing
+
+
+def test_implement_refuses_a_call_to_a_name_that_is_defined_nowhere_and_points_to_the_db_alias(root):
+    """Regression (todo build): add_todo(...) instead of db.add_todo(...) was resent three times and ended the task."""
+    (root / "backend" / "api").mkdir()
+    src = ("from fastapi import APIRouter\nfrom database import todos as db\n\nrouter = APIRouter()\n\n\n"
+           "def handle_get_todos():\n    raise NotImplementedError\n")
+    (root / "backend" / "api" / "todos.py").write_text(src)
+    tb, _ = box(root)
+    bad = tb.execute(act("implement", path="backend/api/todos.py", function="handle_get_todos", content="return {'items': list_todos()}"))
+    assert not bad.ok and "db.list_todos(...)" in bad.output and "NameError" in bad.output
+    assert "raise NotImplementedError" in (root / "backend" / "api" / "todos.py").read_text()  # nothing was written
+    good = tb.execute(act("implement", path="backend/api/todos.py", function="handle_get_todos", content="return {'items': db.list_todos()}"))
+    assert good.ok
+    # builtins, local names and imported names are fine
+    ok = tb.execute(act("implement", path="backend/api/todos.py", function="handle_get_todos", content="rows = sorted(db.list_todos())\nreturn {'items': list(rows), 'n': len(rows)}"))
+    assert ok.ok, ok.output

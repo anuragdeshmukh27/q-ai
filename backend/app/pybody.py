@@ -66,3 +66,31 @@ def replace_function_body(source: str, name: str, body: str) -> tuple[str, str]:
                     f"To change one line, send the complete body with that line changed. Current body:\n{current}")
     out = lines[:replace_from] + new_body + lines[fn.end_lineno:]
     return "\n".join(out) + ("\n" if source.endswith("\n") else ""), ""
+
+
+def undefined_calls(tree: "ast.AST") -> list[str]:
+    """Names that are called as plain functions but are bound nowhere in the module (not defined, imported, assigned, a parameter or a builtin).
+    Conservative on purpose: any binding anywhere counts, so this only reports calls that are certain to raise NameError."""
+    import builtins
+
+    bound: set[str] = set(dir(builtins))
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            bound.update((a.asname or a.name).split(".")[0] for a in n.names)
+        elif isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+            bound.add(n.id)
+        elif isinstance(n, ast.arg):
+            bound.add(n.arg)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            bound.add(n.name)
+        elif isinstance(n, (ast.Global, ast.Nonlocal)):
+            bound.update(n.names)
+        elif isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names):
+            return []  # a star import binds names we cannot see
+    seen: list[str] = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id not in bound and n.func.id not in seen:
+            seen.append(n.func.id)
+    return seen

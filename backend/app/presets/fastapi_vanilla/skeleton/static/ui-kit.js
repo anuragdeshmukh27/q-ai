@@ -8,10 +8,17 @@
 //   UI.listItem(item, options)        one list row; options (field names are keys of `item`):
 //       title: "title"                main text
 //       details: ["description"]      more fields, each on its own muted line
-//       badges: ["priority"]          short categorical fields as coloured badges (high = red, medium = yellow, low = green, other = blue)
+//       badges: ["priority"]          short categorical fields as coloured badges (High red, Medium amber, Low green, To do blue, In progress amber,
+//                                     Done green; any other label gets its own steady colour)
 //       formats: { amount: "money" }  per-field format: "money" | "num" | "symbol"
 //       done: "done"                  boolean field: strikes the row through when true
+//       onToggle: (checked) => ...    with `done`: shows a checkbox at the start of the row; called with the new state
 //       actions: [{ label: "Delete", kind: "danger", onClick: () => remove(item.id) }]   buttons ("danger" | "secondary" | "ghost")
+//   UI.form("Edit task", fields, item, async (values) => {...})   a dialog to edit an item (Edit button). fields:
+//       [{ name: "title", label: "Title" }, { name: "priority", label: "Priority", options: ["Low", "Medium", "High"] },
+//        { name: "due_date", label: "Due date", type: "date" }, { name: "done", label: "Done", type: "checkbox" }]
+//       type: "text" (default) | "number" | "date" | "textarea" | "checkbox"; `options` makes it a select of those labels.
+//       `values` has one entry per field (numbers as numbers, checkboxes as true/false). The dialog closes when onSave returns, unless it returns false.
 //   `build` is the options object, or a function (item) => options so buttons can use the item.
 // All text goes in with textContent, never innerHTML.
 window.UI = (() => {
@@ -22,8 +29,19 @@ window.UI = (() => {
     if (text !== undefined) node.textContent = text;
     return node;
   };
-  const TONES = { high: "danger", urgent: "danger", critical: "danger", overdue: "danger", medium: "warning", normal: "warning", pending: "warning",
-                  low: "success", done: "success", paid: "success", complete: "success", completed: "success" };
+  const TONES = { high: "danger", urgent: "danger", critical: "danger", overdue: "danger", blocked: "danger", major: "danger",
+                  medium: "warning", normal: "warning", pending: "warning", "in progress": "warning", doing: "warning", reading: "warning", active: "warning",
+                  low: "success", minor: "success", done: "success", paid: "success", complete: "success", completed: "success", finished: "success", closed: "success",
+                  "to do": "info", todo: "info", open: "info", new: "info", "to read": "info" };
+  // Labels without a fixed meaning (categories such as Food or Travel) get one steady colour each, so the same label always looks the same.
+  const FREE_TONES = ["info", "accent", "teal", "pink"];
+  const tone = (text) => {
+    const key = text.toLowerCase();
+    if (TONES[key]) return TONES[key];
+    let h = 0;
+    for (const c of key) h = (h * 31 + c.charCodeAt(0)) % 997;
+    return FREE_TONES[h % FREE_TONES.length];
+  };
   const FORMATS = { money: (v) => api.money(v), num: (v) => api.num(v), symbol: (v) => api.symbol(v) };
   const show = (item, field, formats = {}) => {
     const v = item[field];
@@ -34,6 +52,14 @@ window.UI = (() => {
   const api = {
     listItem(item, o = {}) {
       const li = el("li", o.done && item[o.done] ? "list-item done" : "list-item");
+      if (o.done && o.onToggle) {
+        const box = el("input", "item-check");
+        box.type = "checkbox";
+        box.checked = !!item[o.done];
+        box.setAttribute("aria-label", "Mark as done");
+        box.addEventListener("change", () => o.onToggle(box.checked));
+        li.appendChild(box);
+      }
       const main = el("span", "item-main");
       if (o.title) main.appendChild(el("div", "item-title", show(item, o.title, o.formats)));
       for (const f of o.details ?? []) {
@@ -44,7 +70,7 @@ window.UI = (() => {
       const badges = el("span", "item-badges");
       for (const f of o.badges ?? []) {
         const text = show(item, f, o.formats);
-        if (text) badges.appendChild(el("span", `badge badge-${TONES[text.toLowerCase()] ?? "info"}`, text));
+        if (text) badges.appendChild(el("span", `badge badge-${tone(text)}`, text));
       }
       if (badges.childNodes.length) li.appendChild(badges);
       if ((o.actions ?? []).length) {
@@ -65,6 +91,58 @@ window.UI = (() => {
       const ul = el("ul", "list");
       for (const item of items) ul.appendChild(api.listItem(item, typeof build === "function" ? build(item) : build));
       box.appendChild(ul);
+    },
+    form(title, fields, values, onSave) {
+      const overlay = el("div", "modal-overlay");
+      const card = el("form", "card modal stack");
+      card.appendChild(el("h2", "card-title", title));
+      const inputs = {};
+      for (const f of fields) {
+        const wrap = el("div", f.type === "checkbox" ? "field field-check" : "field");
+        const id = "ui-form-" + f.name;
+        const label = el("label", "", f.label ?? f.name);
+        label.setAttribute("for", id);
+        let input;
+        if (f.options) {
+          input = el("select");
+          for (const o of f.options) input.appendChild(el("option", "", o));
+          input.value = values?.[f.name] ?? f.options[0];
+        } else if (f.type === "textarea") {
+          input = el("textarea");
+          input.value = values?.[f.name] ?? "";
+        } else {
+          input = el("input");
+          input.type = f.type ?? "text";
+          if (f.type === "checkbox") input.checked = !!values?.[f.name];
+          else input.value = values?.[f.name] ?? "";
+        }
+        input.id = id;
+        inputs[f.name] = input;
+        if (f.type === "checkbox") wrap.append(input, label);
+        else wrap.append(label, input);
+        card.appendChild(wrap);
+      }
+      const row = el("div", "row");
+      const save = el("button", "", "Save");
+      save.type = "submit";
+      const cancel = el("button", "btn-secondary", "Cancel");
+      cancel.type = "button";
+      row.append(save, cancel);
+      card.appendChild(row);
+      const close = () => overlay.remove && overlay.remove();
+      cancel.addEventListener("click", close);
+      card.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const out = {};
+        for (const f of fields) {
+          const i = inputs[f.name];
+          out[f.name] = f.type === "checkbox" ? i.checked : f.type === "number" ? parseFloat(i.value) : i.value;
+        }
+        if ((await onSave(out)) !== false) close();
+      });
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      return overlay;
     },
     toast(message, kind = "info") {
       let box = document.querySelector(".toast-container");
