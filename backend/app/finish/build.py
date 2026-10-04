@@ -292,7 +292,7 @@ class FinishBuild(Orchestrator):
             qa = self.agents["qa"]
             self._write(qa, "tests/q_finish/test_gaps.py", gap_tests(self.analysis, chosen), root=self.root)
         self.memory.write("tasks.json", json.dumps({"tasks": self.tasks}, indent=2))
-        self.emit("agent_thought", agent="planner", text=f"{len(chosen)} gaps in {len(specs)} files: one task per file, backend first.", model="rules", tokens=0, seconds=0.0)
+        self.emit("agent_thought", agent="planner", text=f"{len(chosen)} gap{'s' if len(chosen) != 1 else ''} in {len(specs)} task{'s' if len(specs) != 1 else ''}: one small task each, backend first.", model="rules", tokens=0, seconds=0.0)
         self.emit("plan_created", tasks=[{k: t[k] for k in ("id", "title", "owner", "depends_on", "files")} for t in self.tasks])
         self._commit("[planner] task plan")
         self._progress()
@@ -391,7 +391,35 @@ class FinishBuild(Orchestrator):
             shown += 1
             if shown == 2:
                 break
+        names = self._file_names(t)
+        if names:
+            parts.append("Names this file already imports or defines (use only these; a name that is not in this list is NOT available inside your function, so import it inside the body, for example `from flask import request`):" + chr(10) + names)
+        if a.framework == "flask":
+            parts.append("Flask idioms: the query string is `q = request.args.get(\"q\", \"\")`; a JSON body is `data = request.get_json() or {}`; a missing row is `return jsonify(error=\"Note not found\"), 404` (never HTTPException; `abort` only if it is in the list of names above); "
+                         "reach the database exactly like the example routes above do; a route returns `jsonify(...)` or a `(jsonify(...), status)` tuple.")
+        elif a.framework == "fastapi":
+            parts.append("FastAPI idioms: a missing row is `raise HTTPException(404, \"... not found\")` (if `HTTPException` is not in the list of names above, make `from fastapi import HTTPException` the first line of your function body); the query string and the path are parameters of the function; a route returns a dict.")
         return (chr(10) + chr(10)).join(parts)
+
+    def _file_names(self, t: dict) -> str:
+        """The names a function in the task's file can use without importing: what the file imports and defines at the top level."""
+        file = t["files"][0] if t.get("files") else ""
+        path = (self._trees.get(t["id"]) or self.root) / file if self.root and file else None
+        if not (path and path.is_file()):
+            return ""
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            return ""
+        out: list[str] = []
+        for n in tree.body:
+            if isinstance(n, (ast.Import, ast.ImportFrom)):
+                out += [(x.asname or x.name).split(".")[0] for x in n.names]
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                out.append(n.name)
+            elif isinstance(n, ast.Assign):
+                out += [x.id for x in n.targets if isinstance(x, ast.Name)]
+        return ", ".join(f"`{x}`" for x in dict.fromkeys(out))[:900]
 
     def _clean_comments(self, closed: list[Gap]) -> None:
         """The TODO comment that described a placeholder is removed once the function is filled (the code is the answer now); every other comment stays."""
