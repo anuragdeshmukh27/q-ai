@@ -20,7 +20,7 @@ from pathlib import Path
 from .agent.actions import Action
 from .agent.loop import AgentResult, run_agent
 from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner, run_spec
-from . import authorship
+from . import authorship, cost
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
 from .agent.review import ReviewOutput, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
@@ -1207,6 +1207,16 @@ class Orchestrator:
         except Exception:  # a report problem must never fail a build
             self.authorship = {}
 
+    def _emit_cost(self, seconds: float) -> None:
+        """The tokens this build used, what they would cost on cloud models, and the GPU electricity measured while it ran (see cost.py)."""
+        try:
+            pt = sum(x.get("prompt_tokens", 0) for x in self.stats.values())
+            ct = sum(x.get("completion_tokens", 0) for x in self.stats.values())
+            since = time.time() - seconds - 5
+            self.emit("cost_report", **cost.compute(pt, ct, seconds, [e for e in self.bus.history if e["type"] == "metrics" and e.get("ts", 0) >= since]))
+        except Exception:  # a meter problem must never fail a build
+            pass
+
     def _finish(self, seconds: float) -> BuildResult:
         self._measure_authorship()
         ok = bool(self.root) and not self.problems and self.tests_passed and all(t["status"] in ("done", "skipped") for t in self.tasks) and bool(self.tasks)
@@ -1223,6 +1233,7 @@ class Orchestrator:
             except RuntimeError:
                 pass
         self.finished = True
+        self._emit_cost(seconds)
         self.emit("project_done", ok=ok, seconds=round(seconds), problems=self.problems, app_url=self.app_url)
         return BuildResult(ok, self.root, self.root.name if self.root else "", self.tasks, self.tests_passed, self.test_summary,
                            self.app_url, self.problems, self.stats)

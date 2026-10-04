@@ -43,6 +43,22 @@ export interface LoadedModel {
   vram_gb: number
 }
 
+/** What a build cost: tokens, GPU electricity here (measured, or estimated for old recordings) and the same tokens at the cloud prices of config/pricing.yaml. */
+export interface CostReport {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  seconds: number
+  electricity: { kwh: number; inr: number; avg_watts: number; measured: boolean }
+  cloud: { id: string; name: string; usd: number; inr: number }[]
+  inr_per_usd: number
+  inr_per_kwh: number
+}
+export interface CostRow extends CostReport {
+  name: string
+  title: string
+}
+
 /** GPU/RAM gauges. `loaded`, `budget_gb` and `tokens_per_s` come from the scheduler (absent in old recordings). */
 export interface Metrics {
   gpu: { name: string; used_gb: number; total_gb: number } | null
@@ -192,6 +208,7 @@ export const api = {
   models: () => call<ModelInfo[]>('/api/models'),
   leaderboard: () => call<Leaderboard>('/api/leaderboard'),
   baseline: () => call<BaselineReport>('/api/baseline'),
+  costs: () => call<{ rows: CostRow[] }>('/api/costs'),
   files: (id: string) => call<TreeFile[]>(`/api/projects/${id}/files`),
   file: (id: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
   commits: (id: string) => call<Commit[]>(`/api/projects/${id}/commits`),

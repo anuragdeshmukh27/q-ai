@@ -1,6 +1,7 @@
 import { api, type BenchCell, type Leaderboard, type RouterRow } from '../api'
 import { useState } from 'react'
 import { BaselinePanel } from './BaselinePanel'
+import { CostPanel } from './CostPanel'
 import { Empty } from './Explorer'
 import { useRefetch } from './hooks'
 
@@ -37,8 +38,8 @@ function Cell({ c, chosen }: { c?: BenchCell; chosen: boolean }) {
   )
 }
 
-type View = 'models' | 'compare' | 'authorship'
-const VIEWS: [View, string][] = [['models', 'Models by role'], ['compare', 'Team vs single agent'], ['authorship', 'Who wrote the code']]
+type View = 'models' | 'compare' | 'authorship' | 'cost'
+const VIEWS: [View, string][] = [['models', 'Models by role'], ['compare', 'Team vs single agent'], ['authorship', 'Who wrote the code'], ['cost', 'Cost of a build']]
 
 export function LeaderboardTab() {
   const [view, setView] = useState<View>('models')
@@ -58,7 +59,7 @@ export function LeaderboardTab() {
           </button>
         ))}
       </div>
-      {view === 'models' ? <ModelsView /> : <BaselinePanel view={view} />}
+      {view === 'models' ? <ModelsView /> : view === 'cost' ? <CostPanel /> : <BaselinePanel view={view} />}
     </div>
   )
 }

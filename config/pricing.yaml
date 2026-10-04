@@ -1,0 +1,12 @@
+# What a build would cost at cloud prices (US dollars per 1 million tokens, input / output), and what it costs here in electricity.
+# Edit freely: the cost meter reads this file every time. Prices are the figures the team agreed on for the comparison, not a quote.
+inr_per_usd: 85
+electricity_inr_per_kwh: 8
+# Used only when a recording has no GPU power samples (recordings made before the meter existed): the average draw measured in a live build on this laptop (83.5 W over a 91 s notes build, 2026-10-05).
+fallback_gpu_watts: 80
+models:
+  - {id: claude-opus-5-5, name: Claude Opus 5.5, input: 4.00, output: 20.00}
+  - {id: gpt-6-sol, name: GPT-6 Sol, input: 2.00, output: 10.00}
+  - {id: gemini-3-1-pro, name: Gemini 3.1 Pro, input: 2.00, output: 12.00}
+  - {id: gemini-3-8-flash, name: Gemini 3.8 Flash, input: 0.75, output: 3.75}
+  - {id: gpt-6-luna, name: GPT-6 Luna, input: 0.10, output: 0.50}

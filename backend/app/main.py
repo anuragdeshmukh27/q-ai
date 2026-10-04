@@ -16,9 +16,10 @@ from .approvals import UnknownApproval
 from .config import load_env
 from .leaderboard import baseline_report
 from .metrics import read_metrics
+from .cost import load_pricing
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
-from .recording import RecordingError, list_recordings
+from .recording import RecordingError, list_recordings, load_recording
 from .session import CreateRequest, Session, SessionError, SessionManager, Settings
 
 ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -126,6 +127,20 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         mgr.router.refresh()
         return {**board.summary(), "router": mgr.router.table(list(caps), caps), "margin": mgr.router.margin, "min_runs": mgr.router.min_runs,
                 "safe_default": mgr.router.default_model("coding").id, "note": mgr.registry.router_config.get("note", "")}
+
+    @app.get("/api/costs")
+    def costs():
+        """What each recorded build used: tokens, GPU electricity here, and the same tokens at the cloud prices of config/pricing.yaml."""
+        rows = []
+        for meta in list_recordings(mgr.settings.recordings):
+            try:
+                ev = load_recording(mgr.settings.recordings, meta["name"]).events()
+            except RecordingError:
+                continue
+            report = next((e for e in reversed(ev) if e["type"] == "cost_report"), None)
+            if report:
+                rows.append({"name": meta["name"], "title": meta.get("title", meta["name"]), **{k: v for k, v in report.items() if k not in ("seq", "ts", "type")}})
+        return {"rows": rows, "pricing": load_pricing()}
 
     @app.get("/api/baseline")
     def baseline():
