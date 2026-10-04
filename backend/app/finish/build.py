@@ -85,7 +85,35 @@ class FinishBuild(Orchestrator):
         """run_tests for an engineer covers the project's own tests and the gap tests of ITS task: the tests of the gaps other tasks will close are left out, or run_tests could never pass."""
         tb = super()._toolbox(agent, self._scoped_tests(agent.id) or test_cmd, extra_allowed, root)
         tb.allow_new_functions = True
+        tb.name_hints = self._name_hints(agent.id)
         return tb
+
+    def _name_hints(self, owner: str) -> dict[str, str]:
+        """For the names a 7B keeps inventing: what this project does instead (read from the file of the current task)."""
+        a, t = self.analysis, self._current.get(owner)
+        if not (a and t and t.get("files") and self.root):
+            return {}
+        path = (self._trees.get(t["id"]) or self.root) / t["files"][0]
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            return {}
+        defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        imported = {(x.asname or x.name).split(".")[0] for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom)) for x in n.names}
+        hints: dict[str, str] = {}
+        if a.framework == "flask":
+            hints["HTTPException"] = 'This is a Flask app: a missing row is `return jsonify(error="... not found"), 404`, with no exception and no import.'
+            for name, mod in (("request", "flask"), ("jsonify", "flask"), ("abort", "flask")):
+                if name not in imported:
+                    hints[name] = f"Make `from {mod} import {name}` the first line of your function body."
+        elif a.framework == "fastapi" and "HTTPException" not in imported:
+            hints["HTTPException"] = "Make `from fastapi import HTTPException` the first line of your function body."
+        helper = next((d for d in sorted(defined) if re.search(r"db|conn|session|engine", d, re.I)), "")
+        if helper:
+            for name in ("db", "conn", "cursor", "session"):
+                if name not in imported and name not in defined:
+                    hints[name] = f"This file reaches the database with `{helper}()` (see the example routes above): call that, there is no `{name}`."
+        return hints
 
     def _scoped_tests(self, owner: str) -> str:
         t = self._current.get(owner)

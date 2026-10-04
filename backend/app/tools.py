@@ -137,6 +137,7 @@ class ToolBox:
         self.emit = emit or (lambda *a, **k: None)
         self.log: list[dict] = []
         self.files_touched: list[str] = []
+        self.name_hints: dict[str, str] = {}  # Finish my project: what to do instead, per name a 7B keeps inventing (`HTTPException` in a Flask app, `db` where the file has get_db())
         self.allow_new_functions = False  # Finish my project: `implement` may create a function when `function` is written as a signature, `get_stats()`
 
     @property
@@ -252,6 +253,9 @@ class ToolBox:
                 found.append((n.func.value.id, n.func.attr, rel, sorted(x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) and not x.name.startswith("_"))))
         return found
 
+    def _name_hint(self, names: list[str]) -> str:
+        return next((" " + self.name_hints[n] for n in names if n in self.name_hints), "")
+
     def _inferred_params(self, fname: str) -> str:
         """The parameters of a function that does not exist yet, read from the first call of it anywhere in the project: `db.add_x(name, qty=3)` gives `name, qty`."""
         for f in sorted(self.root.rglob("*.py")):
@@ -306,12 +310,12 @@ class ToolBox:
             alias = next((x.asname for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "database" for x in n.names if x.asname), None)
             hint = (f" The database functions are called through the module alias: write `{alias}.{missing[0]}(...)`, not `{missing[0]}(...)`." if alias else
                     " Define or import it first, or call the function that exists.")
-            return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}")
+            return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}{self._name_hint(missing)}")
         unknown, params = undefined_variables(tree, a.function or "")
         if unknown:
             return _fail(f"not applied: {', '.join(f'`{u}`' for u in unknown)} is not defined inside {a.function} (it would raise NameError). "
                          f"Use only its parameters ({', '.join(params) or 'none'}), names you assign yourself and what the file imports. "
-                         f"For example the path parameter of a route is named in its signature and in the `body:` hints, nothing else.")
+                         f"For example the path parameter of a route is named in its signature and in the `body:` hints, nothing else.{self._name_hint(unknown)}")
         return self._store(p, new_source, f"implemented {a.function} in")
 
     def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:
