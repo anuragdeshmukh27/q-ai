@@ -142,6 +142,10 @@ def _stat_by(s: Shape) -> FieldSpec | None:
 
 
 def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
+    if look_of(design).layout == "shell":
+        from .shell import shell_page
+
+        return shell_page(design, title)
     if is_feed(design):
         from .relpage import page
 
@@ -260,6 +264,10 @@ def _cols_js(cols: list[dict]) -> str:
 
 
 def script_stub(design: ArchitectOutput, title: str = "") -> str | None:
+    if look_of(design).layout == "shell":
+        from .shell import shell_script
+
+        return shell_script(design, title)
     if is_feed(design):
         from .relpage import script
 

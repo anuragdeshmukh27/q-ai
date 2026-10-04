@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from ..config import PROMPTS_DIR, AgentConfig
 from ..llm import InvalidOutputError, LLMClient, agent_context
 from ..providers.base import ProviderError
-from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, SpecOutput, check_acceptance, check_architecture, check_plan, check_spec, drop_leaked, normalize_plan, normalize_spec, spec_text
+from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, SpecOutput, check_acceptance, check_architecture, check_plan, check_spec, drop_leaked, normalize_design, normalize_plan, normalize_spec, spec_text
 
 T = TypeVar("T", bound=BaseModel)
 MAX_ATTEMPTS = 3
@@ -89,21 +89,22 @@ def structured_step(
     raise AgentFailed(agent.id, last)
 
 
-def run_spec(agent, llm, model_id, goal: str, emit):
+def run_spec(agent, llm, model_id, goal: str, emit, hints: str = ""):
     """Goal enrichment: a short goal becomes a small MVP spec; a detailed goal is followed as written. Both stay inside the size caps."""
     system = (PROMPTS_DIR / "spec.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", agent.role)
-    return structured_step(agent, llm, model_id, system, f"Goal: {goal}", SpecOutput, lambda s: check_spec(normalize_spec(drop_leaked(s, goal), goal), goal), emit)
+    user = f"Goal: {goal}" + (f"\n\nDomain notes for this kind of app (they enrich a short goal; never remove or rename anything the goal says):\n{hints}" if hints else "")
+    return structured_step(agent, llm, model_id, system, user, SpecOutput, lambda s: check_spec(normalize_spec(drop_leaked(s, goal), goal), goal), emit)
 
 
-def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit, forced_preset: str | None = None, spec: SpecOutput | None = None):
+def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit, forced_preset: str | None = None, spec: SpecOutput | None = None, notes: str = ""):
     listing = "\n".join(f"- {n}: {d}" for n, d in presets.items())
-    user = f"Goal: {goal}\n\nAvailable presets:\n{listing}"
+    user = f"Goal: {goal}\n\nAvailable presets:\n{listing}" + (f"\n\nSkill pack matched for this kind of app:\n{notes}" if notes else "")
     if spec is not None:
         user += f"\n\nProduct spec (design exactly this: these fields with these option labels, these operations, nothing more):\n{spec_text(spec)}"
     if forced_preset:
         user += f"\n\nUse preset `{forced_preset}`."
     return structured_step(agent, llm, model_id, role_prompt(agent), user, ArchitectOutput,
-                           lambda a: check_architecture(a, list(presets), spec) + ([f"preset must be {forced_preset}"] if forced_preset and a.preset != forced_preset else []),
+                           lambda a: check_architecture(normalize_design(a, spec), list(presets), spec) + ([f"preset must be {forced_preset}"] if forced_preset and a.preset != forced_preset else []),
                            emit)
 
 

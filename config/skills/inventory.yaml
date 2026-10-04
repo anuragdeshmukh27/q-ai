@@ -1,0 +1,27 @@
+name: inventory
+title: Inventory and warehouse
+summary: What is in stock, where, and what needs ordering.
+keywords: [inventory, stock, warehouse, supplier, suppliers, item, items, sku, asset, assets, equipment, parts, purchase, purchases, quantity, godown, shipment, shipments, reorder, depot]
+icon: "📦"
+icons: {items: "📦", products: "📦", suppliers: "🚚", movements: "🔁", assets: "🛠️", locations: "📍"}
+skin: depot
+currency: INR
+modules:
+  - {name: items, fields: "name, sku, category Raw material/Finished goods/Tools/Packaging/Other, quantity integer, unit_price number"}
+rules:
+  - {resource: "items", field: "sku", rule: unique}
+  - {field: "unit_price|price|amount|cost", rule: positive}
+  - {field: "quantity|reorder_level", rule: bounds, args: [0, 1000000]}
+  - {field: "phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+kpis:
+  - {label: "Items", resource: "*", agg: count}
+  - {label: "Units in stock", resource: "*", agg: sum, field: quantity}
+  - {label: "Stock value", resource: "*", agg: sumprod, field: quantity, with: unit_price, format: money}
+charts:
+  - {title: "Items by category", resource: "*", by: category}
+empty:
+  default: "Nothing here yet. Add the first item."
+pools:
+  items.name: [Steel bolts M8, Packing tape, Cardboard boxes, Safety gloves, Cordless drill, Pallet jack, Label rolls]
+  sku: [BLT-008, TAP-210, BOX-045, GLV-112, DRL-300, PLT-020, LBL-077]

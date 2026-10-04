@@ -1,0 +1,1 @@
+Domain: an online shop. Products have a price in rupees (greater than 0), a category and stock. Customers leave reviews with a rating from 1 to 5. Dashboard: products by category, reviews per product, average rating, catalogue value. Not built: cart, checkout, payments, shipping.

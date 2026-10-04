@@ -1,0 +1,1 @@
+Domain: tasks and productivity. Items have a title, a priority or status with labels (Low / Medium / High, To do / In progress / Done), a due date and a done box. Projects have tasks. Dashboard: counts by status and by priority.

@@ -209,8 +209,8 @@ def test_an_unknown_product_name_is_built_by_rules_with_a_banner_even_when_the_m
     res = o.run()
     assert res.ok, res.problems
     assert [m for _, m in llm.models_used if m in ("ArchitectOutput", "PlannerOutput")] == [], "the contract and the plan are rules, not the model's free design"
-    page = (res.root / "static/index.html").read_text(encoding="utf-8")
-    assert "Not in this version" in page and "most of what the real Dropbox does" in page
+    page = (res.root / "static/index.html").read_text(encoding="utf-8") + (res.root / "static/app.js").read_text(encoding="utf-8")  # the shell keeps the note in its description
+    assert "notIncluded" in page and "most of what the real Dropbox does" in page
     assert [r["name"] for r in json.loads((res.root / ".q/design.json").read_text(encoding="utf-8"))["resources"]] == ["items"]
     assert any(e["type"] == "agent_thought" and "plain list app" in e.get("text", "") for e in bus.history)
 
@@ -225,7 +225,7 @@ def test_a_model_spec_for_an_unknown_name_gets_the_banner_and_the_rules_path(tmp
     assert res.ok, res.problems
     spec = next(e for e in bus.history if e["type"] == "spec_ready")
     assert spec["not_included"][0] == "most of what the real Notion does"
-    assert "most of what the real Notion does" in (res.root / "static/index.html").read_text(encoding="utf-8")
+    assert "most of what the real Notion does" in (res.root / "static/app.js").read_text(encoding="utf-8")
     assert [m for _, m in llm.models_used if m == "ArchitectOutput"] == []
 
 
@@ -252,7 +252,8 @@ S = lambda n: {"name": n, "type": "string"}  # noqa: E731
 B = lambda n: {"name": n, "type": "boolean"}  # noqa: E731
 
 
-def test_a_yes_no_field_of_a_post_or_a_comment_is_a_checkbox_that_saves_at_once(tmp_path):
+def test_a_yes_no_field_of_a_post_or_a_comment_is_a_checkbox_that_saves_at_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("Q_SHELL", "0")  # the one-page feed layout
     from test_p9b import node_check, run_generated
     from app.look import choose_look
     from app.uistub import page_stub, script_stub
@@ -369,7 +370,7 @@ def test_a_guessed_design_that_fails_the_checks_falls_back_to_a_plain_list_app_w
     assert res.ok, res.problems
     assert len(calls) == 2
     assert any(e["type"] == "agent_thought" and "plain list app" in e.get("text", "") for e in bus.history)
-    assert "most of what the real Strava does" in (res.root / "static/index.html").read_text(encoding="utf-8")
+    assert "most of what the real Strava does" in (res.root / "static/app.js").read_text(encoding="utf-8")
 
 
 def test_a_known_platform_whose_design_fails_still_fails_loudly(tmp_path):

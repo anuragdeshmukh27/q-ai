@@ -1,0 +1,1 @@
+Domain: inventory. Items have a unique SKU, a category, a quantity (never negative) and a unit price in rupees (greater than 0). Dashboard: items by category, units in stock, stock value (quantity times unit price).

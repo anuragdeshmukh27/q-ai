@@ -84,7 +84,7 @@ def api_test_source(design: ArchitectOutput, resource: str | None = None) -> str
     mine = [r for r in design.resources if resource in (None, r.name)]
     endpoints = [e for r in mine for e in endpoints_for_resource(design, r.name)] if design.resources else design.endpoints
     out = ['"""Contract tests generated from the API contract examples. Do not edit; fix the code instead."""',
-           "import pytest", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", ""]
+           "import itertools", "", "import pytest", "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "_n = itertools.count(1)  # makes unique values differ", "", ""]
     for e in endpoints:
         for i, ex in enumerate(e.examples, 1):
             out += _test_for(e, i, ex, design)
@@ -95,6 +95,10 @@ def api_test_source(design: ArchitectOutput, resource: str | None = None) -> str
 
 def ui_page_test_source(design: ArchitectOutput) -> str:
     look = design.look
+    if look is not None and look.layout == "shell":
+        from .shell import shell_page_test
+
+        return shell_page_test(design)
     extra: list[str] = []
     if look is not None:  # the theme and the "Not in this version" note were chosen by rules: a page that drops them is wrong
         extra += ["", "", "def test_page_keeps_its_theme():", "    import re",
@@ -189,6 +193,10 @@ __CALLS__
 
 
 def ui_script_test_source(design: ArchitectOutput) -> str:
+    if design.look is not None and design.look.layout == "shell":
+        from .shell import shell_script_test
+
+        return shell_script_test(design)
     paths = sorted({re.sub(r"/\{.*$", "", e.path) for e in design.endpoints})
     fields = list_view_fields(design)
     cats = category_fields(design)

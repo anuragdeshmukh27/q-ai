@@ -16,7 +16,7 @@ import re
 from .schemas import ArchitectOutput, Look, SpecOutput
 
 THEMES = ("default", "finance", "paper", "industrial", "social", "food", "health")
-LAYOUTS = ("table", "cards", "checklist", "calculator", "feed")
+LAYOUTS = ("table", "cards", "checklist", "calculator", "feed", "shell")
 
 # (theme, keywords): the first theme with the most hits wins a tie
 THEME_WORDS: list[tuple[str, str]] = [
@@ -103,12 +103,46 @@ def subtitle_of(spec: SpecOutput | None, title: str) -> str:
     return first
 
 
+SKIN_OF_THEME = {"default": "studio", "finance": "ledger", "paper": "academy", "industrial": "depot", "social": "community", "food": "kitchen", "health": "clinic"}
+_RUPEE = re.compile(r"rupees?|\brs\b\.?|₹|\binr\b|\blakh|\bcrore", re.I)
+_DOLLAR = re.compile(r"dollars?|\$|\busd\b", re.I)
+
+
+def detect_currency(goal: str, skill_currency: str = "") -> str:
+    """Rupees or dollars named in the goal win; else the skill pack's; else dollars (the kit's old default)."""
+    if _RUPEE.search(goal):
+        return "INR"
+    if _DOLLAR.search(goal):
+        return "USD"
+    return skill_currency or "USD"
+
+
+def shell_applies(design: ArchitectOutput) -> bool:
+    """Every app with a dashboard-worthy list gets the multi-page shell; a calculator (a computed result, no list of things) keeps its panel."""
+    from .schemas import shell_enabled
+
+    if not shell_enabled():
+        return False
+    if design.resources:
+        return True
+    from .uistub import Shape
+
+    s = Shape(design)
+    return s.ok and not s.calculator
+
+
 def choose_look(goal: str, spec: SpecOutput | None, design: ArchitectOutput) -> Look:
-    layout = choose_layout(design)
+    from .skills import pack
+
+    layout = "shell" if shell_applies(design) else choose_layout(design)
     title = spec.title if spec else ""
     names = [r.name for r in design.resources] or [t.name for t in design.tables]
-    return Look(theme=choose_theme(goal, title, names), layout=layout, icon=choose_icon(goal, title, layout, names),
-                subtitle=subtitle_of(spec, title), not_included=list(spec.not_included) if spec else [])
+    theme = choose_theme(goal, title, names)
+    skill = spec.skill if spec else ""
+    p = pack(skill) or {}
+    return Look(theme=theme, layout=layout, icon=p.get("icon") or choose_icon(goal, title, layout, names), subtitle=subtitle_of(spec, title),
+                not_included=list(spec.not_included) if spec else [], skill=skill, skin=p.get("skin") or SKIN_OF_THEME.get(theme, "studio"),
+                currency=detect_currency(goal, p.get("currency", "")))
 
 
 def look_of(design: ArchitectOutput) -> Look:

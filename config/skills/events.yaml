@@ -1,0 +1,42 @@
+name: events
+title: Events and fests
+summary: "Run an event: sign people up, staff it, and keep track of the money."
+keywords: [event, events, fest, festival, hackathon, workshop, conference, registration, registrations, volunteer, volunteers, sponsor, sponsors, attendee, attendees, seminar, meetup, venue, campus, techfest, competition]
+icon: "🎪"
+icons: {events: "🎪", registrations: "🎟️", volunteers: "🙋", sponsors: "🤝", teams: "👥", speakers: "🎤"}
+skin: campus
+currency: INR
+modules:
+  - {name: events, fields: "name, category Talk/Workshop/Contest/Social, venue, date, start_time, capacity integer, entry_fee number"}
+  - {name: registrations, parent: events, fields: "student_name, college, email, phone, status Registered/Checked in/Cancelled"}
+rules:
+  - {field: "phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+  - {resource: "registrations", field: "email", rule: unique}
+  - {resource: "sponsors", field: "amount", rule: positive}
+  - {field: "entry_fee", rule: bounds, args: [0, 100000]}
+  - {resource: "registrations", rule: capacity, field: capacity}
+  - {resource: "registrations", rule: flow, field: status, flow: {Registered: [Checked in, Cancelled], Checked in: [], Cancelled: []}}
+  - {resource: "sponsors", rule: flow, field: status, flow: {Pledged: [Paid], Paid: []}}
+kpis:
+  - {label: "Events", resource: events, agg: count}
+  - {label: "Registrations", resource: registrations, agg: count}
+  - {label: "Checked in", resource: registrations, agg: count, where: {status: Checked in}}
+  - {label: "Sponsorship received", resource: sponsors, agg: sum, field: amount, where: {status: Paid}, format: money}
+  - {label: "Sponsorship pledged", resource: sponsors, agg: sum, field: amount, where: {status: Pledged}, format: money}
+charts:
+  - {title: "Registrations per event", resource: registrations, per: parent}
+  - {title: "Events by category", resource: events, by: category}
+  - {title: "Registrations by status", resource: registrations, by: status}
+empty:
+  default: "Nothing here yet. Add the first one with the button above."
+  registrations: "No registrations yet. Share the event and they will show up here."
+  volunteers: "No volunteers yet. Add the people who will run the event."
+  sponsors: "No sponsors yet. Add the first company that backs this event."
+pools:
+  venue: [Main Auditorium, Seminar Hall A, Computer Lab 3, Open Air Theatre, Innovation Centre, Block C Atrium]
+  college: [IIT Bombay, NIT Trichy, BITS Pilani, VIT Vellore, PES University, COEP Pune, Manipal Institute]
+  team_name: [Byte Bandits, Neural Ninjas, Stack Smashers, Circuit Breakers, Quiz Whizzes, Pixel Pirates]
+  company_name: [Zenith Labs, Kavya Foods, Tata Elxsi, Razorpay, Infosys Foundation, Chai Point, Freshworks]
+  contact_person: [Meera Iyer, Rohan Gupta, Kavya Nair, Aarav Sharma, Sneha Kulkarni]
+  events.name: [CodeSprint 2026, RoboWars, Pixel Arena, Quizzard, Hack the Campus, AI Workshop Day]

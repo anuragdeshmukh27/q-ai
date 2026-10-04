@@ -101,15 +101,15 @@ def test_caps_on_endpoints_and_fields():
     d.endpoints += extra
     assert any("at most 4" in p for p in check_architecture(d, ["fastapi-vanilla"]))
     d = design()
-    d.endpoints[0].request_fields += [FieldSpec(name=f"extra{i}", type="string") for i in range(5)]
-    assert any("fields" in p and "keep the 6" in p for p in check_architecture(d, ["fastapi-vanilla"]))
+    d.endpoints[0].request_fields += [FieldSpec(name=f"extra{i}", type="string") for i in range(9)]
+    assert any("fields" in p and "keep the 8" in p for p in check_architecture(d, ["fastapi-vanilla"]))
 
 
 def test_spec_checks_and_text():
     assert check_spec(SPEC) == []
     big = SPEC.model_copy(deep=True)
-    big.resources[0].fields += [SpecField(name=f"f{i}", type="string") for i in range(5)]
-    assert any("keep the 6" in p for p in check_spec(big))
+    big.resources[0].fields += [SpecField(name=f"f{i}", type="string") for i in range(9)]
+    assert any("keep the 8" in p for p in check_spec(big))
     bare = SPEC.model_copy(deep=True)
     bare.resources[0].fields[1].options = []
     assert check_spec(bare)

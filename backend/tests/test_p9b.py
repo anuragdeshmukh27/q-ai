@@ -14,6 +14,12 @@ from app.uistub import page_stub, script_stub
 
 from test_enrich import run_generated
 
+@pytest.fixture(autouse=True)
+def older_layouts(monkeypatch):
+    """These tests are about the one-page layouts (table, cards, checklist, feed), which stay as the fallback when Q_SHELL=0; the multi-page shell has tests/test_shell.py."""
+    monkeypatch.setenv("Q_SHELL", "0")
+
+
 KIT_DIR = Path(__file__).resolve().parents[1] / "app" / "presets" / "fastapi_vanilla" / "skeleton" / "static"
 JUDGE_GOALS = {
     "Build Instagram": "instagram", "Build Twitter": "twitter", "Build Amazon": "amazon", "Build Zomato": "zomato", "Build YouTube": "youtube",
@@ -343,7 +349,7 @@ def test_the_request_models_use_the_validated_type_for_parents_and_children_alik
     for resource in ("posts", "comments"):
         code = route_stub(d, endpoints_for_resource(d, resource), resource)
         compile(code, resource, "exec")
-        assert "from backend.validation import Required" in code
+        assert "from backend.validation import Email, Phone, Positive, PositiveInt, Required, between" in code
         request = code.split("Request(BaseModel):")[1].split("class ")[0]
         assert "Required" in request, resource
         assert "Required" not in code.split("Response(BaseModel):")[1].split("@router")[0], "responses are not validated"

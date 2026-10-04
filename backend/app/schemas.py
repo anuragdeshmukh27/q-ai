@@ -58,6 +58,8 @@ class ColumnSpec(BaseModel):
 class TableSpec(BaseModel):
     name: str
     columns: list[ColumnSpec]
+    constraints: SkipJsonSchema[list[str]] = Field(default_factory=list)  # table constraints (UNIQUE (post_id, email)), written by the rules
+    triggers: SkipJsonSchema[list[str]] = Field(default_factory=list)  # CREATE TRIGGER statements (a status flow, a capacity limit), written by the rules
 
 
 class DbFunction(BaseModel):
@@ -82,8 +84,24 @@ def singular(name: str) -> str:
 
 class ActionInfo(BaseModel):
     name: str  # upvote, downvote, like, complete
-    field: str  # the counter (increment) or yes/no field (toggle) it changes
-    kind: Literal["increment", "toggle"]
+    field: str  # the counter (increment), yes/no field (toggle) or status field (set) it changes
+    kind: Literal["increment", "toggle", "set"]
+    value: str = ""  # set: the label the status field takes (Completed)
+
+
+class ResourceRules(BaseModel):
+    """Declarative rules of one resource (from a skill pack): each one becomes generated code (request types, constraints, triggers) and generated tests."""
+    unique: list[str] = Field(default_factory=list)  # a duplicate is a 409 (a child's values are unique within its parent)
+    phone: list[str] = Field(default_factory=list)  # a 10-digit Indian mobile number
+    email: list[str] = Field(default_factory=list)
+    positive: list[str] = Field(default_factory=list)  # an amount in rupees: greater than 0
+    bounds: dict[str, list[float]] = Field(default_factory=dict)  # field -> [min, max]
+    status_field: str = ""
+    transitions: dict[str, list[str]] = Field(default_factory=dict)  # status label -> the labels it may change to (an empty list: final)
+    capacity_field: str = ""  # a field of the PARENT that limits how many rows of this resource it may hold (409 when full)
+
+    def empty(self) -> bool:
+        return not (self.unique or self.phone or self.email or self.positive or self.bounds or self.transitions or self.capacity_field)
 
 
 class ResourceInfo(BaseModel):
@@ -98,6 +116,7 @@ class ResourceInfo(BaseModel):
     actions: list[ActionInfo] = Field(default_factory=list)
     sorts: list[str] = Field(default_factory=list)  # ["new", "top"] or []
     top_by: str = ""  # SQL ordering expression for sort=top, for example "upvotes - downvotes"
+    rules: ResourceRules = Field(default_factory=ResourceRules)
 
 
 class Look(BaseModel):
@@ -107,6 +126,9 @@ class Look(BaseModel):
     icon: str = ""  # an emoji shown in the app header
     subtitle: str = ""  # one line from the spec
     not_included: list[str] = Field(default_factory=list)  # shown on the page as "Not in this version: ..."
+    skill: str = ""  # the matched skill pack (config/skills/<name>.yaml), shown in the Contract tab
+    skin: str = ""  # shell skin (fonts, palette, shape), from the skill pack or the theme words
+    currency: str = ""  # INR | USD ..., from the goal or the skill pack
 
 
 class ArchitectOutput(BaseModel):
@@ -168,7 +190,7 @@ def reserved_problem(where: str, name: str) -> list[str]:
 
 
 MAX_ENDPOINTS_PER_RESOURCE = 5  # the prompts ask for 4; one extra is tolerated
-MAX_FIELDS_PER_RESOURCE = 6  # without id and timestamps
+MAX_FIELDS_PER_RESOURCE = 8  # without id and timestamps
 
 
 def check_options(where: str, name: str, ftype: str, options: list[str]) -> list[str]:
@@ -274,22 +296,25 @@ COUNTER_NAME = re.compile(r"^(upvotes?|downvotes?|votes?|likes?|dislikes?|views?
 COUNTERS = ("upvotes", "downvotes", "votes", "likes", "dislikes", "views")
 COUNTER_ACTION = {"upvotes": "upvote", "downvotes": "downvote", "votes": "vote", "likes": "like", "dislikes": "dislike", "views": "view"}
 MAX_ACTIONS_PER_RESOURCE = 2
-MAX_RESOURCES = 2
+MAX_RESOURCES = 4  # one parent and up to three children
+MAX_CHILDREN = 3
 
 
-def check_categories(endpoints: list[Endpoint]) -> list[str]:
-    """Categorical fields are labelled string enums everywhere they appear, with the same labels in every endpoint."""
+def check_categories(endpoints: list[Endpoint], tables: set[str] | None = None) -> list[str]:
+    """Categorical fields are labelled string enums everywhere they appear, with the same labels in every endpoint of the same resource
+    (two resources may each have a `status` with their own labels: registrations Registered / Cancelled, sponsors Pledged / Paid)."""
     problems: list[str] = []
-    seen: dict[str, list[str]] = {}
+    seen: dict[tuple[str, str], list[str]] = {}
     for e in endpoints:
         for f in [*e.request_fields, *e.response_fields]:
             problems += check_options(f"{e.method} {e.path}", f.name, f.type, f.options)
             if f.options:
-                seen.setdefault(f.name, f.options)
+                seen.setdefault((_resource(e.path, tables), f.name), f.options)
     for e in endpoints:
         for f in [*e.request_fields, *e.response_fields]:
-            if f.name in seen and f.options != seen[f.name] and f.type == "string":
-                problems.append(f"{e.method} {e.path}: field '{f.name}' must list the same options everywhere: {seen[f.name]}")
+            key = (_resource(e.path, tables), f.name)
+            if key in seen and f.options != seen[key] and f.type == "string":
+                problems.append(f"{e.method} {e.path}: field '{f.name}' must list the same options everywhere: {seen[key]}")
     return list(dict.fromkeys(problems))
 
 
@@ -348,9 +373,11 @@ def check_relations(a: "ArchitectOutput") -> list[str]:
 def check_against_spec(a: ArchitectOutput, spec: "SpecOutput") -> list[str]:
     """The design must implement the product spec it was given: its fields, its labelled options and its operations."""
     problems: list[str] = []
-    writes = [f for e in a.endpoints if e.method in ("POST", "PUT", "PATCH") for f in e.request_fields]
-    reads = [f for e in a.endpoints for f in e.response_fields]
+    tables = {t.name for t in a.tables} or None
     for r in spec.resources:
+        mine = [e for e in a.endpoints if len(spec.resources) == 1 or _resource(e.path, tables) == r.name]  # the endpoints of this resource (two resources may share a field name)
+        writes = [f for e in mine if e.method in ("POST", "PUT", "PATCH") for f in e.request_fields]
+        reads = [f for e in mine for f in e.response_fields]
         for f in r.fields:
             # a stored value may be computed by the server (a calculator's result), so it need not be something the client sends
             if not any(w.name == f.name for w in [*writes, *reads]) and not any(f.name in x.description for x in reads if x.type == "array"):
@@ -369,6 +396,34 @@ def check_against_spec(a: ArchitectOutput, spec: "SpecOutput") -> list[str]:
     return list(dict.fromkeys(problems))
 
 
+def normalize_design(a: ArchitectOutput, spec: "SpecOutput | None") -> ArchitectOutput:
+    """The spec renamed a field that is an SQL keyword (group -> group_value); a 7B Architect often keeps writing the old name. Mechanical repair: the design uses the spec's name."""
+    if spec is None:
+        return a
+    for r in spec.resources:
+        for f in r.fields:
+            for suffix in ("_value", "_name"):
+                base = f.name[: -len(suffix)] if f.name.endswith(suffix) else ""
+                if not base or base not in SQL_RESERVED:
+                    continue
+                rx = re.compile(r"\b" + re.escape(base) + r"\b")
+                for e in a.endpoints:
+                    for fld in [*e.request_fields, *e.response_fields]:
+                        if fld.name == base:
+                            fld.name = f.name
+                        fld.description = rx.sub(f.name, fld.description)
+                    for ex in e.examples:
+                        ex.request = {(f.name if k == base else k): v for k, v in ex.request.items()}
+                        ex.response = {(f.name if k == base else k): v for k, v in ex.response.items()}
+                for t in a.tables:
+                    for c in t.columns:
+                        if c.name == base:
+                            c.name = f.name
+                for d in a.db_functions:
+                    d.signature, d.description = rx.sub(f.name, d.signature), rx.sub(f.name, d.description)
+    return a
+
+
 def add_spec_features(a: ArchitectOutput, spec: "SpecOutput | None") -> None:
     """A search box the spec promises must reach the page even when the Architect left it out of `ui_features` (the generated page builds the box from that list)."""
     if spec is None or any("search" in f.lower() for f in a.ui_features):
@@ -378,7 +433,7 @@ def add_spec_features(a: ArchitectOutput, spec: "SpecOutput | None") -> None:
 
 
 def check_architecture(a: ArchitectOutput, presets: list[str], spec: "SpecOutput | None" = None) -> list[str]:
-    problems: list[str] = check_categories(a.endpoints) + check_caps(a.endpoints, {t.name for t in a.tables} or None, bool(a.resources)) + check_relations(a)
+    problems: list[str] = check_categories(a.endpoints, {t.name for t in a.tables} or None) + check_caps(a.endpoints, {t.name for t in a.tables} or None, bool(a.resources)) + check_relations(a)
     if spec is not None:
         problems += check_against_spec(a, spec)
     if a.preset not in presets:
@@ -481,8 +536,9 @@ class SpecField(BaseModel):
 
 class SpecAction(BaseModel):
     name: str = Field(description="snake_case verb, e.g. upvote, downvote, like, complete")
-    field: str = Field(description="the counter field it adds 1 to (increment), or the yes/no field it flips (toggle)")
-    kind: Literal["increment", "toggle"]
+    field: str = Field(description="the counter field it adds 1 to (increment), the yes/no field it flips (toggle), or the status field it sets (set)")
+    kind: Literal["increment", "toggle", "set"]
+    value: str = Field(default="", description="kind set: the status label the field takes, one of its options (Completed)")
 
 
 class SpecResource(BaseModel):
@@ -500,6 +556,7 @@ class SpecOutput(BaseModel):
     resources: list[SpecResource] = Field(default_factory=list)
     features: list[str] = Field(default_factory=list, description="What the page lets the user do, as short statements")
     not_included: list[str] = Field(default_factory=list, description="Things the real product has that this small version leaves out (login, uploads, payments...)")
+    skill: SkipJsonSchema[str] = ""  # the matched skill pack, set by the engine
 
 
 CHILD_WORDS = {"comments", "answers", "replies", "tasks", "subtasks", "reviews", "responses", "entries", "messages", "lessons", "chapters"}
@@ -515,6 +572,11 @@ def drop_leaked(spec: SpecOutput, goal: str) -> SpecOutput:
     """Remove the words a model copies out of the spec prompt's examples into an unrelated goal's `not_included` (called on the model's raw answer only)."""
     spec.not_included = [x for x in spec.not_included if not (_LEAKED.search(x) and not re.search("reddit", goal, re.I))]
     return spec
+
+
+def shell_enabled() -> bool:
+    """Q_SHELL=0 is the fallback: the older one-page layouts (no search and filters on a related-resources page)."""
+    return os.environ.get("Q_SHELL", "1") != "0"
 
 
 def relations_enabled() -> bool:
@@ -533,6 +595,55 @@ _GOAL_RELATION = re.compile(r"\b(?:each|every)\s+([a-z]+)\s+(?:has|have|can have
 def goal_relations(goal: str) -> list[tuple[str, str]]:
     """'Each driver has many rides' -> [('driver', 'rides')]: the parent -> child pairs a detailed goal states in words."""
     return [(p.lower(), c.lower()) for p, c in _GOAL_RELATION.findall(goal or "")]
+
+
+_VERB_OF = {"completed": "complete", "cancelled": "cancel", "canceled": "cancel", "checked_in": "check_in", "confirmed": "confirm", "approved": "approve", "rejected": "reject",
+            "accepted": "accept", "delivered": "deliver", "resolved": "resolve", "closed": "close", "shipped": "ship", "started": "start", "finished": "finish",
+            "paid": "mark_paid", "refunded": "refund", "assigned": "assign", "published": "publish", "archived": "archive"}
+
+
+def action_verb(name: str) -> str:
+    """mark_completed -> complete, cancel -> cancel, check_in -> check_in: the name of a one-click status action in the URL."""
+    n = re.sub(r"^(mark|set|make)_", "", name.strip().lower().replace(" ", "_").replace("-", "_"))
+    n = re.sub(r"_as_|_to_", "_", n)
+    return _VERB_OF.get(n, n)
+
+
+def action_option(name: str, options: list[str]) -> str:
+    """The status label a one-click action sets: 'mark_completed' -> Completed, 'cancel' -> Cancelled, 'check_in' -> Checked in ('' when no label fits)."""
+    want = re.sub(r"^(mark|set|make)_", "", name.strip().lower().replace(" ", "_").replace("-", "_")).replace("_as_", "_")
+    for o in options:
+        key = o.lower().replace(" ", "_").replace("-", "_")
+        if key == want or _VERB_OF.get(key) == want or _VERB_OF.get(want) == key or _VERB_OF.get(want) == _VERB_OF.get(key, key):
+            return o
+    for o in options:
+        key = o.lower().replace(" ", "_")
+        if len(want) >= 4 and (key.startswith(want[:5]) or want.startswith(key[:5])):
+            return o
+    return ""
+
+
+_GOAL_ACTIONS = re.compile(r"\bactions?(?:\s+(?:on|for)\s+(?:an?|each|every|the)?\s*([a-z_ ]+?))?\s*:\s*([^.;]+)", re.I)
+
+
+def goal_actions(goal: str, res: list["SpecResource"]) -> dict[str, list[str]]:
+    """'Actions on a ride: mark completed and cancel' / '... status A/B; actions: check in and cancel' -> {resource name: ['mark_completed', 'cancel']}.
+    A sentence without a named resource belongs to the resource its own field list names (the resource mentioned most recently before it)."""
+    out: dict[str, list[str]] = {}
+    for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", goal or ""):
+        m = _GOAL_ACTIONS.search(sentence)
+        if not m:
+            continue
+        r = _named(res, m.group(1).strip()) if m.group(1) else None
+        if r is None:  # '... has many registrations: ...; actions: check in and cancel': the resource named in the sentence
+            hits = [x for x in res if re.search(r"\b(?:" + re.escape(x.name) + "|" + re.escape(singular(x.name)) + r")\b", sentence[:m.start()], re.I)]
+            r = hits[-1] if hits else None
+        if r is not None:
+            for phrase in re.split(r"\s*(?:,|\band\b)\s*", m.group(2).strip()):
+                phrase = phrase.strip().lower()
+                if phrase:
+                    out.setdefault(r.name, []).append(phrase.replace(" ", "_"))
+    return out
 
 
 def _named(res: list["SpecResource"], word: str) -> "SpecResource | None":
@@ -561,8 +672,12 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
             r.parent = ""
     for parent_word, child_word in goal_relations(goal):  # the goal says 'each driver has many rides': that is the relation, whatever the model wrote
         owner, child = _named(res, parent_word), _named(res, child_word)
-        if owner is not None and child is not None and owner is not child and not any(r.parent for r in res):
+        if owner is not None and child is not None and owner is not child and not child.parent:
             child.parent = owner.name
+    for r in res:  # one level only: a child's child is a sibling of its parent's other children
+        top = next((p for p in res if p.name == r.parent), None)
+        if top is not None and top.parent:
+            r.parent = top.parent
     if len(res) > 1 and not any(r.parent for r in res):  # a model often forgets `parent`: comments of posts, tasks of projects are unmistakable
         text = " ".join(spec.features).lower()
         kids = [r for r in res if r.name in CHILD_WORDS]
@@ -572,11 +687,12 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
             child = res[1]
         if child is not None and owner is not None and owner is not child:
             child.parent = owner.name
-    # 2. at most 2 resources: the first parent -> child pair, else the first resource
+    # 2. one parent and up to three children, else the first resource
     keep = res[:1]
     child = next((r for r in res if r.parent), None)
     if child is not None and relations_enabled():
-        keep = [next(p for p in res if p.name == child.parent), child]
+        owner = next(p for p in res if p.name == child.parent)
+        keep = [owner, *[r for r in res if r.parent == owner.name][:MAX_CHILDREN]]
     for r in res:
         if r not in keep:
             left.append(r.name.replace("_", " "))
@@ -600,12 +716,22 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
                     if guess not in by:
                         by[guess] = SpecField(name=guess, type="integer")
                         r.fields.append(by[guess])
-            if a.kind == "toggle" and a.field in by and (by[a.field].options or any(x.kind == "toggle" and x.field == a.field for x in fixed)):
-                # a labelled status (Requested / Completed / Cancelled) cannot be flipped like a yes/no box, and two flips of one field are one column twice:
-                # the field keeps its labels, they are changed in Edit, and the one-click action is listed as left out
-                left.append(f"one-click {a.name.replace('_', ' ')} (change the {a.field.replace('_', ' ')} in Edit)")
-                no_button.append(a.name.split("_"))
+            if a.kind in ("toggle", "set") and a.field not in by:  # a status action whose field the model forgot: the resource's own status-like field
+                a.field = next((f.name for f in r.fields if f.options and re.search(r"status|state|stage", f.name)), a.field)
+            if a.kind in ("toggle", "set") and a.field in by and by[a.field].options:
+                # a labelled status (Requested / Completed / Cancelled) is not flipped like a yes/no box: the action SETS one of its labels (POST .../complete -> status = Completed),
+                # the field keeps its labels and no column is added
+                value = a.value if a.value in by[a.field].options else action_option(a.value or a.name, by[a.field].options) or action_option(a.name, by[a.field].options)
+                if not value:
+                    left.append(f"one-click {a.name.replace('_', ' ')} (change the {a.field.replace('_', ' ')} in Edit)")
+                    no_button.append(a.name.split("_"))
+                    continue
+                a.kind, a.value, a.name = "set", value, action_verb(a.name) if action_option(a.name, by[a.field].options) else action_verb(value.replace(" ", "_"))
+                if not any(x.kind == "set" and x.name == a.name and x.field == a.field for x in fixed):
+                    fixed.append(a)
                 continue
+            if a.kind == "toggle" and a.field in by and any(x.kind == "toggle" and x.field == a.field for x in fixed):
+                continue  # two flips of one yes/no field are one column twice
             if a.field in by and a.name not in {x.name for x in fixed}:
                 by[a.field].type, by[a.field].options = ("integer" if a.kind == "increment" else "boolean"), []
                 fixed.append(a)
@@ -626,7 +752,7 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
         for x in spec.features:
             if _SORT_FEATURE.search(x):
                 continue  # ordering by votes or date is the sort select, not a filter
-            if _SEARCH_FEATURE.search(x):
+            if _SEARCH_FEATURE.search(x) and not shell_enabled():
                 left.append("search and filters")
                 continue
             if any(all(w in x.lower() for w in words) for words in no_button):
@@ -653,9 +779,9 @@ def check_spec(spec: SpecOutput, goal: str = "") -> list[str]:
     if len(spec.features) > 8:
         problems.append("at most 8 features")
     if len(spec.resources) > MAX_RESOURCES:
-        problems.append(f"at most {MAX_RESOURCES} resources: keep the main one and its child, and list anything else in `not_included`")
-    if sum(1 for r in spec.resources if r.parent) > 1:
-        problems.append("at most one resource may have a parent")
+        problems.append(f"at most {MAX_RESOURCES} resources: keep the main one and up to {MAX_CHILDREN} children, and list anything else in `not_included`")
+    if len({r.parent for r in spec.resources if r.parent}) > 1:
+        problems.append("every child resource must have the same parent")
     for r in spec.resources:
         if not IDENT.match(r.name):
             problems.append(f"resource name {r.name!r} must be snake_case")
@@ -681,7 +807,9 @@ def check_spec(spec: SpecOutput, goal: str = "") -> list[str]:
                 problems.append(f"{r.name}: action name {a.name!r} must be a snake_case verb")
             elif f is None:
                 problems.append(f"{r.name}: action {a.name} changes the field {a.field!r}, which the resource does not have")
-            elif (a.kind == "increment") != (f.type in ("number", "integer")):
+            elif a.kind == "set" and a.value not in f.options:
+                problems.append(f"{r.name}: action {a.name} sets {a.field} to {a.value!r}, which is not one of its options {f.options}")
+            elif a.kind != "set" and (a.kind == "increment") != (f.type in ("number", "integer")):
                 problems.append(f"{r.name}: action {a.name} ({a.kind}) does not fit the type of {a.field}")
         if "top" in r.sorts and not any(a.kind == "increment" for a in r.actions):
             problems.append(f"{r.name}: sorting by top needs a counter with an increment action (upvotes)")
@@ -693,7 +821,7 @@ def spec_text(spec: SpecOutput) -> str:
     lines = [f"# {spec.title}", "", spec.summary.strip(), ""]
     for r in spec.resources:
         fields = ", ".join(f"{f.name} ({' / '.join(f.options) if f.options else f.type})" for f in r.fields)
-        extra = (f" Belongs to {r.parent}." if r.parent else "") + (f" Actions: {', '.join(f'{a.name} ({a.field})' for a in r.actions)}." if r.actions else "") \
+        extra = (f" Belongs to {r.parent}." if r.parent else "") + (f" Actions: {', '.join(f'{a.name} ({a.field} = {a.value})' if a.kind == 'set' else f'{a.name} ({a.field})' for a in r.actions)}." if r.actions else "") \
             + (f" Sort: {' / '.join(r.sorts)}." if r.sorts else "")
         lines.append(f"**{r.name}**: {fields}. Operations: {', '.join(r.operations)}.{extra}")
     if spec.resources:
@@ -745,7 +873,7 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint], tabl
         for f in t.files:
             if not f.startswith(OWNER_PREFIXES[t.owner]):
                 problems.append(f"{t.id}: file {f!r} is not in {t.owner}'s area {OWNER_PREFIXES[t.owner]}")
-            if f.startswith(("backend/main.py", "backend/validation", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__", "static/ui-kit")):
+            if f.startswith(("backend/main.py", "backend/validation", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__", "backend/seed", "seed.json", "static/ui-kit", "static/shell", "static/fonts")):
                 problems.append(f"{t.id}: {f} is a locked preset file and cannot be a task target")
         if not t.acceptance:
             problems.append(f"{t.id}: add acceptance criteria")

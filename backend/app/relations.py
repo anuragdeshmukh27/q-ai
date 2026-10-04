@@ -1,19 +1,25 @@
 """Related resources and one-click actions: the contract and the plan, completed by rules.
 
 A 7B Architect cannot hold a consistent two-table contract in one answer (the reddit run: `post_id` as a string, vote counters sent by the client,
-comments as a flat resource, "filter by upvotes"). The spec step says WHAT the app has (parent, actions, sorts); this module turns it into the
+comments as a flat resource, "filter by upvotes"). The spec step says WHAT the app has (parent, children, actions, sorts); this module turns it into the
 contract, deterministically, with the same shape every time:
 
-- a child list is nested under its parent: GET/POST /api/posts/{post_id}/comments, 404 when the post does not exist, deleting the post deletes its comments;
+- a child list is nested under its parent: GET/POST /api/posts/{post_id}/comments, 404 when the post does not exist, deleting the post deletes its children
+  (a parent may have up to three children: registrations, volunteers and sponsors of an event);
 - counters (upvotes...) belong to the server: they are response fields, never request fields, and change only through POST /api/posts/{id}/upvote,
-  which returns the updated item; a toggle flips a yes/no field the same way;
-- ordering is a query field: GET /api/posts?sort=new|top.
+  which returns the updated item; a toggle flips a yes/no field the same way; a status action SETS one label of a status field
+  (POST /api/rides/{id}/complete -> status = Completed) and the field stays an ordinary field with its labels;
+- ordering is a query field: GET /api/posts?sort=new|top;
+- the rules of a skill pack (unique, phone, email, positive amounts, bounds, a status flow, a capacity limit) become request types, table constraints and
+  triggers in the schema, so no agent has to remember them, and tests are generated for each.
 Agents still write every function body; the plan has one database task per table and one backend task per router.
 """
 from __future__ import annotations
 
+import re
+
 from .schemas import (ActionInfo, ArchitectOutput, ColumnSpec, DbFunction, Endpoint, ErrorSpec, ExampleSpec, FieldSpec, PlannerOutput,
-                      ResourceInfo, SpecOutput, TableSpec, TaskSpec, _resource, singular)
+                      ResourceInfo, ResourceRules, SpecOutput, TableSpec, TaskSpec, _resource, singular)
 
 PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool"}
 SQL_TYPES = {"string": "TEXT", "number": "REAL", "integer": "INTEGER", "boolean": "INTEGER"}
@@ -24,30 +30,41 @@ def label(name: str) -> str:
     return name.replace("_", " ").strip().capitalize()
 
 
-def sample(f: FieldSpec):
-    """A valid example value for a field (the generated tests send these)."""
+def sample(f: FieldSpec, rules: ResourceRules | None = None, n: int = 0):
+    """A valid example value for a field (the generated tests send these). `n` makes the value of a unique field different on every call."""
+    rules = rules or ResourceRules()
     if f.options:
         return f.options[0]
     if f.type == "boolean":
         return False
+    if f.name in rules.bounds:
+        lo, hi = rules.bounds[f.name]
+        return int(lo) if f.type == "integer" else float(lo)
     if f.type == "integer":
-        return 1
+        return 100 if re.search(r"capacity|seats|limit|quota", f.name) else 1
     if f.type == "number":
         return 2.5
+    if f.name in rules.phone:
+        return f"98765{n % 100000:05d}"
+    if f.name in rules.email or "email" in f.name:
+        return f"user{n}@example.com" if n else "ada@example.com"
     if "url" in f.name or "link" in f.name:
         return "https://example.com"
-    if "email" in f.name:
-        return "ada@example.com"
     if "date" in f.name:
         return "2026-01-15"
-    return f"Sample {f.name.replace('_', ' ')}"
+    if re.search(r"(^|_)time$", f.name):
+        return "10:30"
+    return f"Sample {f.name.replace('_', ' ')}" + (f" {n}" if n and f.name in rules.unique else "")
 
 
-def payload(ri: ResourceInfo) -> dict:
-    return {f.name: sample(f) for f in ri.fields}
+def payload(ri: ResourceInfo, n: int = 0) -> dict:
+    return {f.name: sample(f, ri.rules, n) for f in ri.fields}
+
 
 
 def infos(spec: SpecOutput) -> list[ResourceInfo]:
+    from .skills import rules_for
+
     out: list[ResourceInfo] = []
     for r in spec.resources:
         counters = [a.field for a in r.actions if a.kind == "increment"]
@@ -55,8 +72,8 @@ def infos(spec: SpecOutput) -> list[ResourceInfo]:
         out.append(ResourceInfo(
             name=r.name, singular=singular(r.name), parent=r.parent, fk=f"{singular(r.parent)}_id" if r.parent else "",
             fields=[FieldSpec(name=f.name, type=f.type, options=f.options) for f in r.fields if f.name not in counters + flags],
-            counters=counters, flags=flags, actions=[ActionInfo(name=a.name, field=a.field, kind=a.kind) for a in r.actions],
-            sorts=list(r.sorts), top_by=" - ".join(counters[:2])))
+            counters=counters, flags=flags, actions=[ActionInfo(name=a.name, field=a.field, kind=a.kind, value=a.value) for a in r.actions],
+            sorts=list(r.sorts), top_by=" - ".join(counters[:2]), rules=rules_for(spec.skill, r, spec.resources)))
     return sorted(out, key=lambda x: bool(x.parent))  # the parent first
 
 
@@ -71,17 +88,18 @@ def _not_found(name: str) -> str:
     return f"{label(singular(name))} not found"
 
 
-def _endpoints(ri: ResourceInfo, parent: ResourceInfo | None, child: ResourceInfo | None) -> list[Endpoint]:
+def _endpoints(ri: ResourceInfo, parent: ResourceInfo | None, children: list[ResourceInfo]) -> list[Endpoint]:
     p, s = ri.name, ri.singular
     nf404 = ErrorSpec(status=404, detail=_not_found(p))
     sort = [FieldSpec(name="sort", type="string", description="newest first (new) or highest score first (top)", options=["new", "top"])] if ri.sorts else []
     listing = FieldSpec(name="items", type="array", description="objects with " + ", ".join(f.name for f in item_fields(ri)))
     out: list[Endpoint] = []
+    says = lambda items: (" Answers 409 when: " + "; ".join(items) + ".") if items else ""  # noqa: E731  (a 409 has no example in the contract: the generated rule tests cover it)
     if parent is None:
         base = f"/api/{p}"
         out.append(Endpoint(method="GET", path=base, summary=f"List all {p}" + (", newest first or by score" if sort else ""), request_fields=sort,
                             response_fields=[listing], examples=[ExampleSpec(description=f"lists {p}", status=200)]))
-        out.append(Endpoint(method="POST", path=base, summary=f"Add a {s}", request_fields=ri.fields, response_status=201, response_fields=item_fields(ri),
+        out.append(Endpoint(method="POST", path=base, summary=f"Add a {s}" + says(rule_conflicts(ri, parent)), request_fields=ri.fields, response_status=201, response_fields=item_fields(ri),
                             examples=[ExampleSpec(description=f"adds a {s}", request=payload(ri), status=201, response=payload(ri))]))
     else:
         base = f"/api/{parent.name}/{{{ri.fk}}}/{p}"
@@ -89,22 +107,40 @@ def _endpoints(ri: ResourceInfo, parent: ResourceInfo | None, child: ResourceInf
         pnf_example = lambda extra: ExampleSpec(description=f"rejects an unknown {parent.singular}", request={ri.fk: NOT_FOUND_ID, **extra}, status=404, response={"detail": pnf.detail})  # noqa: E731
         out.append(Endpoint(method="GET", path=base, summary=f"List the {p} of one {parent.singular}", request_fields=sort, response_fields=[listing],
                             errors=[pnf], examples=[pnf_example({})]))
-        out.append(Endpoint(method="POST", path=base, summary=f"Add a {s} to a {parent.singular}", request_fields=ri.fields, response_status=201,
+        out.append(Endpoint(method="POST", path=base, summary=f"Add a {s} to a {parent.singular}" + says(rule_conflicts(ri, parent)), request_fields=ri.fields, response_status=201,
                             response_fields=item_fields(ri), errors=[pnf], examples=[pnf_example(payload(ri))]))
     item = f"/api/{p}/{{id}}"
     nf_example = lambda extra: ExampleSpec(description=f"rejects an unknown id", request={"id": NOT_FOUND_ID, **extra}, status=404, response={"detail": nf404.detail})  # noqa: E731
-    out.append(Endpoint(method="PUT", path=item, summary=f"Edit one {s}", request_fields=ri.fields, response_fields=item_fields(ri), errors=[nf404],
+    out.append(Endpoint(method="PUT", path=item, summary=f"Edit one {s}" + says([*(f"{label(f)} already exists" for f in ri.rules.unique), *([FLOW_DETAIL] if ri.rules.transitions else [])]), request_fields=ri.fields,
+                        response_fields=item_fields(ri), errors=[nf404],
                         examples=[nf_example(payload(ri))]))
-    out.append(Endpoint(method="DELETE", path=item, summary=f"Delete one {s}" + (f" and its {child.name}" if child else ""),
+    kids = ", ".join(c.name for c in children)
+    out.append(Endpoint(method="DELETE", path=item, summary=f"Delete one {s}" + (f" and its {kids}" if children else ""),
                         response_fields=[FieldSpec(name="deleted", type="boolean")], errors=[nf404], examples=[nf_example({})]))
     for a in ri.actions:
-        what = f"adds 1 to {a.field}" if a.kind == "increment" else f"flips {a.field}"
-        out.append(Endpoint(method="POST", path=f"{item}/{a.name}", summary=f"{label(a.name)} one {s}: {what} and return the updated {s}",
-                            response_fields=item_fields(ri), errors=[nf404], examples=[nf_example({})]))
+        what = {"increment": f"adds 1 to {a.field}", "toggle": f"flips {a.field}", "set": f"sets {a.field} to {a.value}"}[a.kind]
+        out.append(Endpoint(method="POST", path=f"{item}/{a.name}", summary=f"{label(a.name)} one {s}: {what} and return the updated {s}" + says([FLOW_DETAIL] if a.kind == "set" and ri.rules.transitions else []),
+                            response_fields=item_fields(ri), errors=[nf404],
+                            examples=[nf_example({})]))
     return out
 
 
-def _table(ri: ResourceInfo) -> TableSpec:
+FLOW_DETAIL = "That status change is not allowed"
+
+
+def rule_conflicts(ri: ResourceInfo, parent: ResourceInfo | None) -> list[str]:
+    """The 409 answers an add can give: a duplicate, a full parent."""
+    out = [f"{label(f)} already exists" for f in ri.rules.unique]
+    if ri.rules.capacity_field and parent is not None:
+        out.append(full_detail(parent))
+    return out
+
+
+def full_detail(parent: ResourceInfo) -> str:
+    return f"{label(parent.singular)} is full"
+
+
+def _table(ri: ResourceInfo, parent: ResourceInfo | None = None) -> TableSpec:
     cols = [ColumnSpec(name="id", type="INTEGER", constraints="PRIMARY KEY AUTOINCREMENT")]
     if ri.fk:
         cols.append(ColumnSpec(name=ri.fk, type="INTEGER", constraints="NOT NULL"))
@@ -112,10 +148,29 @@ def _table(ri: ResourceInfo) -> TableSpec:
         cols.append(ColumnSpec(name=f.name, type=SQL_TYPES[f.type], constraints="NOT NULL DEFAULT 0" if f.type == "boolean" else "NOT NULL"))
     cols += [ColumnSpec(name=c, type="INTEGER", constraints="NOT NULL DEFAULT 0") for c in [*ri.counters, *ri.flags]]
     cols.append(ColumnSpec(name="created_at", type="TIMESTAMP", constraints="DEFAULT CURRENT_TIMESTAMP"))
-    return TableSpec(name=ri.name, columns=cols)
+    constraints, triggers = rule_sql(ri, parent)
+    return TableSpec(name=ri.name, columns=cols, constraints=constraints, triggers=triggers)
 
 
-def _db_functions(ri: ResourceInfo, child: ResourceInfo | None) -> list[DbFunction]:
+def rule_sql(ri: ResourceInfo, parent: ResourceInfo | None) -> tuple[list[str], list[str]]:
+    """Table constraints and triggers for the rules of a resource. They live in the schema, which every database module creates, so no router has to enforce them."""
+    constraints = [f"UNIQUE ({', '.join([ri.fk, f] if ri.fk else [f])})" for f in ri.rules.unique]
+    triggers: list[str] = []
+    r, t = ri.rules, ri.name
+    if r.transitions and r.status_field:
+        allowed = " OR ".join(f"(OLD.{r.status_field} = '{old}' AND NEW.{r.status_field} IN ({', '.join(repr(x) for x in new) or repr('')}))" for old, new in r.transitions.items())
+        triggers.append(f"CREATE TRIGGER IF NOT EXISTS {t}_status_flow BEFORE UPDATE OF {r.status_field} ON {t} WHEN NEW.{r.status_field} != OLD.{r.status_field} "
+                        f"AND NOT ({allowed}) BEGIN SELECT RAISE(ABORT, '{FLOW_DETAIL}'); END;")
+    if r.capacity_field and parent is not None and ri.fk:
+        status = next((f for f in ri.fields if f.name == r.status_field), None)
+        gone = next((o for o in (status.options if status else []) if o.lower() in ("cancelled", "canceled")), "")
+        counted = f" AND {r.status_field} != '{gone}'" if gone else ""
+        triggers.append(f"CREATE TRIGGER IF NOT EXISTS {t}_capacity BEFORE INSERT ON {t} WHEN (SELECT COUNT(*) FROM {t} WHERE {ri.fk} = NEW.{ri.fk}{counted}) "
+                        f">= (SELECT {r.capacity_field} FROM {parent.name} WHERE id = NEW.{ri.fk}) BEGIN SELECT RAISE(ABORT, '{full_detail(parent)}'); END;")
+    return constraints, triggers
+
+
+def _db_functions(ri: ResourceInfo, children: list[ResourceInfo]) -> list[DbFunction]:
     p, s = ri.name, ri.singular
     args = ", ".join(f"{f.name}: {PY_TYPES[f.type]}" for f in ri.fields)
     fk = f"{ri.fk}: int" if ri.fk else ""
@@ -133,11 +188,12 @@ def _db_functions(ri: ResourceInfo, child: ResourceInfo | None) -> list[DbFuncti
         DbFunction(name=f"update_{s}", signature=f"update_{s}({join(f'{s}_id: int', args)}) -> dict | None",
                    description="Updates the user-entered columns of the row (never counters or created_at) and returns the updated row, or None if the id does not exist."),
         DbFunction(name=f"delete_{s}", signature=f"delete_{s}({s}_id: int) -> bool",
-                   description=(f"First deletes every {child.singular} of the row (DELETE FROM {child.name} WHERE {child.fk} = ?; every module's SCHEMA creates all tables), then deletes the row. " if child else "Deletes the row. ")
+                   description=(f"First deletes every row of its children ({', '.join(f'DELETE FROM {c.name} WHERE {c.fk} = ?' for c in children)}; every module's SCHEMA creates all tables), then deletes the row. " if children else "Deletes the row. ")
                    + "Returns True if the row existed, else False."),
     ]
     for a in ri.actions:
-        sql = (f"UPDATE {p} SET {a.field} = {a.field} + 1 WHERE id = ?" if a.kind == "increment" else f"UPDATE {p} SET {a.field} = 1 - {a.field} WHERE id = ?")
+        sql = {"increment": f"UPDATE {p} SET {a.field} = {a.field} + 1 WHERE id = ?", "toggle": f"UPDATE {p} SET {a.field} = 1 - {a.field} WHERE id = ?",
+               "set": f"UPDATE {p} SET {a.field} = '{a.value}' WHERE id = ?"}[a.kind]
         out.append(DbFunction(name=f"{a.name}_{s}", signature=f"{a.name}_{s}({s}_id: int) -> dict | None",
                               description=f"Runs {sql} and returns the updated row as a dict, or None if the id does not exist."))
     return out
@@ -147,12 +203,15 @@ def synthesize_design(spec: SpecOutput) -> ArchitectOutput:
     """The complete design (contract, tables, db functions, page features) for a relational spec."""
     rs = infos(spec)
     by = {r.name: r for r in rs}
-    child_of = {r.parent: r for r in rs if r.parent}
+    kids: dict[str, list[ResourceInfo]] = {}
+    for r in rs:
+        if r.parent:
+            kids.setdefault(r.parent, []).append(r)
     endpoints, tables, funcs, features = [], [], [], []
     for ri in rs:
-        endpoints += _endpoints(ri, by.get(ri.parent), child_of.get(ri.name))
-        tables.append(_table(ri))
-        funcs += _db_functions(ri, child_of.get(ri.name))
+        endpoints += _endpoints(ri, by.get(ri.parent), kids.get(ri.name, []))
+        tables.append(_table(ri, by.get(ri.parent)))
+        funcs += _db_functions(ri, kids.get(ri.name, []))
         features.append(f"Form to add a {ri.singular} with " + ", ".join(f.name.replace("_", " ") for f in ri.fields) + (" (inside the open parent)" if ri.parent else ""))
         if ri.counters:
             features.append(f"List of {ri.name} showing every field and a Score line, with vote buttons that show the counts")
@@ -160,11 +219,14 @@ def synthesize_design(spec: SpecOutput) -> ArchitectOutput:
             features.append(f"Sort select (Newest or Top) for the {ri.name}")
         if ri.parent:
             features.append(f"Click a {by[ri.parent].singular} (Comments button) to open its {ri.name} with a form to add one")
+        for a in ri.actions:
+            if a.kind == "set":
+                features.append(f"A {label(a.name)} button on every {ri.singular} that sets its {a.field.replace('_', ' ')} to {a.value}")
         features.append(f"Edit and Delete buttons on every {ri.singular}")
     names = " and ".join(r.name for r in rs)
-    arch = (f"Two SQLite tables ({names}) with one database module each; every module's schema creates both tables. FastAPI routers, one per resource. " if len(rs) > 1
+    arch = (f"{len(rs)} SQLite tables ({names}) with one database module each; every module's schema creates all tables. FastAPI routers, one per resource. " if len(rs) > 1
             else f"One SQLite table ({names}) with one database module. A FastAPI router. ") + \
-        "Counters are owned by the server and change only through action endpoints; lists are ordered by the query field sort. A single HTML page lists the items and opens a child list on click."
+        "Counters are owned by the server and change only through action endpoints; lists are ordered by the query field sort. A multi-page app (dashboard, a page per resource, a detail page) is served from static/."
     return ArchitectOutput(preset="fastapi-vanilla", architecture=arch, endpoints=endpoints, tables=tables, db_functions=funcs, ui_features=features[:8], resources=rs)
 
 
@@ -218,5 +280,11 @@ def parent_of(design: ArchitectOutput, ri: ResourceInfo) -> ResourceInfo | None:
     return next((r for r in design.resources if r.name == ri.parent), None)
 
 
+def children_of(design: ArchitectOutput, ri: ResourceInfo) -> list[ResourceInfo]:
+    return [r for r in design.resources if r.parent == ri.name]
+
+
 def child_of(design: ArchitectOutput, ri: ResourceInfo) -> ResourceInfo | None:
-    return next((r for r in design.resources if r.parent == ri.name), None)
+    """The first child (the one-child feed page shows one)."""
+    kids = children_of(design, ri)
+    return kids[0] if kids else None

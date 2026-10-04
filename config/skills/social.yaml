@@ -1,0 +1,28 @@
+name: social
+title: Social and community
+summary: People share posts and talk about them.
+keywords: [social, community, forum, blog, post, posts, comment, comments, instagram, twitter, reddit, facebook, feed, follower, followers, like, likes, share, thread, threads, discussion, question, questions, answer, answers, youtube, video, videos, tweet, tweets, article, articles, news]
+icon: "💬"
+icons: {posts: "📝", comments: "💬", questions: "❓", answers: "✅", videos: "▶️", replies: "↩️", articles: "📰"}
+skin: community
+currency: INR
+modules:
+  - {name: posts, fields: "title, content, author, likes integer"}
+  - {name: comments, parent: posts, fields: "content, author"}
+rules:
+  - {field: "email", rule: email}
+kpis:
+  - {label: "Posts", resource: posts, agg: count}
+  - {label: "Comments", resource: comments, agg: count}
+  - {label: "Likes", resource: posts, agg: sum, field: likes}
+  - {label: "Upvotes", resource: posts, agg: sum, field: upvotes}
+charts:
+  - {title: "Comments per post", resource: comments, per: parent}
+empty:
+  default: "Nothing here yet. Be the first to post."
+  comments: "No comments yet. Start the conversation."
+pools:
+  title: [Best chai spots in the city, Why I switched to Linux, Weekend trek photos, Ask me anything, Monsoon playlist, Show your desk setup]
+  caption: [Golden hour at the pier, Monday mood, Fresh out of the oven, Rooftop evenings, Chai and rain]
+  author: [meera, arjun, kavya, rohan, imran, sneha]
+  content: ["Honestly the best thing I tried this week. Give it a go.", "Short and sweet: it works.", "Anyone else up this early?", "Sharing what worked for me."]

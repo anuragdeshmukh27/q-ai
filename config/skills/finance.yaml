@@ -1,0 +1,23 @@
+name: finance
+title: Money and expenses
+summary: Track money in and out, group it by category, and see where it goes.
+keywords: [expense, expenses, budget, budgets, money, finance, bank, invoice, invoices, income, salary, spending, wallet, savings, accounting, ledger, loan, loans, bill, bills, cash, transaction, transactions, payment, payments]
+icon: "💰"
+icons: {expenses: "💸", income: "💰", budgets: "🎯", invoices: "🧾", transactions: "🔁", accounts: "🏦"}
+skin: ledger
+currency: INR
+modules:
+  - {name: expenses, fields: "description, amount number, category Food/Transport/Rent/Shopping/Bills/Health/Fun/Other, date"}
+rules:
+  - {field: "amount|price|total", rule: positive}
+kpis:
+  - {label: "Entries", resource: "*", agg: count}
+  - {label: "Total", resource: "*", agg: sum, field: amount, format: money}
+  - {label: "Average entry", resource: "*", agg: avg, field: amount, format: money}
+charts:
+  - {title: "By category", resource: "*", by: category, sum: amount}
+empty:
+  default: "Nothing recorded yet. Add your first entry."
+pools:
+  amount: [250, 1200, 540, 899, 3200, 150, 420, 75]
+  description: [Groceries at D-Mart, Metro card top-up, Electricity bill, Netflix, Lunch with team, Pharmacy, Auto to office, Book from Crossword]

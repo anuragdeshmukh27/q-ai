@@ -1,0 +1,30 @@
+name: education
+title: College and education
+summary: Courses, students and how they are doing.
+keywords: [college, school, university, student, students, course, courses, class, classes, teacher, teachers, exam, exams, grade, grades, attendance, enrollment, enrolment, lecture, lectures, assignment, assignments, semester, faculty, department, hostel]
+icon: "🎓"
+icons: {courses: "📘", students: "🧑‍🎓", enrollments: "📝", assignments: "📋", exams: "🧪", classes: "🏫"}
+skin: academy
+currency: INR
+modules:
+  - {name: courses, fields: "code, title, department, credits integer, instructor"}
+  - {name: enrollments, parent: courses, fields: "student_name, roll_number, email, grade A/B/C/D/F"}
+rules:
+  - {field: "phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+  - {resource: "courses", field: "code", rule: unique}
+  - {resource: "enrollments", field: "roll_number", rule: unique}
+  - {field: "credits", rule: bounds, args: [1, 10]}
+kpis:
+  - {label: "Courses", resource: courses, agg: count}
+  - {label: "Enrollments", resource: enrollments, agg: count}
+charts:
+  - {title: "Enrollments per course", resource: enrollments, per: parent}
+  - {title: "Grades", resource: enrollments, by: grade}
+empty:
+  default: "Nothing here yet. Add the first one."
+pools:
+  instructor: [Dr. Rao, Prof. Banerjee, Dr. Kulkarni, Prof. Singh, Dr. Fernandes]
+  department: [Computer Science, Electronics, Mechanical, Civil, Mathematics]
+  courses.title: [Data Structures, Operating Systems, Engineering Maths, Digital Electronics, Thermodynamics]
+  student_name: [Aditya Menon, Pooja Nair, Karthik Raman, Ishita Jain, Zoya Khan]

@@ -76,3 +76,13 @@ describe('approvals in a replay', () => {
     expect((seen.find((v) => v.kind === 'toast_update') as Extract<Visual, { kind: 'toast_update' }>).text).toContain('auto-approved (recording)')
   })
 })
+
+describe('skill packs', () => {
+  it('the matched pack is kept with the spec, for the Contract tab', () => {
+    const { m } = setup()
+    m.apply(ev('spec_ready', { title: 'Cab booking app', summary: 'Drivers and rides.', features: [], text: '# x', not_included: [], skill: 'transport', skill_title: 'Transport and cabs' }))
+    expect(m.spec?.skill).toBe('Transport and cabs')
+    m.apply(ev('spec_ready', { title: 'Todo', summary: 'Tasks.', features: [], text: '# x' }))
+    expect(m.spec?.skill).toBe('')
+  })
+})

@@ -1,0 +1,29 @@
+name: food
+title: Food and restaurants
+summary: Restaurants, menus and what people think of them.
+keywords: [restaurant, restaurants, food, menu, menus, recipe, recipes, cafe, chef, dish, dishes, kitchen, meal, meals, zomato, swiggy, dining, cuisine, table, tables, reservation, reservations]
+icon: "🍽️"
+icons: {restaurants: "🍽️", reviews: "⭐", dishes: "🍛", recipes: "👩‍🍳", reservations: "🪑", menu_items: "🍛"}
+skin: kitchen
+currency: INR
+modules:
+  - {name: restaurants, fields: "name, cuisine North Indian/South Indian/Chinese/Italian/Fast food/Other, area, phone, avg_cost_for_two number"}
+  - {name: reviews, parent: restaurants, fields: "author, rating integer, comment"}
+rules:
+  - {field: "phone|mobile", rule: phone}
+  - {field: "rating", rule: bounds, args: [1, 5]}
+  - {field: "price|amount|avg_cost_for_two|cost", rule: positive}
+kpis:
+  - {label: "Restaurants", resource: restaurants, agg: count}
+  - {label: "Reviews", resource: reviews, agg: count}
+  - {label: "Average rating", resource: reviews, agg: avg, field: rating, format: stars}
+charts:
+  - {title: "Restaurants by cuisine", resource: restaurants, by: cuisine}
+  - {title: "Reviews per restaurant", resource: reviews, per: parent}
+empty:
+  default: "Nothing here yet. Add the first one."
+  reviews: "No reviews yet. Tell us how the food was."
+pools:
+  restaurants.name: [Saravana Bhavan, Mughal Darbar, Cafe Mocha, Pizza Corner, Dragon Wok, Biryani House, Tiffin Tales]
+  area: [Koramangala, Bandra, Connaught Place, Indiranagar, T Nagar, Jubilee Hills]
+  comment: [Loved the butter chicken, Service was slow but food was great, Cosy place for a family dinner, Worth every rupee, Too crowded on weekends]

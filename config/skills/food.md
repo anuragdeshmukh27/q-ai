@@ -1,0 +1,1 @@
+Domain: restaurants. A restaurant has a cuisine, an area, a phone number and an average cost for two in rupees. People review it with a rating from 1 to 5. Dashboard: restaurants by cuisine, reviews per restaurant, average rating. Not built: ordering, delivery, maps.

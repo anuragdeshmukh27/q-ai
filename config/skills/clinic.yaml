@@ -1,0 +1,37 @@
+name: clinic
+title: Clinic and healthcare
+summary: "A small clinic: doctors, their appointments, prescriptions and patient reviews."
+keywords: [clinic, hospital, doctor, doctors, patient, patients, appointment, appointments, prescription, prescriptions, medical, medicine, health, healthcare, nurse, diagnosis, consultation, pharmacy, dental]
+icon: "🏥"
+icons: {doctors: "🩺", appointments: "📅", prescriptions: "💊", reviews: "⭐", patients: "🧑"}
+skin: clinic
+currency: INR
+modules:
+  - {name: doctors, fields: "name, speciality General/Cardiology/Dermatology/Pediatrics/Orthopedics, phone, email, consultation_fee number, rating integer"}
+  - {name: appointments, parent: doctors, fields: "patient_name, patient_phone, date, time, reason, status Scheduled/Completed/Cancelled"}
+rules:
+  - {field: "phone|patient_phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+  - {field: "consultation_fee|fee|amount", rule: positive}
+  - {field: "rating", rule: bounds, args: [1, 5]}
+  - {resource: "doctors", field: "email", rule: unique}
+  - {resource: "appointments", rule: flow, field: status, flow: {Scheduled: [Completed, Cancelled], Completed: [], Cancelled: []}}
+kpis:
+  - {label: "Doctors", resource: doctors, agg: count}
+  - {label: "Appointments", resource: appointments, agg: count}
+  - {label: "Scheduled", resource: appointments, agg: count, where: {status: Scheduled}}
+  - {label: "Average rating", resource: reviews, agg: avg, field: rating, format: stars}
+charts:
+  - {title: "Appointments per doctor", resource: appointments, per: parent}
+  - {title: "Appointments by status", resource: appointments, by: status}
+  - {title: "Doctors by speciality", resource: doctors, by: speciality}
+empty:
+  default: "Nothing here yet. Add the first record."
+  appointments: "No appointments yet. Book the first one for this doctor."
+  prescriptions: "No prescriptions yet."
+  reviews: "No reviews yet. Patients can leave one after a visit."
+pools:
+  patient_name: [Anjali Verma, Rahul Deshmukh, Priya Menon, Imran Qureshi, Sunita Patil, Arjun Reddy]
+  reason: [Fever and cough, Annual check-up, Skin rash, Knee pain, Child vaccination, Follow-up visit]
+  medicine: [Paracetamol 500 mg, Azithromycin 250 mg, Cetirizine 10 mg, Vitamin D3, ORS sachets]
+  doctors.name: [Dr. Ananya Rao, Dr. Vikram Shah, Dr. Neha Kulkarni, Dr. Farhan Ali, Dr. Lakshmi Iyer]

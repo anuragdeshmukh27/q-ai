@@ -1,0 +1,24 @@
+name: tasks
+title: Tasks and productivity
+summary: Projects, their tasks and what is done.
+keywords: [task, tasks, todo, todos, project, projects, kanban, sprint, sprints, productivity, checklist, reminder, reminders, planner, habit, habits, goal, goals, notes, note, bookmark, bookmarks, contact, contacts]
+icon: "✅"
+icons: {projects: "🗂️", tasks: "✅", todos: "✅", habits: "🌱", notes: "📝", goals: "🎯", bookmarks: "🔖", contacts: "👤"}
+skin: tasks
+currency: INR
+modules:
+  - {name: projects, fields: "name, description"}
+  - {name: tasks, parent: projects, fields: "title, status To do/In progress/Done, due_date"}
+rules:
+  - {field: "email", rule: email}
+  - {field: "phone|mobile", rule: phone}
+kpis:
+  - {label: "Items", resource: "*", agg: count}
+charts:
+  - {title: "By status", resource: "*", by: status}
+  - {title: "By priority", resource: "*", by: priority}
+empty:
+  default: "Nothing here yet. Add the first one."
+pools:
+  title: [Write the report, Book train tickets, Review pull request, Plan the weekend trip, Renew insurance, Call the plumber]
+  projects.name: [Website redesign, Mobile app, Tax filing, Home renovation, Study plan]

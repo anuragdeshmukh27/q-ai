@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from .schemas import ArchitectOutput, Endpoint, FieldSpec, ResourceInfo, _resource, declares_blank_error, required_text
+from .schemas import ArchitectOutput, Endpoint, FieldSpec, ResourceInfo, ResourceRules, _resource, declares_blank_error, required_text
 
 PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool", "array": "list", "object": "dict"}  # arrays carry no item type in the contract: tags are strings as often as objects
 
@@ -20,10 +20,22 @@ def _camel(parts: list[str]) -> str:
     return "".join(p.capitalize() for p in parts)
 
 
-def _model(name: str, fields: list[FieldSpec], request: bool = False) -> str:
+def _model(name: str, fields: list[FieldSpec], request: bool = False, rules: ResourceRules | None = None) -> str:
     # a categorical field is a Literal of its labels, so FastAPI answers 422 for a value that is not one of them;
-    # in a request, a required text field is `Required` (backend/validation.py): empty or only spaces is a 400 with a message, for parents and children alike
+    # in a request, a required text field is `Required` (backend/validation.py): empty or only spaces is a 400 with a message, for parents and children alike;
+    # the rules of a skill pack (phone, email, positive amount, bounds) are request types of the same module
+    rules = rules or ResourceRules()
+
     def kind(f: FieldSpec) -> str:
+        if request and f.name in rules.phone:
+            return "Phone"
+        if request and f.name in rules.email:
+            return "Email"
+        if request and f.name in rules.positive:
+            return "PositiveInt" if f.type == "integer" else "Positive"
+        if request and f.name in rules.bounds:
+            lo, hi = rules.bounds[f.name]
+            return f"between({lo:g}, {hi:g}, {f.type == 'integer'})"
         if request and required_text(f):
             return "Required"
         return f"Literal[{', '.join(repr(o) for o in f.options)}]" if f.options and f.type == "string" else PY_TYPES[f.type]
@@ -35,8 +47,9 @@ def _model(name: str, fields: list[FieldSpec], request: bool = False) -> str:
 def schema_sql(design: ArchitectOutput) -> str:
     stmts = []
     for t in design.tables:
-        cols = ", ".join(f"{c.name} {c.type} {c.constraints}".strip() for c in t.columns)
+        cols = ", ".join([*(f"{c.name} {c.type} {c.constraints}".strip() for c in t.columns), *t.constraints])
         stmts.append(f"CREATE TABLE IF NOT EXISTS {t.name} ({cols});")
+        stmts += t.triggers
     return " ".join(stmts)
 
 
@@ -89,7 +102,7 @@ def db_body(design: ArchitectOutput, ri: ResourceInfo, name: str) -> list[str] |
     """The body of one data access function of a relational resource, in plain sqlite3 with ? placeholders (None for a name it does not know)."""
     p, s = ri.name, ri.singular
     cols = ([ri.fk] if ri.fk else []) + [f.name for f in ri.fields]
-    child = next((r for r in design.resources if r.parent == ri.name), None)
+    kids = [r for r in design.resources if r.parent == ri.name]
 
     def select(arg: str) -> str:
         return f'conn.execute("SELECT * FROM {p} WHERE id = ?", ({arg},)).fetchone()'
@@ -111,9 +124,12 @@ def db_body(design: ArchitectOutput, ri: ResourceInfo, name: str) -> list[str] |
         return ["with connect(SCHEMA) as conn:", f'    conn.execute("UPDATE {p} SET {sets} WHERE id = ?", ({vals}, {s}_id))', f"    row = {select(s + '_id')}",
                 "    return dict(row) if row else None"]
     if name == f"delete_{s}":
-        cascade = [f'    conn.execute("DELETE FROM {child.name} WHERE {child.fk} = ?", ({s}_id,))'] if child else []
+        cascade = [f'    conn.execute("DELETE FROM {child.name} WHERE {child.fk} = ?", ({s}_id,))' for child in kids]
         return ["with connect(SCHEMA) as conn:", *cascade, f'    cur = conn.execute("DELETE FROM {p} WHERE id = ?", ({s}_id,))', "    return cur.rowcount > 0"]
     action = next((a for a in ri.actions if name == f"{a.name}_{s}"), None)
+    if action is not None and action.kind == "set":
+        return ["with connect(SCHEMA) as conn:", f'    conn.execute("UPDATE {p} SET {action.field} = ? WHERE id = ?", ({action.value!r}, {s}_id))', f"    row = {select(s + '_id')}",
+                "    return dict(row) if row else None"]
     if action is not None:
         change = f"{action.field} + 1" if action.kind == "increment" else f"1 - {action.field}"
         return ["with connect(SCHEMA) as conn:", f'    conn.execute("UPDATE {p} SET {action.field} = {change} WHERE id = ?", ({s}_id,))', f"    row = {select(s + '_id')}",
@@ -139,19 +155,21 @@ def _route(e: Endpoint, response_model: str | None, request_model: str | None, f
 def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None, parent_modules: tuple[str, ...] = (), fill: bool = False) -> str:
     """The route stub of one router. With `fill`, every route of a relational design has its body from the hints (the contract repair)."""
     out = ['"""Route stubs generated from the API contract. Fill in the bodies; keep paths, models and status codes."""',
-           "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel", "from backend.validation import Required"]
+           "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel", "from backend.validation import Email, Phone, Positive, PositiveInt, Required, between"]
     if db_module:
         out.append(f"from database import {db_module} as db")
     out += [f"from database import {m} as {m}_db" for m in parent_modules]
     out += ["", "router = APIRouter()", ""]
+    tables = {t.name for t in design.tables}
     for e in endpoints:
+        owner = next((r for r in design.resources if r.name == _resource(e.path, tables)), None)
         by = re.findall(r"\{(\w+)\}", e.path)
         base = _camel([e.method.lower()] + _words(e.path) + (["by"] + by if by else []))
         func = "handle_" + "_".join([e.method.lower()] + _words(e.path) + (["by"] + by if by else []))
         req = res = None
         if e.method in ("POST", "PUT", "PATCH") and e.request_fields:
             req = base + "Request"
-            out += [_model(req, e.request_fields, request=not declares_blank_error(e))]
+            out += [_model(req, e.request_fields, request=not declares_blank_error(e), rules=owner.rules if owner else None)]
         if e.response_fields:
             res = base + "Response"
             out += [_model(res, e.response_fields)]

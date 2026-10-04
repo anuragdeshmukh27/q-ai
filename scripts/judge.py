@@ -46,7 +46,7 @@ def check(goal: str, expect, text: str, root: Path | None) -> tuple[bool, str, s
     built = " -> ".join(names) or "?"
     spec = (root / ".q" / "spec.md").read_text(encoding="utf-8") if (root / ".q" / "spec.md").exists() else ""
     left = re.search(r"Not in this version: ([^\n]*)", spec)
-    page = (root / "static" / "index.html").read_text(encoding="utf-8", errors="replace") if (root / "static" / "index.html").exists() else ""
+    page = "".join((root / "static" / f).read_text(encoding="utf-8", errors="replace") for f in ("index.html", "app.js", "shell.js") if (root / "static" / f).exists())  # the shell keeps the note in its description (app.js) and draws it (shell.js)
     notes = []
     fits = all(any(w in n for n in names for w in group) for group in expect)
     if not fits:

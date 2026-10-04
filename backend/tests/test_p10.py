@@ -63,31 +63,69 @@ def test_a_spec_that_drops_the_child_resource_the_goal_names_is_rejected():
 
 
 def test_fields_over_the_cap_are_trimmed_by_rules_and_listed():
-    """Regression (cab goal): the 7B could not cut 'rides has 7 fields' in 3 tries, the spec failed and the model Architect built drivers only."""
-    rides = _res("rides", [_f("passenger_name"), _f("passenger_phone"), _f("pickup_location"), _f("drop_location"), _f("pickup_time"), _f("fare", "number"),
-                           _f("status", o=["Requested", "Completed"])], parent="drivers")
+    """Regression (cab goal): the 7B could not cut 'rides has 7 fields' in 3 tries, the spec failed and the model Architect built drivers only. The cap is 8 now."""
+    names9 = ["passenger_name", "passenger_phone", "pickup_location", "drop_location", "pickup_time", "fare", "notes", "luggage", "tip"]
+    rides = _res("rides", [_f(n, "number" if n in ("fare", "tip") else "string") for n in names9] + [_f("status", o=["Requested", "Completed"])], parent="drivers")
     spec = SpecOutput(title="Cabs", summary="x", features=["a"], resources=[_res("drivers", [_f("name")]), rides])
     normalize_spec(spec, CAB)
     names = [f.name for f in spec.resources[1].fields]
-    assert len(names) == 6 and "pickup_time" not in names and {"fare", "status"} <= set(names)
+    assert len(names) == 8 and "pickup_time" not in names and {"fare", "status"} <= set(names)
     assert "ride pickup time" in spec.not_included
     assert check_spec(spec, CAB) == []
 
 
-def test_one_click_actions_on_a_labelled_status_are_left_out_not_built_as_two_flips_of_one_column():
-    """Regression (cab goal): 'mark completed' and 'cancel' both flipped `status`, so the contract had the column twice and the labels became a yes/no box."""
+def test_one_click_status_actions_set_a_label_of_the_status_field():
+    """The cab goal's 'mark completed' and 'cancel' are endpoints that SET the existing status (POST /api/rides/{id}/complete): no column added, no action dropped."""
     from app.schemas import SpecAction, check_architecture
     from app.relations import synthesize_design
 
     rides = _res("rides", [_f("passenger_name"), _f("fare", "number"), _f("status", o=["Requested", "Completed", "Cancelled"])], parent="drivers")
     rides.actions = [SpecAction(name="mark_completed", field="status", kind="toggle"), SpecAction(name="cancel", field="status", kind="toggle")]
-    spec = SpecOutput(title="Cabs", summary="x", features=["Add a ride", "Mark a ride as completed", "Cancel a ride"], resources=[_res("drivers", [_f("name")]), rides])
+    spec = SpecOutput(title="Cabs", summary="x", features=["Add a ride"], resources=[_res("drivers", [_f("name")]), rides])
     normalize_spec(spec, CAB)
     ride = spec.resources[1]
-    assert ride.actions == [] and [(f.name, f.options) for f in ride.fields][-1] == ("status", ["Requested", "Completed", "Cancelled"])
-    assert any("one-click mark completed" in x for x in spec.not_included)
-    assert spec.features == ["Add a ride"]
-    assert check_architecture(synthesize_design(spec), ["fastapi-vanilla"], spec) == []
+    assert [(a.name, a.kind, a.field, a.value) for a in ride.actions] == [("complete", "set", "status", "Completed"), ("cancel", "set", "status", "Cancelled")]
+    assert [(f.name, f.options) for f in ride.fields][-1] == ("status", ["Requested", "Completed", "Cancelled"])
+    design = synthesize_design(spec)
+    assert check_architecture(design, ["fastapi-vanilla"], spec) == []
+    paths = {(e.method, e.path) for e in design.endpoints}
+    assert ("POST", "/api/rides/{id}/complete") in paths and ("POST", "/api/rides/{id}/cancel") in paths
+    assert [c.name for c in next(t for t in design.tables if t.name == "rides").columns].count("status") == 1
+
+
+def test_goal_actions_read_the_actions_a_goal_lists():
+    from app.goalspec import goal_spec
+
+    fest = ("Build a fest: events have name, category Coding/Quiz and capacity. Each event has many registrations: student name, email and status Registered/Checked in/Cancelled; "
+            "actions: check in and cancel. Each event has many sponsors: company name, amount in rupees and status Pledged/Paid; action: mark paid.")
+    spec = normalize_spec(goal_spec(fest), fest)
+    acts = {r.name: [(a.name, a.value) for a in r.actions] for r in spec.resources}
+    assert acts["registrations"] == [("check_in", "Checked in"), ("cancel", "Cancelled")] and acts["sponsors"] == [("mark_paid", "Paid")]
+    assert [r.parent for r in spec.resources] == ["", "events", "events"]
+
+
+def test_a_structured_goal_is_read_by_rules_and_keeps_every_field():
+    from app.goalspec import goal_spec
+
+    spec = normalize_spec(goal_spec(CAB + " Actions on a ride: mark completed and cancel. Show total fare earned, filter rides by status, sort by newest, edit and delete."), CAB)
+    drivers, rides = spec.resources
+    assert [f.name for f in drivers.fields] == ["name", "phone", "car_model", "plate_number", "car_type", "rating"]
+    assert dict((f.name, f.type) for f in drivers.fields)["plate_number"] == "string" and dict((f.name, f.type) for f in drivers.fields)["rating"] == "integer"
+    assert [f.name for f in rides.fields] == ["passenger_name", "passenger_phone", "pickup_location", "drop_location", "pickup_time", "fare", "status"]
+    assert rides.parent == "drivers" and [a.name for a in rides.actions] == ["complete", "cancel"]
+    assert goal_spec("Build a todo app: title, description, priority Low/Medium/High, due date, mark as done, edit and delete") is None  # one resource: the usual path
+
+
+def test_every_skill_pack_loads_and_matches_its_domain():
+    from app.skills import match_skill, packs
+
+    assert len(packs()) == 10
+    assert match_skill("Build a college tech fest manager: events have name") == "events"
+    assert match_skill("Build a cab booking app: drivers have name") == "transport"
+    assert match_skill("Build a clinic app with doctors and appointments") == "clinic"
+    assert match_skill("Build an expense tracker with categories and totals") == "finance"
+    assert match_skill("Build Instagram", "Instagram", ["posts", "comments"]) == "social"
+    assert match_skill("Build a calculator with history") == ""
 
 
 def test_any_game_goal_is_refused_but_game_data_apps_are_not():
@@ -98,3 +136,23 @@ def test_any_game_goal_is_refused_but_game_data_apps_are_not():
         assert classify_goal(goal).level == "impossible", goal
     for goal in ("Build a game score tracker", "Build a game library with ratings", "Build a video game review site", "Build a board game collection tracker"):
         assert classify_goal(goal).level != "impossible", goal
+
+
+def test_a_reserved_word_renamed_by_the_spec_is_renamed_in_the_architects_design():
+    """Regression (contact book): the spec renamed `group` to `group_value`; the 7B Architect kept writing `group` and the design never passed the checks."""
+    from app.schemas import normalize_design
+    from test_enrich import SPEC, design
+
+    d = design()
+    for e in d.endpoints:
+        for f in [*e.request_fields, *e.response_fields]:
+            if f.name == "priority":
+                f.name = "group"
+    d.tables[0].columns[2].name = "group"
+    d.db_functions[0].signature = "add_todo(title: str, group: str, done: bool) -> dict"
+    spec = SPEC.model_copy(deep=True)
+    spec.resources[0].fields[1].name = "group_value"
+    normalize_design(d, spec)
+    names = {f.name for e in d.endpoints for f in [*e.request_fields, *e.response_fields]}
+    assert "group_value" in names and "group" not in names
+    assert d.tables[0].columns[2].name == "group_value" and "group_value: str" in d.db_functions[0].signature

@@ -1,0 +1,1 @@
+Domain: personal or small-business money. Entries have an amount in rupees (always greater than 0), a category and a date. Dashboard: total, average, spending by category. Amounts are shown as rupees with the Indian digit grouping.

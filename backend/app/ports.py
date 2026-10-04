@@ -70,7 +70,7 @@ class PortManager:
             flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             proc = subprocess.Popen(
                 argv, cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                env=clean_env(), creationflags=flags,
+                env={**clean_env(), "Q_SEED": "1"}, creationflags=flags,
             )
             app = RunningApp(project, port, proc.pid, f"http://127.0.0.1:{port}")
             self._apps[project] = (app, proc)

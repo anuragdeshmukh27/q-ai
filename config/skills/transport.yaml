@@ -1,0 +1,35 @@
+name: transport
+title: Transport and cabs
+summary: Drivers, their rides and the fares they earn.
+keywords: [cab, cabs, taxi, ride, rides, driver, drivers, uber, ola, fleet, trip, trips, vehicle, vehicles, bus, route, routes, passenger, passengers, fare, delivery, logistics, shipment, shipments, car]
+icon: "🚕"
+icons: {drivers: "🧑‍✈️", rides: "🚕", vehicles: "🚗", trips: "🧭", routes: "🛣️", shipments: "📦", passengers: "🧍"}
+skin: transit
+currency: INR
+modules:
+  - {name: drivers, fields: "name, phone, car_model, plate_number, car_type Mini/Sedan/SUV, rating integer"}
+  - {name: rides, parent: drivers, fields: "passenger_name, passenger_phone, pickup_location, drop_location, pickup_time, fare number, status Requested/Accepted/On trip/Completed/Cancelled"}
+rules:
+  - {field: "phone|passenger_phone|mobile", rule: phone}
+  - {field: "fare|amount|price", rule: positive}
+  - {field: "rating", rule: bounds, args: [1, 5]}
+  - {resource: "drivers", field: "plate_number", rule: unique}
+  - {resource: "rides", rule: flow, field: status, flow: {Requested: [Accepted, On trip, Completed, Cancelled], Accepted: [On trip, Completed, Cancelled], On trip: [Completed, Cancelled], Completed: [], Cancelled: []}}
+kpis:
+  - {label: "Drivers", resource: drivers, agg: count}
+  - {label: "Rides", resource: rides, agg: count}
+  - {label: "Completed rides", resource: rides, agg: count, where: {status: Completed}}
+  - {label: "Fare earned", resource: rides, agg: sum, field: fare, where: {status: Completed}, format: money}
+charts:
+  - {title: "Rides by status", resource: rides, by: status}
+  - {title: "Rides per driver", resource: rides, per: parent}
+  - {title: "Drivers by car type", resource: drivers, by: car_type}
+empty:
+  default: "Nothing here yet. Add the first one."
+  rides: "No rides yet. Book the first ride for this driver."
+pools:
+  car_model: [Maruti Swift Dzire, Hyundai Aura, Toyota Innova, Tata Tigor, Mahindra XUV300, Honda Amaze]
+  plate_number: [KA 01 AB 1234, MH 12 CD 5678, DL 3C EF 9012, TN 09 GH 3456, KA 05 MN 7788, MH 14 KL 2468]
+  pickup_location: [Indiranagar Metro, Bandra Station, Connaught Place, T Nagar, Koramangala 5th Block, Hitech City]
+  drop_location: [Kempegowda Airport, Andheri West, India Gate, Chennai Central, Whitefield, Gachibowli]
+  passenger_name: [Anjali Verma, Rahul Deshmukh, Priya Menon, Imran Qureshi, Sunita Patil]

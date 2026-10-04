@@ -123,7 +123,8 @@ def test_a_generated_page_that_passes_its_tests_is_not_handed_to_the_model(tmp_p
     assert any(e["type"] == "agent_thought" and "already passes every test" in e.get("text", "") for e in bus.history)
 
 
-def test_a_famous_single_resource_app_is_built_by_rules_and_gets_a_table_with_a_stat_strip(tmp_path):
+def test_a_famous_single_resource_app_is_built_by_rules_and_gets_a_table_with_a_stat_strip(tmp_path, monkeypatch):
+    monkeypatch.setenv("Q_SHELL", "0")  # the one-page layouts are the fallback; the shell build is in test_shell.py
     """Uber: one resource, no parent, no votes. Its contract and plan come from the platform spec; the page is a table, not a feed."""
     from app.platforms import match_platform
 

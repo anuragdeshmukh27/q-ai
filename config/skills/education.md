@@ -1,0 +1,1 @@
+Domain: a college. Courses have a unique code, a department, credits (1 to 10) and an instructor. Students enrol in a course (roll number unique, email, grade). Dashboard: enrollments per course and the grade distribution.

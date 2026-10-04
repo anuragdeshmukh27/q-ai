@@ -1,0 +1,32 @@
+name: shop
+title: Shop and e-commerce
+summary: "A small online shop: products, prices and what customers say."
+keywords: [shop, store, product, products, cart, order, orders, customer, customers, amazon, flipkart, ecommerce, merchant, catalog, catalogue, price, discount, delivery, checkout, seller, marketplace, review, reviews]
+icon: "🛒"
+icons: {products: "📦", orders: "🧾", customers: "🧑", reviews: "⭐", categories: "🏷️"}
+skin: market
+currency: INR
+modules:
+  - {name: products, fields: "name, description, price number, category Electronics/Books/Home/Fashion/Other, stock integer"}
+  - {name: reviews, parent: products, fields: "author, rating integer, comment"}
+rules:
+  - {field: "price|amount|total", rule: positive}
+  - {field: "rating", rule: bounds, args: [1, 5]}
+  - {field: "stock|quantity", rule: bounds, args: [0, 100000]}
+  - {field: "phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+kpis:
+  - {label: "Products", resource: products, agg: count}
+  - {label: "Reviews", resource: reviews, agg: count}
+  - {label: "Average rating", resource: reviews, agg: avg, field: rating, format: stars}
+  - {label: "Catalogue value", resource: products, agg: sum, field: price, format: money}
+charts:
+  - {title: "Products by category", resource: products, by: category}
+  - {title: "Reviews per product", resource: reviews, per: parent}
+empty:
+  default: "Nothing here yet. Add the first one."
+  reviews: "No reviews yet. Be the first to write one."
+pools:
+  products.name: [Boat Airdopes, Noise Smartwatch, Milton Flask, Atomic Habits, Cotton Kurta, LED Desk Lamp, Yoga Mat]
+  author: [Aarav, Meera, Rohan, Kavya, Imran, Sneha]
+  comment: [Great value for money, Arrived quickly and well packed, Quality is decent, Would buy again, Not as described]
