@@ -21,7 +21,7 @@ from .agent.actions import Action
 from .approvals import request_approval
 from .config import AgentConfig
 from .sandbox.commands import ALLOW, ASK, DENY, CommandPolicy, apply_mode
-from .pybody import replace_function_body, undefined_calls
+from .pybody import replace_function_body, undefined_calls, undefined_variables
 from .sandbox.paths import PathPolicy, SandboxError
 from .sandbox.runner import resolve_argv, run_command
 
@@ -230,6 +230,11 @@ class ToolBox:
             hint = (f" The database functions are called through the module alias: write `{alias}.{missing[0]}(...)`, not `{missing[0]}(...)`." if alias else
                     " Define or import it first, or call the function that exists.")
             return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}")
+        unknown, params = undefined_variables(tree, a.function or "")
+        if unknown:
+            return _fail(f"not applied: {', '.join(f'`{u}`' for u in unknown)} is not defined inside {a.function} (it would raise NameError). "
+                         f"Use only its parameters ({', '.join(params) or 'none'}), names you assign yourself and what the file imports. "
+                         f"For example the path parameter of a route is named in its signature and in the `body:` hints, nothing else.")
         return self._store(p, new_source, f"implemented {a.function} in")
 
     def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:

@@ -227,6 +227,7 @@ def test_generated_tests_pass_on_a_correct_app(tmp_path):
     ({"break_cascade": True}, "test_deleting_a_post_deletes_its_comments"),
     ({"break_404": True}, "test_comments_of_an_unknown_post_are_404"),
     ({"client_counters": True}, "test_posts_counters_never_come_from_the_client"),
+    ({"no_blank_check": True}, "test_comments_blank_required_text_is_a_400_with_a_message"),
 ])
 def test_generated_tests_catch_the_classic_mistakes(tmp_path, mutation, caught_by):
     code, failed, out = run_pytest(project(tmp_path, **mutation))

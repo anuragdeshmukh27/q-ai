@@ -38,7 +38,7 @@ def test_route_stub_has_exact_paths_models_and_status_codes():
     code = route_stub(DESIGN, DESIGN.endpoints, "calculations")
     compile(code, "stub.py", "exec")
     assert '@router.post("/api/calculate", status_code=201, response_model=PostCalculateResponse)' in code
-    assert "class PostCalculateRequest(BaseModel):" in code and "    operation: str" in code
+    assert "class PostCalculateRequest(BaseModel):" in code and "    operation: Required" in code  # a required text field of a request refuses empty text (400)
     assert "def handle_post_calculate(req: PostCalculateRequest):" in code
     assert 'raise HTTPException(status_code=400, detail="Cannot divide by zero")' in code
     assert "def handle_delete_history_by_id(id: int):" in code  # path parameter becomes an argument, names never clash with db functions

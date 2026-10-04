@@ -39,3 +39,18 @@ RELATED_DETAILED = [
 ]
 
 CHIPS += RELATED_DETAILED
+
+# "Try a famous app": the short names a judge types. Each maps to a hand-written small version (backend/app/platforms.py) and was built end to end by the
+# judge test (scripts/judge.py, results in PROGRESS.md). Only the ones that built reliably are offered.
+FAMOUS = [
+    ("Instagram", "Build Instagram"),
+    ("Twitter", "Build Twitter"),
+    ("Amazon", "Build Amazon"),
+    ("Zomato", "Build Zomato"),
+    ("YouTube", "Build YouTube"),
+    ("LinkedIn", "Build LinkedIn"),
+    ("WhatsApp", "Build WhatsApp"),
+    ("Uber", "Build Uber"),
+    ("hospital system", "Build a hospital management system"),
+    ("library system", "Build a library management system"),
+]

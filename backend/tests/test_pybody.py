@@ -90,3 +90,46 @@ def test_whole_function_sent_by_the_model_is_reduced_to_its_body():
     assert problem == ""
     assert "def second():\n    value = 1\n    return {'v': value}\n" in out and "from x import y" not in out
     compile(out, "x.py", "exec")
+
+
+# --- names read but defined nowhere (a 7B writes `appointment_id` where the route's parameter is `id`) ---------------------------------
+
+def test_a_variable_that_is_not_a_parameter_is_reported():
+    import ast
+    from app.pybody import undefined_variables
+
+    src = ("from database import appointments as db\nfrom fastapi import HTTPException\nLIMIT = 5\n\n\n"
+           "def put(id: int, req):\n    row = db.get_appointment(appointment_id)\n    return row\n")
+    assert undefined_variables(ast.parse(src), "put") == (["appointment_id"], ["id", "req"])
+
+
+def test_everything_that_is_bound_is_fine():
+    import ast
+    from app.pybody import undefined_variables
+
+    src = ("import json\nfrom typing import Literal\nLIMIT = 5\nTABLE = 'x'\n\n\ndef helper():\n    return 1\n\n\n"
+           "def put(id: int, req, *args, **kw):\n"
+           "    total = 0\n    for i, (a, b) in enumerate(args):\n        total += i + a + b\n"
+           "    rows = [r for r in kw if r not in LIMIT]\n    sq = lambda z: z * z\n"
+           "    with open('f') as fh, open('g') as gh:\n        text = fh.read() + gh.read()\n"
+           "    try:\n        x = json.loads(text)\n    except ValueError as err:\n        raise HTTPException(400, str(err))\n"
+           "    def inner(q):\n        return q + total\n    return {'a': helper(), 'b': inner(sq(2)), 'c': len(rows), 'd': TABLE, 't': type(x).__name__, 'u': __name__}\n")
+    assert undefined_variables(ast.parse(src), "put")[0] == ["HTTPException"], "HTTPException is the one name this file never imports"
+    ok = src.replace("raise HTTPException(400, str(err))", "raise ValueError(str(err))")
+    assert undefined_variables(ast.parse(ok), "put")[0] == []
+
+
+def test_implement_refuses_an_undefined_variable_and_says_which_names_exist(tmp_path):
+    from test_tools import act, box
+
+    root = tmp_path / "wt"
+    (root / "backend" / "api").mkdir(parents=True)
+    (root / ".git").mkdir()
+    stub = root / "backend" / "api" / "a.py"
+    stub.write_text("from database import appointments as db\n\n\ndef put(id: int, req):\n    raise NotImplementedError\n")
+    tb, _ = box(root)
+    bad = tb.execute(act("implement", path="backend/api/a.py", function="put", content="row = db.get_appointment(appointment_id)\nreturn row"))
+    assert not bad.ok and "`appointment_id` is not defined inside put" in bad.output and "(id, req)" in bad.output
+    assert "NotImplementedError" in stub.read_text(), "nothing was written"
+    good = tb.execute(act("implement", path="backend/api/a.py", function="put", content="row = db.get_appointment(id)\nreturn row"))
+    assert good.ok, good.output

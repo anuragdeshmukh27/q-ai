@@ -94,3 +94,47 @@ def undefined_calls(tree: "ast.AST") -> list[str]:
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id not in bound and n.func.id not in seen:
             seen.append(n.func.id)
     return seen
+
+
+def undefined_variables(tree: "ast.AST", function: str) -> tuple[list[str], list[str]]:
+    """Names READ inside `function` that are certain to raise NameError: not one of its parameters, not assigned in it (loop, with, except, comprehension,
+    nested function), not bound at the top of the module (def, class, import, assignment) and not a builtin.
+    -> (those names in order of appearance, the function's parameters). A 7B model writes `appointment_id` where the route's path parameter is `id`."""
+    import builtins
+
+    fn = next((n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == function), None)
+    if fn is None:
+        return [], []
+    params = [a.arg for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs, *([fn.args.vararg] if fn.args.vararg else []), *([fn.args.kwarg] if fn.args.kwarg else [])]]
+    bound: set[str] = set(dir(builtins)) | {"__file__", "__doc__", "__spec__"}
+    for stmt in tree.body:  # the module's own names; function and class bodies are their own scopes
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(stmt.name)
+            continue
+        for n in ast.walk(stmt):
+            if isinstance(n, (ast.Import, ast.ImportFrom)):
+                if any(a.name == "*" for a in n.names):
+                    return [], params  # a star import binds names we cannot see
+                bound.update((a.asname or a.name).split(".")[0] for a in n.names)
+            elif isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+                bound.add(n.id)
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(n.name)
+    for n in ast.walk(fn):  # everything bound anywhere inside the function counts (conservative: scopes are not told apart)
+        if isinstance(n, ast.arg):
+            bound.add(n.arg)
+        elif isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+            bound.add(n.id)
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            bound.update((a.asname or a.name).split(".")[0] for a in n.names)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            bound.add(n.name)
+        elif isinstance(n, (ast.Global, ast.Nonlocal)):
+            bound.update(n.names)
+    out: list[str] = []
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id not in bound and n.id not in out:
+            out.append(n.id)
+    return out, params

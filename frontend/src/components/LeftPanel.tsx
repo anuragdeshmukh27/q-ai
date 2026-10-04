@@ -3,7 +3,7 @@ import type { ConfigInfo, RecordingMeta } from '../api'
 import type { BoardArea, OfficeModel } from '../model'
 
 import { card, orderDemos } from '../demos'
-import { EXAMPLES } from '../examples'
+import { EXAMPLES, FAMOUS } from '../examples'
 
 // The stack presets Q knows about. Only the ones the backend lists can be built today; the rest are shown as planned.
 const PRESET_INFO: Record<string, { label: string; stack: string }> = {
@@ -94,6 +94,16 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
               {x.label}
             </button>
           ))}
+        </div>}
+        {!demo && <div className="mt-2.5">
+          <Heading>TRY A FAMOUS APP</Heading>
+          <div className="flex flex-wrap gap-1.5">
+            {FAMOUS.map((x) => (
+              <button key={x.label} onClick={() => setGoal(x.goal)} title={`${x.goal}: a small version of it, with what is left out listed`} className="rounded-full border border-[var(--line)] bg-[#0b0e17] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]">
+                {x.label}
+              </button>
+            ))}
+          </div>
         </div>}
       </div>
 

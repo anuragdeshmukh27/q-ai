@@ -69,6 +69,8 @@ class DbFunction(BaseModel):
 def singular(name: str) -> str:
     """posts -> post, stories -> story, addresses -> address (names are plural snake_case words)."""
     n = name.lower()
+    if n in ("movies", "cookies", "selfies", "zombies", "pies", "ties", "lies"):
+        return n[:-1]
     if n.endswith("ies") and len(n) > 3:
         return n[:-3] + "y"
     if re.search(r"(ss|x|z|ch|sh)es$", n):
@@ -98,6 +100,15 @@ class ResourceInfo(BaseModel):
     top_by: str = ""  # SQL ordering expression for sort=top, for example "upvotes - downvotes"
 
 
+class Look(BaseModel):
+    """How the generated app looks: chosen by rules from the goal and the data (`look.choose_look`), never written by a model, stored in design.json."""
+    theme: str = "default"  # one of look.THEMES
+    layout: str = "cards"  # table | cards | checklist | calculator | feed
+    icon: str = ""  # an emoji shown in the app header
+    subtitle: str = ""  # one line from the spec
+    not_included: list[str] = Field(default_factory=list)  # shown on the page as "Not in this version: ..."
+
+
 class ArchitectOutput(BaseModel):
     preset: str
     architecture: str = Field(description="Short markdown: components and how a request flows through them")
@@ -107,6 +118,7 @@ class ArchitectOutput(BaseModel):
     ui_features: list[str] = Field(default_factory=list, description="What the web page must let the user do")
     # Not part of the model's JSON schema: the engine fills it for relational designs (empty = a plain single-resource design, handled as before).
     resources: SkipJsonSchema[list[ResourceInfo]] = Field(default_factory=list)
+    look: SkipJsonSchema[Look | None] = None  # theme, layout, icon and header text, chosen by rules after the design is final
 
 
 # Fields that name a category of things. They are strings with human labels (Low / Medium / High), never bare numbers (1 / 2 / 3).
@@ -117,6 +129,36 @@ SQL_RESERVED = {"group", "order", "index", "table", "key", "values", "default", 
                 "unique", "constraint", "column", "references", "transaction", "between", "case", "when", "then", "end", "join", "like", "in", "is", "not",
                 "null", "and", "or", "as", "on", "set", "update", "delete", "insert", "into", "drop", "create", "alter", "add", "all", "distinct", "having",
                 "offset", "union", "exists", "desc", "asc", "to", "with", "view", "trigger", "match", "natural", "cross", "left", "right", "inner", "outer"}
+
+
+# Text fields a user may leave empty (an optional note, a due date, a phone number); every other text field of a request must hold something.
+OPTIONAL_TEXT = re.compile(r"description|notes?|details?|memo|remarks?|bio|about|diagnosis|reason|address|link|website|url|phone|email|date|due|tags?|message", re.I)
+
+
+def required_text(f: "FieldSpec") -> bool:
+    """A request field that must not be empty or only spaces: a title, a name, a comment, an author. The server answers 400 with a message the form shows."""
+    return f.type == "string" and not f.options and not OPTIONAL_TEXT.search(f.name)
+
+
+_BLANK_ERROR = re.compile(r"empty|blank|required|missing|must not be|cannot be|can't be|must be provided|invalid", re.I)
+
+
+def declares_blank_error(e: "Endpoint") -> bool:
+    """The contract of this endpoint already defines its own 400 for empty input (an Architect's "Title must not be empty"): its text is tested by the contract's
+    examples, so the automatic blank-field validation (`Required`, "Title is required") stays out of the way and the engineer writes the check the contract describes.
+    A 400 about something else (division by zero) says nothing about blank fields."""
+    blank = lambda v: isinstance(v, str) and not v.strip()  # noqa: E731
+    return (any(x.status == 400 and _BLANK_ERROR.search(x.detail) for x in e.errors)
+            or any(ex.status == 400 and (any(blank(v) for v in ex.request.values()) or _BLANK_ERROR.search(str(ex.response.get("detail", "")))) for ex in e.examples))
+
+
+def label(name: str) -> str:
+    """A field name as the user reads it: due_date -> Due date. A suffix added only to dodge an SQL keyword (group_value) is not part of the name: Group."""
+    for suffix in ("_value", "_name"):
+        if name.endswith(suffix) and name[: -len(suffix)] in SQL_RESERVED:
+            name = name[: -len(suffix)]
+            break
+    return name.replace("_", " ").strip().capitalize()
 
 
 def reserved_problem(where: str, name: str) -> list[str]:
@@ -657,7 +699,7 @@ def check_plan(p: PlannerOutput, needs_db: bool, endpoints: list[Endpoint], tabl
         for f in t.files:
             if not f.startswith(OWNER_PREFIXES[t.owner]):
                 problems.append(f"{t.id}: file {f!r} is not in {t.owner}'s area {OWNER_PREFIXES[t.owner]}")
-            if f.startswith(("backend/main.py", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__", "static/ui-kit")):
+            if f.startswith(("backend/main.py", "backend/validation", "backend/__init__", "database/connection", "database/__init__", "backend/api/__init__", "static/ui-kit")):
                 problems.append(f"{t.id}: {f} is a locked preset file and cannot be a task target")
         if not t.acceptance:
             problems.append(f"{t.id}: add acceptance criteria")

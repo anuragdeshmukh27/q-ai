@@ -121,13 +121,13 @@ def _db_functions(ri: ResourceInfo, child: ResourceInfo | None) -> list[DbFuncti
     fk = f"{ri.fk}: int" if ri.fk else ""
     sort_arg = 'sort: str = "new"' if ri.sorts else ""
     join = lambda *a: ", ".join(x for x in a if x)  # noqa: E731
-    order = "newest first (ORDER BY id DESC)"
+    order = "newest first (ORDER BY id DESC, never ORDER BY created_at: rows added in the same second have the same timestamp)"
     if ri.sorts:
-        order = f"sort='new' (the default): newest first (ORDER BY id DESC); sort='top': highest score first (ORDER BY {ri.top_by} DESC, id DESC)"
+        order = f"sort='new' (the default): newest first (ORDER BY id DESC, never created_at); sort='top': highest score first (ORDER BY {ri.top_by} DESC, id DESC)"
     out = [
         DbFunction(name=f"add_{s}", signature=f"add_{s}({join(fk, args)}) -> dict",
-                   description="Inserts a row with these values and returns the new row as a dict (SELECT it back by lastrowid). Counters and created_at come from their column defaults."),
-        DbFunction(name=f"get_{s}", signature=f"get_{s}({s}_id: int) -> dict | None", description="Returns the row as a dict, or None if the id does not exist."),
+                   description="Inserts a row with these values and returns the new row as a dict (SELECT * FROM the table WHERE id = lastrowid: always SELECT *, so created_at and the counters come back too). Counters and created_at come from their column defaults."),
+        DbFunction(name=f"get_{s}", signature=f"get_{s}({s}_id: int) -> dict | None", description="Returns the row as a dict (SELECT *), or None if the id does not exist."),
         DbFunction(name=f"list_{p}", signature=f"list_{p}({join(fk, sort_arg)}) -> list[dict]",
                    description=(f"Returns the rows whose {ri.fk} equals the argument (WHERE {ri.fk} = ?), " if ri.fk else "Returns every row, ") + f"as a list of dicts, ordered {order}."),
         DbFunction(name=f"update_{s}", signature=f"update_{s}({join(f'{s}_id: int', args)}) -> dict | None",
@@ -189,10 +189,12 @@ def plan_for_relations(design: ArchitectOutput) -> PlannerOutput:
         eps = endpoints_for_resource(design, r.name)
         api_ids.append(add(title=f"Implement the {r.name} API router", owner="backend", depends_on=[*db_ids, *api_ids[-1:]], files=[f"backend/api/{r.name}.py"],
                            acceptance=[f"{e.method} {e.path} answers {e.response_status}" + (f" or {', '.join(str(x.status) for x in e.errors)} when it fails" if e.errors else "") for e in eps][:6]))
+    related = any(r.parent or r.counters for r in rs)
     html = add(title="Build the page structure and style", owner="frontend", depends_on=[], files=["static/index.html", "static/style.css"],
-               acceptance=["run_tests passes: the generated page already has the add form, the list and a panel for the open item and loads /static/app.js"])
+               acceptance=["run_tests passes: the generated page already has the add form, the list" + (" and a view for the open item" if related else "") + " and loads /static/app.js"])
     add(title="Write the page script", owner="frontend", depends_on=[html], files=["static/app.js"],
-        acceptance=["run_tests passes: the generated script is already complete (form, list, vote buttons, the open item's child list); change it only where a failing test points"])
+        acceptance=["run_tests passes: the generated script is already complete (form, list" + (", vote buttons, the open item's child list" if related else ", edit and delete buttons")
+                    + "); change it only where a failing test points"])
     return PlannerOutput(tasks=tasks)
 
 

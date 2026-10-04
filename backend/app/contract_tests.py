@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .schemas import ArchitectOutput, Endpoint
+from .schemas import ArchitectOutput, Endpoint, declares_blank_error, required_text
 
 
 def _slug(text: str) -> str:
@@ -94,6 +94,14 @@ def api_test_source(design: ArchitectOutput, resource: str | None = None) -> str
 
 
 def ui_page_test_source(design: ArchitectOutput) -> str:
+    look = design.look
+    extra: list[str] = []
+    if look is not None:  # the theme and the "Not in this version" note were chosen by rules: a page that drops them is wrong
+        extra += ["", "", "def test_page_keeps_its_theme():", "    import re",
+                  f"    assert re.search(r'data-theme=[\"\\']{look.theme}[\"\\']', client.get('/').text), \"keep data-theme on <html>: it selects the UI kit theme\""]
+        if look.not_included:
+            extra += ["", "", "def test_page_says_what_is_left_out():",
+                      "    assert 'Not in this version' in client.get('/').text, \"keep the note that lists what this version leaves out (Not in this version: ...)\""]
     return "\n".join([
         '"""UI smoke test generated from the API contract. Do not edit; fix the page instead."""',
         "from fastapi.testclient import TestClient", "", "from backend.main import app", "", "client = TestClient(app)", "", "",
@@ -113,6 +121,7 @@ def ui_page_test_source(design: ArchitectOutput) -> str:
         "    dup = sorted(i for i, n in collections.Counter(ids).items() if n > 1)",
         "    assert not dup, (f'these element ids appear more than once: {dup}. getElementById only finds the first one, so the others stay stale. '",
         "                     'Give each element its own id, or move the element instead of copying it.')",
+        *extra,
     ]) + "\n"
 
 
@@ -259,6 +268,12 @@ def edge_test_source(design: ArchitectOutput) -> str:
             bad = {k: v for k, v in payload.items() if k != f.name}
             out += [f"def test_{verb}_{slug}_rejects_missing_{_slug(f.name)}():",
                     f"    assert client.{verb}({e.path!r}, json={bad!r}).status_code == 422", "", ""]
+            if required_text(f) and not design.resources and not declares_blank_error(e):  # a relational design tests this in its per-resource file
+                from .relation_tests import blank_message
+
+                out += [f"def test_{verb}_{slug}_rejects_blank_{_slug(f.name)}():",
+                        f"    r = client.{verb}({e.path!r}, json={{**{payload!r}, {f.name!r}: '   '}})",
+                        "    assert r.status_code == 400, r.text", f"    assert r.json() == {{'detail': {blank_message(f.name)!r}}}", "", ""]
             if f.type in ("number", "integer"):
                 wrong = {**payload, f.name: "not a number"}
                 out += [f"def test_{verb}_{slug}_rejects_non_numeric_{_slug(f.name)}():",

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from .schemas import ArchitectOutput, Endpoint, FieldSpec, ResourceInfo, _resource
+from .schemas import ArchitectOutput, Endpoint, FieldSpec, ResourceInfo, _resource, declares_blank_error, required_text
 
 PY_TYPES = {"string": "str", "number": "float", "integer": "int", "boolean": "bool", "array": "list", "object": "dict"}  # arrays carry no item type in the contract: tags are strings as often as objects
 
@@ -20,9 +20,15 @@ def _camel(parts: list[str]) -> str:
     return "".join(p.capitalize() for p in parts)
 
 
-def _model(name: str, fields: list[FieldSpec]) -> str:
-    # a categorical field is a Literal of its labels, so FastAPI answers 422 for a value that is not one of them
-    body = "\n".join(f"    {f.name}: " + (f"Literal[{', '.join(repr(o) for o in f.options)}]" if f.options and f.type == "string" else PY_TYPES[f.type]) for f in fields)
+def _model(name: str, fields: list[FieldSpec], request: bool = False) -> str:
+    # a categorical field is a Literal of its labels, so FastAPI answers 422 for a value that is not one of them;
+    # in a request, a required text field is `Required` (backend/validation.py): empty or only spaces is a 400 with a message, for parents and children alike
+    def kind(f: FieldSpec) -> str:
+        if request and required_text(f):
+            return "Required"
+        return f"Literal[{', '.join(repr(o) for o in f.options)}]" if f.options and f.type == "string" else PY_TYPES[f.type]
+
+    body = "\n".join(f"    {f.name}: {kind(f)}" for f in fields)
     return f"class {name}(BaseModel):\n{body}\n"
 
 
@@ -47,8 +53,9 @@ def functions_of(design: ArchitectOutput, ri: ResourceInfo):
     return [f for f in design.db_functions if f.name in names]
 
 
-def db_stub(design: ArchitectOutput, table: str | None = None) -> str:
-    """The data access stub. With `table` (a relational design), only that table's functions; SCHEMA still creates every table so a parent can delete its children."""
+def db_stub(design: ArchitectOutput, table: str | None = None, fill: bool = False) -> str:
+    """The data access stub. With `table` (a relational design), only that table's functions; SCHEMA still creates every table so a parent can delete its children.
+    With `fill`, the bodies are written too (the contract repair: what the engineer should have written, from the resource model)."""
     cols = json_columns(design)
     ri = next((r for r in design.resources if r.name == table), None)
     funcs = functions_of(design, ri) if ri else design.db_functions
@@ -67,18 +74,54 @@ def db_stub(design: ArchitectOutput, table: str | None = None) -> str:
                 "    d = dict(r)", "    for c in JSON_COLUMNS:", "        if isinstance(d.get(c), str):", "            d[c] = json.loads(d[c])", "    return d", ""]
     shape = "_row(row) / [_row(r) for r in rows]" if cols else "dict(row) / [dict(r) for r in rows]"
     for f in funcs:
+        body = db_body(design, ri, f.name) if fill and ri else None
         out += [
             "",
             f"def {f.signature.strip()}:",
             f'    """{f.description}"""',
-            f"    # with connect(SCHEMA) as conn:  ... use ? placeholders, return {shape}",
-            "    raise NotImplementedError",
+            *(["    " + line for line in body] if body else [f"    # with connect(SCHEMA) as conn:  ... use ? placeholders, return {shape}", "    raise NotImplementedError"]),
             "",
         ]
     return "\n".join(out).rstrip() + "\n"
 
 
-def _route(e: Endpoint, response_model: str | None, request_model: str | None, func: str, hints: list[str] | None = None) -> str:
+def db_body(design: ArchitectOutput, ri: ResourceInfo, name: str) -> list[str] | None:
+    """The body of one data access function of a relational resource, in plain sqlite3 with ? placeholders (None for a name it does not know)."""
+    p, s = ri.name, ri.singular
+    cols = ([ri.fk] if ri.fk else []) + [f.name for f in ri.fields]
+    child = next((r for r in design.resources if r.parent == ri.name), None)
+
+    def select(arg: str) -> str:
+        return f'conn.execute("SELECT * FROM {p} WHERE id = ?", ({arg},)).fetchone()'
+
+    if name == f"add_{s}":
+        marks = ", ".join("?" for _ in cols)
+        return ["with connect(SCHEMA) as conn:", f'    cur = conn.execute("INSERT INTO {p} ({", ".join(cols)}) VALUES ({marks})", ({", ".join(cols)},))',
+                f"    row = {select('cur.lastrowid')}", "    return dict(row)"]
+    if name == f"get_{s}":
+        return ["with connect(SCHEMA) as conn:", f"    row = {select(s + '_id')}", "    return dict(row) if row else None"]
+    if name == f"list_{p}":
+        where = f" WHERE {ri.fk} = ?" if ri.fk else ""
+        params = f"({ri.fk},)" if ri.fk else "()"
+        order = [f'    order = "{ri.top_by} DESC, id DESC" if sort == "top" else "id DESC"'] if ri.sorts else ['    order = "id DESC"']
+        return ["with connect(SCHEMA) as conn:", *order, f'    rows = conn.execute("SELECT * FROM {p}{where} ORDER BY " + order, {params}).fetchall()', "    return [dict(r) for r in rows]"]
+    if name == f"update_{s}":
+        sets = ", ".join(f"{f.name} = ?" for f in ri.fields)
+        vals = ", ".join(f.name for f in ri.fields)
+        return ["with connect(SCHEMA) as conn:", f'    conn.execute("UPDATE {p} SET {sets} WHERE id = ?", ({vals}, {s}_id))', f"    row = {select(s + '_id')}",
+                "    return dict(row) if row else None"]
+    if name == f"delete_{s}":
+        cascade = [f'    conn.execute("DELETE FROM {child.name} WHERE {child.fk} = ?", ({s}_id,))'] if child else []
+        return ["with connect(SCHEMA) as conn:", *cascade, f'    cur = conn.execute("DELETE FROM {p} WHERE id = ?", ({s}_id,))', "    return cur.rowcount > 0"]
+    action = next((a for a in ri.actions if name == f"{a.name}_{s}"), None)
+    if action is not None:
+        change = f"{action.field} + 1" if action.kind == "increment" else f"1 - {action.field}"
+        return ["with connect(SCHEMA) as conn:", f'    conn.execute("UPDATE {p} SET {action.field} = {change} WHERE id = ?", ({s}_id,))', f"    row = {select(s + '_id')}",
+                "    return dict(row) if row else None"]
+    return None
+
+
+def _route(e: Endpoint, response_model: str | None, request_model: str | None, func: str, hints: list[str] | None = None, fill: bool = False) -> str:
     params = re.findall(r"\{(\w+)\}", e.path)
     # GET/DELETE have no body: their request fields are query parameters, i.e. plain function arguments (scalar types only).
     query = [f"{f.name}: {PY_TYPES[f.type]}" for f in e.request_fields if e.method in ("GET", "DELETE") and f.name not in params and f.type in ("string", "number", "integer", "boolean") and not f.options]
@@ -89,12 +132,14 @@ def _route(e: Endpoint, response_model: str | None, request_model: str | None, f
     notes = [f"# {e.summary}"] + [f'# error: raise HTTPException(status_code={x.status}, detail="{x.detail}")' for x in e.errors]
     notes += [f"# body: {h}" for h in hints or []]
     body = "\n".join("    " + n for n in notes)
-    return f'@router.{e.method.lower()}("{e.path}"{deco_extra})\ndef {func}({", ".join(args)}):\n{body}\n    raise NotImplementedError\n'
+    code = "\n".join("    " + h for h in hints) if fill and hints else "    raise NotImplementedError"  # the hints ARE the body once they are applied
+    return f'@router.{e.method.lower()}("{e.path}"{deco_extra})\ndef {func}({", ".join(args)}):\n{body}\n{code}\n'
 
 
-def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None, parent_modules: tuple[str, ...] = ()) -> str:
+def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: str | None, parent_modules: tuple[str, ...] = (), fill: bool = False) -> str:
+    """The route stub of one router. With `fill`, every route of a relational design has its body from the hints (the contract repair)."""
     out = ['"""Route stubs generated from the API contract. Fill in the bodies; keep paths, models and status codes."""',
-           "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel"]
+           "import json", "import operator", "import re", "from typing import Literal", "from fastapi import APIRouter, HTTPException", "from pydantic import BaseModel", "from backend.validation import Required"]
     if db_module:
         out.append(f"from database import {db_module} as db")
     out += [f"from database import {m} as {m}_db" for m in parent_modules]
@@ -106,11 +151,11 @@ def route_stub(design: ArchitectOutput, endpoints: list[Endpoint], db_module: st
         req = res = None
         if e.method in ("POST", "PUT", "PATCH") and e.request_fields:
             req = base + "Request"
-            out += [_model(req, e.request_fields)]
+            out += [_model(req, e.request_fields, request=not declares_blank_error(e))]
         if e.response_fields:
             res = base + "Response"
             out += [_model(res, e.response_fields)]
-        out += [_route(e, res, req, func, _hints(design, e))]
+        out += [_route(e, res, req, func, _hints(design, e), fill)]
     return "\n".join(out).rstrip() + "\n"
 
 

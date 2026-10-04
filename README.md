@@ -136,8 +136,13 @@ All pixel art is generated in code from palettes; no third-party assets are used
 
 - **In scope:** one resource (a list with add, edit, delete), or a parent with its children (posts with comments, questions with answers, projects with tasks) with up to two one-click actions per resource (upvote, downvote, like, toggle) and a sort (newest or top).
 - **Bigger goals** (login, real-time, uploads, payments, a third kind of thing) build the small version that fits; the spec and the Contract tab say "Not in this version: ..." so nothing is silently missing.
+- **Famous apps by name** (Instagram, Twitter, Amazon, Zomato, YouTube, LinkedIn, WhatsApp, Uber, a hospital or library system and a few more, `backend/app/platforms.py`): a short goal that names one maps to a hand-written small version (Instagram = posts with a caption, comments and likes), so the same name builds the same app on every run. The page says "Not in this version: ..." (photo uploads, followers, ...), and the agents still build the whole app from that spec.
 - **Impossible for this preset** (games, charts, native or mobile apps) are refused before any model work, with three goals that do work.
 - For related resources the contract is completed by rules from the spec (`backend/app/relations.py`), not written by the model: the 7B kept getting foreign keys, vote counters and nesting wrong. Agents still write every function. `Q_RELATIONS=0` falls back to parent-only builds.
+
+## How a generated app looks
+
+The model never writes a page layout. A theme, a layout, an icon and a subtitle are chosen by rules (`backend/app/look.py`) and stored in `.q/design.json`: seven hand-made themes in the UI kit (default, finance green, paper, industrial, social orange, food red, health teal; three are light) and five layouts picked from the data (table, card grid, checklist, calculator panel, and a forum-style feed with a detail view for parent and child apps). Numbers get a stat strip (count, totals, by category). Generated tests fail a page that drops its theme or its "Not in this version" note. `scripts/preview.py` shows any theme or layout without building anything.
 
 ## Honest limits
 

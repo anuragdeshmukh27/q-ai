@@ -50,7 +50,7 @@ def db_scripts(d, ri):
     bodies = {
         f"add_{s}": f"with connect(SCHEMA) as conn:\n    cur = conn.execute('INSERT INTO {p} ({', '.join(cols)}) VALUES ({marks})', ({', '.join(cols)},))\n    return {row.replace('X', 'cur.lastrowid')}",
         f"get_{s}": f"with connect(SCHEMA) as conn:\n    r = conn.execute('SELECT * FROM {p} WHERE id = ?', ({s}_id,)).fetchone()\n    return dict(r) if r else None",
-        f"list_{p}": (f"with connect(SCHEMA) as conn:\n    if sort == 'top':\n        q = 'SELECT * FROM {p} {where}ORDER BY upvotes - downvotes DESC, id DESC'\n"
+        f"list_{p}": (f"with connect(SCHEMA) as conn:\n    if {'sort == ' + repr('top') if ri.sorts else 'False'}:\n        q = 'SELECT * FROM {p} {where}ORDER BY upvotes - downvotes DESC, id DESC'\n"
                       f"    else:\n        q = 'SELECT * FROM {p} {where}ORDER BY id DESC'\n    return [dict(r) for r in conn.execute(q, {args}).fetchall()]"),
         f"update_{s}": (f"with connect(SCHEMA) as conn:\n    conn.execute('UPDATE {p} SET {sets} WHERE id = ?', ({vals}, {s}_id))\n"
                         f"    r = conn.execute('SELECT * FROM {p} WHERE id = ?', ({s}_id,)).fetchone()\n    return dict(r) if r else None"),
@@ -76,11 +76,10 @@ def router_scripts(d, ri):
 
 
 class RelationalLLM(FakeLLM):
-    def __init__(self):
+    def __init__(self, d=None):
         super().__init__()
-        d = design()
-        posts, comments = d.resources
-        self.scripts = {"Karan": db_scripts(d, posts) + db_scripts(d, comments), "Rohan": router_scripts(d, posts) + router_scripts(d, comments),
+        d = d or design()
+        self.scripts = {"Karan": [x for r in d.resources for x in db_scripts(d, r)], "Rohan": [x for r in d.resources for x in router_scripts(d, r)],
                         "Meera": [act("run_tests"), act("finish", summary="page done"), act("run_tests"), act("finish", summary="script done")]}
 
     def call(self, model_id, messages, schema_model, temperature=0.2):
@@ -96,7 +95,7 @@ class RelationalLLM(FakeLLM):
 def test_reddit_build_runs_end_to_end(tmp_path):
     llm = RelationalLLM()
     o, bus = make(tmp_path, llm)
-    o.goal = "Build a reddit replica"
+    o.goal = "Build a discussion board with comments and votes"  # not a famous app: the scripted spec is the one used
     res = o.run()
     assert res.ok, res.problems
     assert [m for _, m in llm.models_used if m == "ArchitectOutput"] == [], "a relational contract is built by rules, not asked from the model"
@@ -117,8 +116,55 @@ def test_reddit_build_runs_end_to_end(tmp_path):
 def test_a_generated_page_that_passes_its_tests_is_not_handed_to_the_model(tmp_path):
     llm = RelationalLLM()
     o, bus = make(tmp_path, llm)
-    o.goal = "Build a reddit replica"
+    o.goal = "Build a discussion board with comments and votes"  # not a famous app: the scripted spec is the one used
     res = o.run()
     assert res.ok, res.problems
     assert len(llm.scripts["Meera"]) == 4, "the frontend engineer was never asked: the page generated from the contract already passed"
     assert any(e["type"] == "agent_thought" and "already passes every test" in e.get("text", "") for e in bus.history)
+
+
+def test_a_famous_single_resource_app_is_built_by_rules_and_gets_a_table_with_a_stat_strip(tmp_path):
+    """Uber: one resource, no parent, no votes. Its contract and plan come from the platform spec; the page is a table, not a feed."""
+    from app.platforms import match_platform
+
+    d = synthesize_design(normalize_spec(match_platform("Build Uber"), "Build Uber"))
+    llm = RelationalLLM(d)
+    o, bus = make(tmp_path, llm)
+    o.goal = "Build Uber"
+    res = o.run()
+    assert res.ok, res.problems
+    assert [m for _, m in llm.models_used if m in ("ArchitectOutput", "SpecOutput")] == [], "a famous app's spec and contract are not asked from the model"
+    assert [t["files"] for t in res.tasks if t["owner"] in ("database", "backend")] == [["database/rides.py"], ["backend/api/rides.py"]]
+    html, js = (res.root / "static/index.html").read_text(encoding="utf-8"), (res.root / "static/app.js").read_text(encoding="utf-8")
+    assert "layout-table" in html and 'data-theme="industrial"' in html and "Not in this version" in html and "UI.renderTable(" in js and "UI.statStrip(" in js
+    assert '"fare"' in js and '"status"' in js, "every field is a column, the fare included"
+    assert any(e["type"] == "look_chosen" and e["layout"] == "table" for e in bus.history)
+    assert len(llm.scripts["Meera"]) == 4, "the generated page passed its tests, so the frontend engineer was never asked"
+
+
+def test_an_engineer_who_cannot_finish_a_router_is_rescued_by_the_contract_repair(tmp_path):
+    d = design()
+    llm = RelationalLLM(d)
+    llm.scripts["Rohan"] = [act("run_tests")] * 3 + router_scripts(d, d.resources[1])  # the posts router: the engineer only re-runs the failing tests, then escalates
+    o, bus = make(tmp_path, llm)
+    o.goal = "Build a discussion board with comments and votes"
+    res = o.run()
+    assert res.ok, res.problems
+    repair = [e for e in bus.history if e["type"] == "contract_repair"]
+    assert [(e["path"], e["ok"]) for e in repair] == [("backend/api/posts.py", True)]
+    assert "implement" not in (res.root / "backend/api/posts.py").read_text(encoding="utf-8")
+    assert "NotImplementedError" not in (res.root / "backend/api/posts.py").read_text(encoding="utf-8")
+    assert "Contract repair" in (res.root / ".q" / "decisions.md").read_text(encoding="utf-8")
+    assert any(e["type"] == "agent_thought" and "Applying the functions the contract implies" in e.get("text", "") for e in bus.history)
+    assert next(t for t in res.tasks if t["files"] == ["backend/api/posts.py"])["status"] == "done"
+
+
+def test_a_database_task_is_rescued_the_same_way(tmp_path):
+    d = design()
+    llm = RelationalLLM(d)
+    llm.scripts["Karan"] = [act("run_tests")] * 3 + db_scripts(d, d.resources[1])
+    o, bus = make(tmp_path, llm)
+    o.goal = "Build a discussion board with comments and votes"
+    res = o.run()
+    assert res.ok, res.problems
+    assert [(e["path"], e["ok"]) for e in bus.history if e["type"] == "contract_repair"] == [("database/posts.py", True)]

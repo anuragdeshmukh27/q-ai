@@ -55,7 +55,7 @@ def downvote_{s}({s}_id: int):
 '''
 
 
-def write(root: Path, schema: str, break_cascade=False, break_404=False, client_counters=False):
+def write(root: Path, schema: str, break_cascade=False, break_404=False, client_counters=False, no_blank_check=False):
     (root / "database").mkdir(exist_ok=True)
     posts = DB.format(schema=schema, s="post", p="posts", fk="", args="title: str, content: str, author: str", cols="title, content, author",
                       marks="?, ?, ?", vals="title, content, author", where="", wargs="", top="upvotes - downvotes",
@@ -75,15 +75,16 @@ def write(root: Path, schema: str, break_cascade=False, break_404=False, client_
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from backend.validation import Required
 from database import posts as db
 
 router = APIRouter()
 
 
 class Body(BaseModel):
-    title: str
-    content: str
-    author: str
+    title: Required
+    content: Required
+    author: Required
 
 
 @router.get("/api/posts")
@@ -126,6 +127,7 @@ def down(id: int):
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from backend.validation import Required
 from database import comments as db
 from database import posts as posts_db
 
@@ -133,8 +135,8 @@ router = APIRouter()
 
 
 class Body(BaseModel):
-    content: str
-    author: str
+    content: Required
+    author: Required
 
 
 @router.get("/api/posts/{{post_id}}/comments")
@@ -175,3 +177,6 @@ def down(id: int):
     if row is None: raise HTTPException(404, "Comment not found")
     return row
 ''', encoding="utf-8")
+    if no_blank_check:  # the classic miss: the parent refuses an empty title, the child accepts an empty comment
+        f = root / "backend/api/comments.py"
+        f.write_text(f.read_text(encoding="utf-8").replace("    content: Required" + chr(10), "    content: str" + chr(10)), encoding="utf-8")

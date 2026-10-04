@@ -3,7 +3,7 @@ import subprocess
 
 from test_orchestrator import FakeLLM, act, make, types
 
-POLISHED_HTML = ("<!doctype html><html><head><link rel='stylesheet' href='/static/ui-kit.css'><link rel='stylesheet' href='/static/style.css'>"
+POLISHED_HTML = ("<!doctype html><html lang='en' data-theme='default'><head><link rel='stylesheet' href='/static/ui-kit.css'><link rel='stylesheet' href='/static/style.css'>"
                  "<script src='/static/ui-kit.js'></script></head><body><main class='container'><section class='card'><form id='f'></form>"
                  "<div id='list'></div></section></main><script src='/static/app.js'></script></body></html>")
 POLISHED_JS = ("async function go() {\n  const list = document.getElementById('list');\n  UI.loading(list);\n"
@@ -12,7 +12,8 @@ POLISHED_JS = ("async function go() {\n  const list = document.getElementById('l
 
 
 def polish_script(llm):
-    llm.scripts["Meera"] += [act("write_file", path="static/index.html", content=POLISHED_HTML), act("write_file", path="static/app.js", content=POLISHED_JS),
+    # the page generated from the contract passes its tests, so the first two frontend tasks never reach the engineer: the script holds the polish steps only
+    llm.scripts["Meera"] = [act("write_file", path="static/index.html", content=POLISHED_HTML), act("write_file", path="static/app.js", content=POLISHED_JS),
                              act("run_tests"), act("finish", summary="polished")]
 
 
@@ -66,7 +67,7 @@ def test_polish_is_off_by_default(tmp_path):
 def test_polish_runs_after_qa_passes_and_merges_when_the_whole_suite_is_green(tmp_path):
     llm = FakeLLM()
     polish_script(llm)
-    o, bus = make(tmp_path, llm, polish=True)
+    o, bus = make(tmp_path, llm, polish=True, fast_live=False)
     res = o.run()
     assert res.ok, res.problems
     p1 = next(t for t in res.tasks if t["id"] == "p1")
@@ -114,7 +115,7 @@ def test_polish_is_on_for_live_builds_unless_switched_off_with_q_polish():
 
 def test_polish_task_shows_the_current_files_and_skips_the_llm_review_but_not_the_static_checks(tmp_path):
     llm = FakeLLM()
-    llm.scripts["Meera"] += [act("write_file", path="static/app.js", content=POLISHED_JS.replace("UI.empty(list, 'No calculations yet')", "list.innerHTML = '<b>none</b>'")),
+    llm.scripts["Meera"] = [act("write_file", path="static/app.js", content=POLISHED_JS.replace("UI.empty(list, 'No calculations yet')", "list.innerHTML = '<b>none</b>'")),
                              act("run_tests"), act("finish", summary="polished")]
     seen = []
     real_call = llm.call
@@ -124,11 +125,11 @@ def test_polish_task_shows_the_current_files_and_skips_the_llm_review_but_not_th
         return real_call(model_id, messages, schema_model, temperature)
 
     llm.call = spy
-    o, bus = make(tmp_path, llm, polish=True)
+    o, bus = make(tmp_path, llm, polish=True, fast_live=False)
     res = o.run()
     assert res.ok, res.problems
     polish_prompts = [c for n, c in seen if "Task p1" in c]
-    assert polish_prompts and "Current static/app.js" in polish_prompts[0] and "fetch('/api/history')" in polish_prompts[0]
+    assert polish_prompts and "Current static/app.js" in polish_prompts[0] and "fetch(\"/api/" in polish_prompts[0]
     p1 = next(t for t in res.tasks if t["id"] == "p1")
     assert p1["status"] == "skipped" and "innerHTML" in p1["summary"]  # the static security check refused the polished script
     assert not any(e["type"] == "review_result" and e["task"] == "p1" for e in bus.history)
@@ -146,7 +147,7 @@ def test_a_polished_script_that_uses_no_ui_kit_helper_is_not_merged(tmp_path):
 
 def test_polish_that_changes_nothing_is_reported_as_nothing_to_change_and_merges_nothing(tmp_path):
     llm = FakeLLM()
-    llm.scripts["Meera"] += [act("finish", summary="already looks right")]
+    llm.scripts["Meera"] = [act("finish", summary="already looks right")]
     o, bus = make(tmp_path, llm, polish=True)
     res = o.run()
     assert res.ok, res.problems
@@ -158,7 +159,7 @@ def test_polish_that_changes_nothing_is_reported_as_nothing_to_change_and_merges
 
 def test_a_polish_that_only_resends_the_existing_file_counts_as_nothing_to_change(tmp_path):
     llm = FakeLLM()
-    llm.scripts["Meera"] += [act("read_file", path="static/app.js"), act("read_file", path="static/app.js"), act("read_file", path="static/app.js"),
+    llm.scripts["Meera"] = [act("read_file", path="static/app.js"), act("read_file", path="static/app.js"), act("read_file", path="static/app.js"),
                              act("read_file", path="static/app.js")]
     o, bus = make(tmp_path, llm, polish=True)
     res = o.run()

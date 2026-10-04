@@ -295,7 +295,7 @@ def test_fast_live_mode_allows_one_llm_review_and_accepts_a_clean_fix_without_a_
     t1 = [e for e in bus.history if e["type"] == "review_result" and e["task"] == "t1"]
     assert [(e["round"], e["verdict"]) for e in t1] == [(1, "REQUEST_CHANGES"), (2, "PASS")]
     assert "automatic checks are clean" in t1[1]["summary"]
-    assert sum(1 for _, s in llm.models_used if s == "ReviewOutput") == 4  # one model review per task, none for the fix
+    assert sum(1 for _, s in llm.models_used if s == "ReviewOutput") == 2  # one model review per task an engineer wrote (database, backend), none for the fix and none for the generated pages
     assert "LIMIT 100" in (res.root / "database/calculations.py").read_text()
 
 

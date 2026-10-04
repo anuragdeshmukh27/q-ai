@@ -18,3 +18,18 @@ export const EXAMPLES: Example[] = [
   { label: 'Q&A forum', goal: 'Build a Q&A forum: questions with title, details and author, answers to each question, upvote questions and answers, sort by top or newest' },
   { label: 'project tasks', goal: 'Build a project tracker: projects with name and description, tasks for each project with title and status To do/In progress/Done, edit and delete' },
 ]
+
+// "Try a famous app": the short names a judge types. Each one maps to a hand-written small version of the app (backend/app/platforms.py), which the team builds
+// in full. Only the names that built end to end in the judge test (scripts/judge.py) are listed; the same list lives in scripts/goals.py.
+export const FAMOUS: Example[] = [
+  { label: 'Instagram', goal: 'Build Instagram' },
+  { label: 'Twitter', goal: 'Build Twitter' },
+  { label: 'Amazon', goal: 'Build Amazon' },
+  { label: 'Zomato', goal: 'Build Zomato' },
+  { label: 'YouTube', goal: 'Build YouTube' },
+  { label: 'LinkedIn', goal: 'Build LinkedIn' },
+  { label: 'WhatsApp', goal: 'Build WhatsApp' },
+  { label: 'Uber', goal: 'Build Uber' },
+  { label: 'hospital system', goal: 'Build a hospital management system' },
+  { label: 'library system', goal: 'Build a library management system' },
+]

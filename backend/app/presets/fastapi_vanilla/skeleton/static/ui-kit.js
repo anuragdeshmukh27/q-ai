@@ -10,10 +10,22 @@
 //       details: ["description"]      more fields, each on its own muted line
 //       badges: ["priority"]          short categorical fields as coloured badges (High red, Medium amber, Low green, To do blue, In progress amber,
 //                                     Done green; any other label gets its own steady colour)
-//       formats: { amount: "money" }  per-field format: "money" | "num" | "symbol"
+//       formats: { amount: "money" }  per-field format: "money" | "num" | "symbol" | "stars" (a 1-5 rating as ★★★☆☆)
 //       done: "done"                  boolean field: strikes the row through when true
 //       onToggle: (checked) => ...    with `done`: shows a checkbox at the start of the row; called with the new state
+//       values: ["amount"]            numbers shown on the right of the row, each captioned with its label (formats applies)
+//       labels: { phone: "Phone" }    a detail line reads "Phone: 555-1234"; a value is captioned with its label
 //       actions: [{ label: "Delete", kind: "danger", onClick: () => remove(item.id) }]   buttons ("danger" | "secondary" | "ghost")
+//   The same options drive every layout; pick one by the shape of the data:
+//   UI.renderList(box, items, build, empty)       one row per item (default)
+//   UI.renderChecklist(box, items, build, empty)  compact rows to tick off (a yes/no field with onToggle)
+//   UI.renderCards(box, items, build, empty)      a grid of cards (title, detail lines, badges, values, buttons)
+//   UI.renderTable(box, items, build, empty)      a table; build(item) adds columns: [{ field: "amount", label: "Amount", format: "money", badge: false }]
+//   UI.renderFeed(box, items, build, empty)       forum-style posts: a vote column, title, "by author · time ago", "💬 N comments"; extra options:
+//       author: "author"  details: ["content"]  score: 3  comments: 2  noun: "comment"  onOpen: () => open(item)  compact: true (a comment row)
+//       actions with slot: "up" | "down" are drawn as the vote buttons around the score; the others sit in the footer of the post
+//   UI.statStrip(box, items, { noun, plural, sums: [{ field, label, format }], averages: [{ field, label, format }], by: "category", byField: "amount", byFormat: "money" })
+//   UI.count(n, "post", "posts") -> "1 post" / "2 posts"     UI.timeAgo(item.created_at) -> "5 min ago"     UI.label("due_date") -> "Due date"
 //   UI.form("Edit task", fields, item, async (values) => {...})   a dialog to edit an item (Edit button). fields:
 //       [{ name: "title", label: "Title" }, { name: "priority", label: "Priority", options: ["Low", "Medium", "High"] },
 //        { name: "due_date", label: "Due date", type: "date" }, { name: "done", label: "Done", type: "checkbox" }]
@@ -42,56 +54,251 @@ window.UI = (() => {
     for (const c of key) h = (h * 31 + c.charCodeAt(0)) % 997;
     return FREE_TONES[h % FREE_TONES.length];
   };
-  const FORMATS = { money: (v) => api.money(v), num: (v) => api.num(v), symbol: (v) => api.symbol(v) };
+  const stars = (v) => { const n = Math.max(0, Math.min(5, Math.round(Number(v)))); return "★".repeat(n) + "☆".repeat(5 - n); };
+  const FORMATS = { money: (v) => api.money(v), num: (v) => api.num(v), symbol: (v) => api.symbol(v), stars };
   const show = (item, field, formats = {}) => {
     const v = item[field];
     if (v === undefined || v === null || v === "") return "";
     const f = FORMATS[formats[field]];
     return f ? f(v) : String(v);
   };
+  const pretty = (name) => String(name).replace(/_(value|name)$/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const caption = (o, f) => (o.labels && o.labels[f]) || pretty(f);
+  const checkbox = (item, o) => {
+    const box = el("input", "item-check");
+    box.type = "checkbox";
+    box.checked = !!item[o.done];
+    box.setAttribute("aria-label", "Mark as done");
+    box.addEventListener("change", () => o.onToggle(box.checked));
+    return box;
+  };
+  const detailLine = (item, o, f) => {
+    const text = show(item, f, o.formats);
+    if (!text) return null;
+    const line = el("div", "muted small item-detail");
+    if (o.labels && o.labels[f]) line.append(el("b", "", o.labels[f] + ": "), document.createTextNode(text));
+    else line.textContent = text;
+    return line;
+  };
+  const badgesOf = (item, o) => {
+    const badges = el("span", "item-badges");
+    for (const f of o.badges ?? []) {
+      const text = show(item, f, o.formats);
+      if (text) badges.appendChild(el("span", `badge badge-${tone(text)}`, text));
+    }
+    return badges.childNodes.length ? badges : null;
+  };
+  const valuesOf = (item, o) => {
+    const box = el("span", "item-values");
+    for (const f of o.values ?? []) {
+      const text = show(item, f, o.formats);
+      if (!text) continue;
+      const v = el("span", "item-value");
+      v.append(el("b", "", text), el("span", "", caption(o, f)));
+      box.appendChild(v);
+    }
+    return box.childNodes.length ? box : null;
+  };
+  const buttons = (actions) => {
+    const box = el("span", "item-actions");
+    for (const a of actions) {
+      const b = el("button", `btn-sm btn-${a.kind ?? "secondary"}`, a.label);
+      b.type = "button";
+      b.addEventListener("click", a.onClick);
+      box.appendChild(b);
+    }
+    return box;
+  };
+  const timeAgo = (ts) => {
+    if (!ts) return "";
+    const text = String(ts);
+    const d = new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(text) ? text.replace(" ", "T") + "Z" : text);  // the database stores UTC without a zone
+    if (isNaN(d)) return text;
+    const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+    if (s < 45) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    if (s < 30 * 86400) return api.count(Math.round(s / 86400), "day") + " ago";
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  };
+  const rows = (box, items, build, emptyText, make) => {
+    if (!items || !items.length) return api.empty(box, emptyText);
+    box.textContent = "";
+    make(box, items.map((item) => [item, typeof build === "function" ? build(item) : build]));
+  };
   const api = {
     listItem(item, o = {}) {
       const li = el("li", o.done && item[o.done] ? "list-item done" : "list-item");
-      if (o.done && o.onToggle) {
-        const box = el("input", "item-check");
-        box.type = "checkbox";
-        box.checked = !!item[o.done];
-        box.setAttribute("aria-label", "Mark as done");
-        box.addEventListener("change", () => o.onToggle(box.checked));
-        li.appendChild(box);
-      }
+      if (o.done && o.onToggle) li.appendChild(checkbox(item, o));
       const main = el("span", "item-main");
       if (o.title) main.appendChild(el("div", "item-title", show(item, o.title, o.formats)));
       for (const f of o.details ?? []) {
-        const text = show(item, f, o.formats);
-        if (text) main.appendChild(el("div", "muted small", text));
+        const line = detailLine(item, o, f);
+        if (line) main.appendChild(line);
       }
       li.appendChild(main);
-      const badges = el("span", "item-badges");
-      for (const f of o.badges ?? []) {
-        const text = show(item, f, o.formats);
-        if (text) badges.appendChild(el("span", `badge badge-${tone(text)}`, text));
-      }
-      if (badges.childNodes.length) li.appendChild(badges);
-      if ((o.actions ?? []).length) {
-        const box = el("span", "item-actions");
-        for (const a of o.actions) {
-          const b = el("button", `btn-sm btn-${a.kind ?? "secondary"}`, a.label);
-          b.type = "button";
-          b.addEventListener("click", a.onClick);
-          box.appendChild(b);
-        }
-        li.appendChild(box);
-      }
+      const badges = badgesOf(item, o);
+      if (badges) li.appendChild(badges);
+      const values = valuesOf(item, o);
+      if (values) li.appendChild(values);
+      if ((o.actions ?? []).length) li.appendChild(buttons(o.actions));
       return li;
     },
-    renderList(box, items, build = {}, emptyText = "Nothing here yet.") {
-      if (!items || !items.length) return api.empty(box, emptyText);
-      box.textContent = "";
-      const ul = el("ul", "list");
-      for (const item of items) ul.appendChild(api.listItem(item, typeof build === "function" ? build(item) : build));
-      box.appendChild(ul);
+    renderList(box, items, build = {}, emptyText = "Nothing here yet.", cls = "list") {
+      rows(box, items, build, emptyText, (box, pairs) => {
+        const ul = el("ul", cls);
+        for (const [item, o] of pairs) ul.appendChild(api.listItem(item, o));
+        box.appendChild(ul);
+      });
     },
+    renderChecklist(box, items, build = {}, emptyText = "Nothing here yet.") {
+      api.renderList(box, items, build, emptyText, "list checklist");
+    },
+    renderCards(box, items, build = {}, emptyText = "Nothing here yet.") {
+      rows(box, items, build, emptyText, (box, pairs) => {
+        const grid = el("div", "card-grid");
+        for (const [item, o] of pairs) {
+          const card = el("div", o.done && item[o.done] ? "card-item done" : "card-item");
+          if (o.done && o.onToggle) card.appendChild(checkbox(item, o));
+          if (o.title) card.appendChild(el("div", "item-title", show(item, o.title, o.formats)));
+          for (const f of o.details ?? []) {
+            const line = detailLine(item, o, f);
+            if (line) card.appendChild(line);
+          }
+          for (const part of [badgesOf(item, o), valuesOf(item, o)]) if (part) card.appendChild(part);
+          if ((o.actions ?? []).length) card.appendChild(buttons(o.actions));
+          grid.appendChild(card);
+        }
+        box.appendChild(grid);
+      });
+    },
+    renderTable(box, items, build = {}, emptyText = "Nothing here yet.") {
+      rows(box, items, build, emptyText, (box, pairs) => {
+        const cols = pairs[0][1].columns ?? [];
+        const wrap = el("div", "table-wrap");
+        const table = el("table", "table");
+        const head = el("tr");
+        for (const c of cols) head.appendChild(el("th", c.format === "money" || c.format === "num" ? "num" : "", c.label ?? pretty(c.field)));
+        if ((pairs[0][1].actions ?? []).length) head.appendChild(el("th", "col-actions", ""));
+        table.appendChild(el("thead")).appendChild(head);
+        const body = el("tbody");
+        for (const [item, o] of pairs) {
+          const tr = el("tr");
+          for (const c of o.columns ?? []) {
+            const text = show(item, c.field, { [c.field]: c.format });
+            const td = el("td", c.format === "money" || c.format === "num" ? "num" : "");
+            if (c.badge && text) td.appendChild(el("span", `badge badge-${tone(text)}`, text));
+            else td.textContent = text;
+            tr.appendChild(td);
+          }
+          if ((o.actions ?? []).length) {
+            const td = el("td", "col-actions");
+            td.appendChild(buttons(o.actions));
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+        table.appendChild(body);
+        wrap.appendChild(table);
+        box.appendChild(wrap);
+      });
+    },
+    renderFeed(box, items, build = {}, emptyText = "Nothing here yet.") {
+      rows(box, items, build, emptyText, (box, pairs) => {
+        const ul = el("ul", "feed");
+        for (const [item, o] of pairs) {
+          const li = el("li", o.compact ? "feed-post feed-comment" : "feed-post");
+          const votes = (o.actions ?? []).filter((a) => a.slot === "up" || a.slot === "down");
+          if (votes.length || o.score !== undefined) {
+            const col = el("div", "vote-col");
+            const vote = (a) => {
+              const b = el("button", "", a.label);
+              b.type = "button";
+              b.setAttribute("aria-label", a.title ?? a.label);
+              b.addEventListener("click", a.onClick);
+              return b;
+            };
+            const up = votes.find((a) => a.slot === "up");
+            const down = votes.find((a) => a.slot === "down");
+            if (up) col.appendChild(vote(up));
+            if (o.score !== undefined) col.appendChild(el("span", "vote-score", String(o.score)));
+            if (down) col.appendChild(vote(down));
+            li.appendChild(col);
+          }
+          const main = el("div", "feed-main");
+          if (o.title) {
+            const t = el("h3", o.onOpen ? "feed-title link" : "feed-title", show(item, o.title, o.formats));
+            if (o.onOpen) t.addEventListener("click", o.onOpen);
+            main.appendChild(t);
+          }
+          const starred = (o.values ?? []).filter((f) => (o.formats ?? {})[f] === "stars");  // a rating reads inline in the byline
+          const by = [o.author && item[o.author] ? "by " + item[o.author] : "", timeAgo(item[o.time ?? "created_at"]), ...starred.map((f) => show(item, f, o.formats))].filter(Boolean).join(" · ");
+          if (by) main.appendChild(el("div", "byline", by));
+          for (const f of o.details ?? []) {
+            const text = show(item, f, o.formats);
+            if (!text) continue;
+            const p = el("p", "feed-body");
+            if (o.labels && o.labels[f]) p.append(el("b", "", o.labels[f] + ": "), document.createTextNode(text));
+            else p.textContent = text;
+            main.appendChild(p);
+          }
+          const values = valuesOf(item, { ...o, values: (o.values ?? []).filter((f) => !starred.includes(f)) });
+          if (values) main.appendChild(values);
+          const foot = el("div", "feed-foot");
+          if (o.comments !== undefined && o.onOpen) {
+            const c = el("button", "btn-comments", "💬 " + api.count(o.comments, o.noun ?? "comment"));
+            c.type = "button";
+            c.addEventListener("click", o.onOpen);
+            foot.appendChild(c);
+          }
+          const badges = badgesOf(item, o);
+          if (badges) foot.appendChild(badges);
+          const others = (o.actions ?? []).filter((a) => a.slot !== "up" && a.slot !== "down").map((a) => ({ ...a, kind: a.kind ?? "ghost" }));
+          if (others.length) foot.appendChild(buttons(others));
+          if (foot.childNodes.length) main.appendChild(foot);
+          li.appendChild(main);
+          ul.appendChild(li);
+        }
+        box.appendChild(ul);
+      });
+    },
+    statStrip(box, items, o = {}) {
+      box.textContent = "";
+      box.classList.add("stat-strip");
+      const stat = (label, value, cls = "stat") => {
+        const s = el("div", cls);
+        s.append(el("div", "stat-label", label), el("div", "stat-value", value));
+        return s;
+      };
+      const fmt = (name, v) => (name === "money" ? api.money(v) : name === "num" ? api.num(v) : name === "stars" ? stars(v) + " " + api.num(v, 1) : api.num(v, 1));
+      const noun = o.plural ?? (o.noun ? o.noun + "s" : "items");
+      box.appendChild(stat(pretty(noun), String(items.length)));
+      const sum = (f) => items.reduce((t, i) => t + (Number(i[f]) || 0), 0);
+      for (const s of o.sums ?? []) box.appendChild(stat(s.label ?? "Total " + pretty(s.field).toLowerCase(), fmt(s.format ?? "num", sum(s.field))));
+      for (const a of o.averages ?? []) {
+        const rated = items.filter((i) => i[a.field] !== undefined && i[a.field] !== null && i[a.field] !== "");
+        box.appendChild(stat(a.label ?? "Average " + pretty(a.field).toLowerCase(), rated.length ? fmt(a.format ?? "avg", sum(a.field) / rated.length) : "–"));
+      }
+      if (o.by && items.length) {
+        const groups = {};
+        for (const i of items) {
+          const k = i[o.by];
+          if (k === undefined || k === null || k === "") continue;
+          groups[k] = (groups[k] ?? 0) + (o.byField ? Number(i[o.byField]) || 0 : 1);
+        }
+        const wide = el("div", "stat stat-wide");
+        wide.appendChild(el("div", "stat-label", "By " + pretty(o.by).toLowerCase()));
+        const chips = el("div", "stat-chips");
+        for (const [k, v] of Object.entries(groups).sort((a, b) => b[1] - a[1])) chips.appendChild(el("span", `badge badge-${tone(k)}`, `${k} · ${o.byField ? fmt(o.byFormat ?? "num", v) : v}`));
+        wide.appendChild(chips);
+        if (chips.childNodes.length) box.appendChild(wide);
+      }
+    },
+    count(n, singular, plural) {
+      return n + " " + (n === 1 ? singular : plural ?? (/(s|x|z|ch|sh)$/.test(singular) ? singular + "es" : /[^aeiou]y$/.test(singular) ? singular.slice(0, -1) + "ies" : singular + "s"));
+    },
+    timeAgo,
+    label: pretty,
     form(title, fields, values, onSave) {
       const overlay = el("div", "modal-overlay");
       const card = el("form", "card modal stack");

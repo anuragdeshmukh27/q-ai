@@ -7,7 +7,7 @@ They sit in the generated API test file of each resource, so a router task only 
 from __future__ import annotations
 
 from .relations import child_of, parent_of, payload
-from .schemas import ArchitectOutput, ResourceInfo
+from .schemas import ArchitectOutput, ResourceInfo, required_text
 
 
 def _create_url(ri: ResourceInfo, pr: ResourceInfo | None) -> str:
@@ -81,6 +81,27 @@ def _owner_tests(ri: ResourceInfo, pr: ResourceInfo | None) -> list[str]:
             *[f"    assert r.json()[{c!r}] == {0 if c in ri.counters else False!r}, 'an edit must not change {c}'" for c in owned], "", ""]
 
 
+def blank_message(name: str) -> str:
+    """The message backend/validation.py gives for an empty required field (it never strips an SQL-keyword suffix, so neither does this)."""
+    return name.replace("_", " ").strip().capitalize() + " is required"
+
+
+def _blank_tests(ri: ResourceInfo, pr: ResourceInfo | None) -> list[str]:
+    """A required text field holding nothing (or only spaces) is refused with a 400 and a message the form can show: the same for a parent and for a child, on add and on edit."""
+    required = [f.name for f in ri.fields if required_text(f)]
+    if not required:
+        return []
+    return [f"def test_{ri.name}_blank_required_text_is_a_400_with_a_message():", *_setup(ri, pr), f"    item = {_new(ri, pr)}",
+            f"    for field, message in {[(n, blank_message(n)) for n in required]!r}:", "        for blank in ('', '   '):",
+            f"            body = {{**{payload(ri)!r}, field: blank}}",
+            f"            r = client.post({_create_url(ri, pr)}, json=body)",
+            "            assert r.status_code == 400, f'adding with a blank {field} must be a 400, not {r.status_code}: use the request model as generated'",
+            "            assert r.json() == {'detail': message}, r.text",
+            f"            r = client.put(f\"/api/{ri.name}/{{item['id']}}\", json=body)",
+            "            assert r.status_code == 400 and r.json() == {'detail': message}, f'editing with a blank {field}: {r.status_code} {r.text}'",
+            f"    assert len(client.get({_create_url(ri, pr)}).json()['items']) == 1, 'a refused request must not store anything'", "", ""]
+
+
 def _child_tests(design: ArchitectOutput, ri: ResourceInfo, pr: ResourceInfo) -> list[str]:
     url = _create_url(ri, pr)
     nf = f"{pr.singular.capitalize()} not found"
@@ -117,7 +138,7 @@ def relation_tests(design: ArchitectOutput, ri: ResourceInfo) -> list[str]:
     out += _make(ri, pr)
     if pr is not None:
         out += _child_tests(design, ri, pr)
-    out += _owner_tests(ri, pr) + _action_tests(ri, pr) + _sort_tests(ri, pr)
+    out += _blank_tests(ri, pr) + _owner_tests(ri, pr) + _action_tests(ri, pr) + _sort_tests(ri, pr)
     return out
 
 
@@ -148,10 +169,11 @@ def db_test_source(design: ArchitectOutput, ri: ResourceInfo) -> str:
            "def test_add_returns_the_row_and_get_finds_it():", "    row = make()", "    assert isinstance(row, dict) and row['id'], 'add must return the new row as a dict'"]
     out += [f"    assert row[{k!r}] == {v!r}, 'the stored value must come back unchanged'" for k, v in pay.items()]
     out += [f"    assert row[{c!r}] == 0, '{c} starts at 0'" for c in ri.counters]
-    out += [f"    assert row[{ri.fk!r}] == 1" if pr else "    assert row['created_at']",
+    out += ["    assert row['created_at'], 'the row must carry created_at: use SELECT * (every column), never a list of columns'",
+            *([f"    assert row[{ri.fk!r}] == 1"] if pr else []),
             f"    assert m.get_{s}(row['id']) == row", f"    assert m.get_{s}(99999) is None", "", "",
             "def test_list_is_newest_first():", "    a, b = make(), make()", *(["    make(2)  # a row of another parent must not show up"] if pr else []),
-            f"    assert {ids(listing())} == [b['id'], a['id']], 'newest first (ORDER BY id DESC)'", "", "",
+            f"    assert {ids(listing())} == [b['id'], a['id']], 'newest first means ORDER BY id DESC. Not created_at: rows added in the same second share a timestamp, so their order is arbitrary'", "", "",
             "def test_update_changes_the_user_fields_and_returns_the_row():", "    row = make()",
             f"    new = m.update_{s}(row['id'], **{edit!r})", f"    assert new is not None and all(new[k] == v for k, v in {edit!r}.items())",
             f"    assert m.update_{s}(99999, **{edit!r}) is None", "", "",

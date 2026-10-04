@@ -7,15 +7,27 @@ import pkgutil
 import re
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import api
+from backend.validation import BLANK
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
 app = FastAPI(title="App")
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError):
+    """An empty required text field is a 400 with a message the form can show; every other invalid request keeps FastAPI's 422."""
+    for err in exc.errors():
+        if err.get("type") == BLANK:
+            return JSONResponse({"detail": err["msg"]}, status_code=400)
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/health")
