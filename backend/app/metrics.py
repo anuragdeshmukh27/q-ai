@@ -12,10 +12,14 @@ _TTL = 1.0  # nvidia-smi is slow-ish (~50 ms); several browsers polling must not
 
 def _gpu() -> dict | None:
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"],
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total,power.draw", "--format=csv,noheader,nounits"],
                              capture_output=True, text=True, timeout=4, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        name, used, total = [p.strip() for p in out.stdout.strip().splitlines()[0].split(",")]
-        return {"name": name, "used_gb": round(float(used) / 1024, 2), "total_gb": round(float(total) / 1024, 2)}
+        name, used, total, power = [p.strip() for p in out.stdout.strip().splitlines()[0].split(",")]
+        try:
+            watts = round(float(power), 1)  # "[N/A]" on cards that do not report it
+        except ValueError:
+            watts = None
+        return {"name": name, "used_gb": round(float(used) / 1024, 2), "total_gb": round(float(total) / 1024, 2), "power_w": watts}
     except Exception:
         return None
 

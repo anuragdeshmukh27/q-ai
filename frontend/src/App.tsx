@@ -35,6 +35,7 @@ export default function App() {
         onSpeed={q.setSpeed}
         metrics={model.metrics ?? (q.replay && q.metrics ? { ...q.metrics, loaded: undefined } : q.metrics)}
         appUrl={model.appUrl}
+        cost={model.cost}
         connected={q.connected}
         done={model.finished ? model.finished.ok : null}
       />

@@ -198,6 +198,8 @@ def check_options(where: str, name: str, ftype: str, options: list[str]) -> list
     reserved = reserved_problem(where, name)
     if reserved:
         return reserved
+    if name in ("sort", "sort_by", "order", "order_by", "direction"):  # a query parameter naming a column to sort by (`unit_price`, `name`), not a category with labels
+        return []
     if ftype in ("number", "integer") and NEVER_NUMERIC.search(name):
         return [f"{where}: '{name}' is a category, so it must be a string with human labels in `options` (for example Low, Medium, High), not a number"]
     if ftype == "string" and not options and MUST_HAVE_OPTIONS.search(name):

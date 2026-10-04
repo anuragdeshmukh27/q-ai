@@ -85,7 +85,9 @@ def play_replay(server: OfflineServer, recording: str | None = None, total: int 
 
 def check_replay(server: OfflineServer, pid: str, got: list[dict], recorded: list[dict]) -> None:
     http = httpx.Client(base_url=server.url, timeout=10)
-    assert [e["type"] for e in got] == [e["type"] for e in recorded]
+    kinds = lambda evs, keep: [e["type"] for e in evs if (e["type"] == "metrics") == keep]  # noqa: E731
+    # a recording that waits for the presenter emits approval_resolved when the click arrives: its place among the periodic `metrics` gauges depends on timing
+    assert kinds(got, False) == kinds(recorded, False) and len(kinds(got, True)) == len(kinds(recorded, True))
     assert [e["seq"] for e in got] == list(range(len(got))) and all(e["replayed"] for e in got)
     assert got[-1]["ok"] is True
     status = http.get(f"/api/projects/{pid}").json()

@@ -1,7 +1,7 @@
 // Client-side view of a project, derived only from the event stream (so live builds and replays look identical).
 import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
-import type { GapInfo, Metrics } from './api'
+import type { CostReport, GapInfo, Metrics } from './api'
 
 export interface QEvent {
   seq: number
@@ -131,6 +131,7 @@ export class OfficeModel {
   appUrl = ''
   finished: { ok: boolean; seconds: number } | null = null
   finish: FinishState | null = null // Finish my project: the analyst's gap report, the human's choice, the result
+  cost: CostReport | null = null // the `cost_report` of the build (live, or the recorded numbers in a replay)
   metrics: Metrics | null = null // the newest `metrics` event (VRAM, RAM, loaded models, tokens/s); live builds and recordings both carry them
   mode = 'supervised'
   ticker = ''
@@ -194,6 +195,7 @@ export class OfficeModel {
     this.slug = this.goal = this.preset = this.appUrl = this.ticker = ''
     this.finished = null
     this.finish = null
+    this.cost = null
     this.metrics = null
     this.bugs = []
     this.messages = []
@@ -542,6 +544,11 @@ export class OfficeModel {
         this.show({ kind: 'toast', level: 'info', title: 'Project in progress again', text: clip(str(e.message), 120) }, visuals)
         this.say(str(e.message) || 'The project is in progress again')
         break
+      case 'cost_report': {
+        const { seq: _s, ts: _t, type: _y, ...rest } = e as Record<string, unknown>
+        this.cost = rest as unknown as CostReport
+        break
+      }
       case 'project_done': {
         this.filesVersion++
         this.finished = { ok: e.ok === true, seconds: num(e.seconds) }

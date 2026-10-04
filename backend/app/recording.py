@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import cost
+
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,48}$")
 
 
@@ -122,6 +124,11 @@ class Recording:
         for line in (self.path / "events.jsonl").read_text(encoding="utf-8").splitlines():
             if line.strip():
                 out.append(json.loads(line))
+        if out and out[-1]["type"] == "project_done" and not any(e["type"] == "cost_report" for e in out):  # recorded before the cost meter: tokens are exact (llm.jsonl), electricity is estimated
+            report = cost.report_for_recording(self.path, out)
+            if report:
+                done = out.pop()
+                out += [{"seq": done["seq"], "ts": done["ts"], "type": "cost_report", **report}, {**done, "seq": done["seq"] + 1}]
         return out
 
     @property

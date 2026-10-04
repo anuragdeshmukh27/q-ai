@@ -1,5 +1,5 @@
 import { MODES } from '../model'
-import type { Metrics } from '../api'
+import type { CostReport, Metrics } from '../api'
 
 interface Props {
   title: string
@@ -16,6 +16,7 @@ interface Props {
   onSpeed: (s: number) => void
   metrics: Metrics | null
   appUrl: string
+  cost: CostReport | null
   connected: boolean
   done: boolean | null
 }
@@ -48,6 +49,31 @@ function LoadedModels({ metrics }: { metrics: Metrics | null }) {
         {names.length ? names.join(' + ') : 'none (asleep)'}
       </div>
       <div className="text-[11px] tabular-nums text-[var(--muted)]">{tps > 0 ? `${Math.round(tps)} tokens/s` : metrics.swaps ? `${metrics.swaps} swap${metrics.swaps === 1 ? '' : 's'}` : ' '}</div>
+    </div>
+  )
+}
+
+const inr = (n: number) => (n >= 100 ? `₹${Math.round(n)}` : n >= 1 ? `₹${n.toFixed(1)}` : `₹${n.toFixed(2)}`)
+
+/** The cost of the finished build: tokens, electricity on this laptop, and what the same tokens would cost on cloud models. */
+function CostChip({ cost }: { cost: CostReport }) {
+  const prices = cost.cloud.map((c) => c.inr)
+  const lo = Math.min(...prices)
+  const hi = Math.max(...prices)
+  const e = cost.electricity
+  const tip = [
+    `${cost.total_tokens.toLocaleString()} tokens (${cost.prompt_tokens.toLocaleString()} in, ${cost.completion_tokens.toLocaleString()} out) in ${Math.round(cost.seconds)} s`,
+    `Electricity on this laptop: ${e.kwh.toFixed(4)} kWh at ₹${cost.inr_per_kwh}/kWh, GPU average ${e.avg_watts} W (${e.measured ? 'measured with nvidia-smi during the build' : 'estimated: this recording was made before the meter'})`,
+    'The same tokens on cloud models (hypothetical: they would not produce the same token counts):',
+    ...cost.cloud.map((c) => `  ${c.name}: ${inr(c.inr)} ($${c.usd.toFixed(3)})`),
+  ].join('\n')
+  return (
+    <div className="w-[168px]" title={tip}>
+      <div className="text-[11px] font-semibold tracking-wide text-[var(--muted)]">BUILD COST</div>
+      <div className="text-[12.5px] font-bold tabular-nums">
+        {(cost.total_tokens / 1000).toFixed(0)}k tokens · <span style={{ color: 'var(--good)' }}>{inr(e.inr)} here</span>
+      </div>
+      <div className="text-[11px] tabular-nums text-[var(--muted)]">cloud {inr(lo)} to {inr(hi)}</div>
     </div>
   )
 }
@@ -122,6 +148,8 @@ export function TopBar(p: Props) {
             )}
           </div>
         </div>
+
+        {p.cost && <CostChip cost={p.cost} />}
 
         <LoadedModels metrics={p.metrics} />
 

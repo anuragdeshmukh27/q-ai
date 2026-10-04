@@ -53,3 +53,11 @@ def test_a_request_that_adds_an_element_to_the_top_slot_and_calls_the_kit_passes
     js.write_text(js.read_text(encoding="utf-8").replace("// request-hook:loaded", "// request-hook:loaded\n    UI.progress(document.getElementById('progress'), data.items.filter((i) => i.done).length, data.items.length);"), encoding="utf-8")
     r = subprocess.run(["node", str(out / "tests" / "ui" / "shell_smoke.mjs")], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_sort_parameter_may_list_column_names_as_its_options():
+    """Regression (inventory chip, 2 of 3 runs in Task F's gate): `sort` with options ['unit_price', 'name'] was rejected as 'not a human label'."""
+    from app.schemas import check_options
+
+    assert check_options("GET /api/items", "sort", "string", ["unit_price", "name"]) == []
+    assert check_options("GET /api/items", "priority", "string", ["low_prio", "High"])  # a real category still needs human labels
