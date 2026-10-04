@@ -137,6 +137,7 @@ class ToolBox:
         self.emit = emit or (lambda *a, **k: None)
         self.log: list[dict] = []
         self.files_touched: list[str] = []
+        self.allow_new_functions = False  # Finish my project: `implement` may create a function when `function` is written as a signature, `get_stats()`
 
     @property
     def mode(self) -> str:
@@ -222,23 +223,84 @@ class ToolBox:
             return _fail(f"not applied: the text in `pattern` occurs {n} times in {a.path}. Make it longer (add the line before or after it) so it occurs exactly once.")
         return self._store(p, old.replace(find, a.content or "", 1), "replaced text in")
 
+    def _unknown_module_calls(self, tree: ast.AST) -> list[tuple[str, str, str, list[str]]]:
+        """Calls like `db.get_registration(...)` on a module of the project (`from app import db`) where the module has no such name: (alias, name, module file, what it has)."""
+        aliases: dict[str, str] = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom) and n.module and not n.level:
+                for x in n.names:
+                    aliases[x.asname or x.name] = f"{n.module}.{x.name}"
+            elif isinstance(n, ast.Import):
+                for x in n.names:
+                    aliases[x.asname or x.name.split(".")[0]] = x.name
+        found: list[tuple[str, str, str, list[str]]] = []
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id in aliases):
+                continue
+            rel = aliases[n.func.value.id].replace(".", "/") + ".py"
+            f = self.root / rel
+            if not f.is_file():
+                continue
+            try:
+                body = ast.parse(f.read_text(encoding="utf-8", errors="replace")).body
+            except SyntaxError:
+                continue
+            have = {x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+            have |= {t.id for x in body if isinstance(x, ast.Assign) for t in x.targets if isinstance(t, ast.Name)}
+            have |= {(y.asname or y.name) for x in body if isinstance(x, (ast.Import, ast.ImportFrom)) for y in x.names}
+            if n.func.attr not in have:
+                found.append((n.func.value.id, n.func.attr, rel, sorted(x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) and not x.name.startswith("_"))))
+        return found
+
+    def _inferred_params(self, fname: str) -> str:
+        """The parameters of a function that does not exist yet, read from the first call of it anywhere in the project: `db.add_x(name, qty=3)` gives `name, qty`."""
+        for f in sorted(self.root.rglob("*.py")):
+            if any(part in (".git", ".venv", "node_modules", ".worktrees", "__pycache__") for part in f.relative_to(self.root).parts):
+                continue
+            m = re.search(rf"\b{fname}\(([^()]*)\)", f.read_text(encoding="utf-8", errors="replace"))
+            if not m or not m.group(1).strip():
+                continue
+            names: list[str] = []
+            for i, arg in enumerate(x.strip() for x in m.group(1).split(",")):
+                key = arg.split("=")[0].strip() if re.match(r"\w+\s*=[^=]", arg) else (arg if re.fullmatch(r"[A-Za-z_]\w*", arg) else f"arg{i + 1}")
+                names.append(key if key not in names else f"{key}{i + 1}")
+            return ", ".join(names)
+        return ""
+
     def _implement(self, a: Action) -> ToolResult:
         """Replace the body of one function in a Python file; the rest of the file is untouched."""
         p = self.paths.resolve_write(a.path or "")
         if not p.is_file():
             return _fail(f"{a.path} does not exist; create it with write_file first")
-        new_source, problem = replace_function_body(p.read_text(encoding="utf-8", errors="replace"), a.function or "", a.content or "")
+        source, name = p.read_text(encoding="utf-8", errors="replace"), a.function or ""
+        sig = re.match(r"^\s*(?:def\s+)?(\w+)\s*\((.*)\)\s*:?\s*$", name)
+        if self.allow_new_functions:  # Finish my project: a function that does not exist yet is created (a signature, or just its name: the parameters come from how the project calls it)
+            fname, params = (sig.group(1), sig.group(2)) if sig else (name.strip(), None)
+            if re.fullmatch(r"\w+", fname):
+                if not re.search(rf"^(?:async\s+)?def\s+{fname}\(", source, re.M):
+                    params = self._inferred_params(fname) if params is None else params
+                    source = source.rstrip("\n") + f"\n\n\ndef {fname}({params}):\n    raise NotImplementedError\n"
+                name = fname
+                a = a.model_copy(update={"function": name})
+        new_source, problem = replace_function_body(source, name, a.content or "")
         if problem:
-            return _fail(problem)
+            return _fail(problem + (" To ADD a new function, write its signature in `function`, for example \"get_stats()\" or \"add_sponsor(company, amount)\"." if self.allow_new_functions else ""))
         try:
             tree = ast.parse(new_source)
         except SyntaxError as e:  # never leave a half-broken file behind: later `implement` calls could not even parse it
-            return _fail(f"not applied: your body makes the file invalid Python (line {e.lineno}: {e.msg}). Send only valid Python lines for the inside of "
+            bad = ((e.text or "").strip()[:90])
+            return _fail(f"not applied: your body makes the file invalid Python (line {e.lineno}: {e.msg}" + (f", at `{bad}`" if bad else "") + f"). Send only valid Python lines for the inside of "
                          f"{a.function}; SQL goes in a string passed to conn.execute(...).")
         fn = next((n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == a.function), None)
         if fn is not None and _must_return(fn) and not any(isinstance(n, ast.Return) and n.value is not None for n in ast.walk(fn)):
             return _fail(f"not applied: {a.function} must return its result (a route returns the response, a database function returns the row, list or flag) "
                          "but your body has no `return <value>`. Add it.")
+        if self.allow_new_functions:
+            ghost = self._unknown_module_calls(tree)
+            if ghost:
+                alias, attr, rel, names = ghost[0]
+                return _fail(f"not applied: `{alias}.{attr}(...)` does not exist: {rel} has only {', '.join(names) or 'no functions'}. Either add it first (implement it in {rel} with its signature as `function`, "
+                             f"for example \"{attr}(...)\"), or write the SQL right in this function with `with {alias}.connect() as conn:` (if {rel} has a connect()).")
         missing = undefined_calls(tree)
         if missing:
             alias = next((x.asname for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "database" for x in n.names if x.asname), None)
