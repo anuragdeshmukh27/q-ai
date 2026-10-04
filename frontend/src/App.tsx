@@ -53,6 +53,7 @@ export default function App() {
           fast={q.fast}
           onFast={q.setFast}
           onStart={q.start}
+          onImport={q.startImport}
         />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>
           <OfficeCanvas model={model} selected={selected} tempo={q.demo ? q.speed : 1} onSelect={setSelected} />

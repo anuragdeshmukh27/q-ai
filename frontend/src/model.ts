@@ -1,7 +1,7 @@
 // Client-side view of a project, derived only from the event stream (so live builds and replays look identical).
 import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
-import type { Metrics } from './api'
+import type { GapInfo, Metrics } from './api'
 
 export interface QEvent {
   seq: number
@@ -101,6 +101,25 @@ const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d = 0) => (typeof v === 'number' ? v : d)
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
+export interface FinishFile {
+  path: string
+  added: number
+  deleted: number
+}
+export interface FinishState {
+  gaps: GapInfo[]
+  framework: string
+  entry: string
+  routes: number
+  tables: string[]
+  tests: string
+  selecting: boolean
+  selected: string[]
+  fixed: string[]
+  open: string[]
+  summary: { files: FinishFile[]; insertions: number; deletions: number; diff: string; truncated: boolean; branch: string; base: string } | null
+}
+
 export class OfficeModel {
   agents = new Map<string, AgentView>()
   order: string[] = []
@@ -111,6 +130,7 @@ export class OfficeModel {
   preset = ''
   appUrl = ''
   finished: { ok: boolean; seconds: number } | null = null
+  finish: FinishState | null = null // Finish my project: the analyst's gap report, the human's choice, the result
   metrics: Metrics | null = null // the newest `metrics` event (VRAM, RAM, loaded models, tokens/s); live builds and recordings both carry them
   mode = 'supervised'
   ticker = ''
@@ -173,6 +193,7 @@ export class OfficeModel {
     this.progress = { done: 0, total: 0, percent: 0 }
     this.slug = this.goal = this.preset = this.appUrl = this.ticker = ''
     this.finished = null
+    this.finish = null
     this.metrics = null
     this.bugs = []
     this.messages = []
@@ -335,6 +356,33 @@ export class OfficeModel {
         this.architectureReady = true
         this.filesVersion++
         this.say(`${this.name('architect')} published the architecture and the API contract`)
+        break
+      case 'gap_report': {
+        const gaps = (Array.isArray(e.gaps) ? e.gaps : []) as GapInfo[]
+        this.finish = { gaps, framework: str(e.framework), entry: str(e.entry), routes: Array.isArray(e.routes) ? e.routes.length : 0, tables: (Array.isArray(e.tables) ? e.tables : []) as string[], tests: str((e.tests as { summary?: string } | undefined)?.summary), selecting: false, selected: [], fixed: [], open: [], summary: null }
+        this.say(`Gap report: ${gaps.length} gap${gaps.length === 1 ? '' : 's'} found`)
+        break
+      }
+      case 'selection_needed':
+        if (this.finish) this.finish.selecting = true
+        this.show({ kind: 'toast', level: 'warn', title: 'Choose what to fix', text: 'Open the Gap report tab, tick the gaps and press Fix selected' }, visuals)
+        break
+      case 'gaps_selected':
+        if (this.finish) {
+          this.finish.selecting = false
+          this.finish.selected = (Array.isArray(e.ids) ? e.ids : []) as string[]
+        }
+        break
+      case 'gap_status':
+        if (this.finish) {
+          this.finish.fixed = (Array.isArray(e.fixed) ? e.fixed : []) as string[]
+          this.finish.open = (Array.isArray(e.open) ? e.open : []) as string[]
+        }
+        break
+      case 'finish_summary':
+        if (this.finish) {
+          this.finish.summary = { files: (Array.isArray(e.files) ? e.files : []) as FinishFile[], insertions: num(e.insertions), deletions: num(e.deletions), diff: str(e.diff), truncated: e.truncated === true, branch: str(e.branch), base: str(e.base) }
+        }
         break
       case 'contract_updated':
         this.contractVersion = num(e.version)

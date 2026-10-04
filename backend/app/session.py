@@ -82,6 +82,8 @@ class CreateRequest(BaseModel):
     fast_live: bool | None = None  # None: the server default (on); False turns the live-demo shortcuts off for this build
     record_info: dict[str, str] | None = None  # recording card text for the demo picker: title, app, feature
     then_ask: list[dict[str, str]] | None = None  # recorded builds only: Ask-employee tasks sent after the build ({agent, text}), part of the recording
+    import_from: str | None = None  # Finish my project: a folder or a GitHub URL of a half-built project (the goal is then derived from it)
+    auto_fix: bool = False  # Finish my project: fix every gap found without waiting for the human to choose
 
 
 class AskReply(BaseModel):
@@ -96,6 +98,7 @@ class Tracker:
         self.agents = {a.id: {"id": a.id, "name": a.name, "role": a.role, "state": "idle", "model": None, "iteration": 0, "max_iterations": 0,
                               "task": None, "thought": "", "files": [], "tests": None, "log": []} for a in roster.values()}
         self.slug = self.preset = self.app_url = ""
+        self.run_cmd, self.health_path = "", "/"  # set for an imported project (Finish my project): how its app is started
         self.tasks: list[dict] = []
         self.progress = {"done": 0, "total": 0, "percent": 0}
         self.bugs: list[dict] = []
@@ -123,6 +126,7 @@ class Tracker:
                 a["tests"] = {"ok": e["passed"], "failed": len(e.get("failed", [])), "summary": e.get("summary", "")}
             elif t == "project_created":
                 self.slug, self.preset = e["slug"], e["preset"]
+                self.run_cmd, self.health_path = e.get("run_cmd", ""), e.get("health_path", "/")
             elif t == "plan_created":
                 old = {x["id"]: x.get("status", "pending") for x in self.tasks}
                 self.tasks = [{**x, "status": old.get(x["id"], "pending")} for x in e["tasks"]]
@@ -200,10 +204,16 @@ class Session:
             self.bus.subscribe(self.recorder.on_event)
         llm = mgr.make_llm(self.recorder.on_llm if self.recorder else None)
         fast = mgr.settings.fast_live if req.fast_live is None else req.fast_live
-        self.orch = Orchestrator(req.goal, mgr.registry, llm, self.bus, mode=self.mode, approver=self.approvals, preset=req.preset,
-                                 base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports,
-                                 max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish,
-                                 fast_live=fast, router=mgr.router)
+        if req.import_from:  # Finish my project: the same team, on an imported project and its own branch
+            from .finish.build import FinishBuild
+            self.orch = FinishBuild(req.import_from, mgr.registry, llm, self.bus, auto_fix=req.auto_fix, mode=self.mode, approver=self.approvals,
+                                    base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports, max_parallel=1,
+                                    fast_live=fast, router=mgr.router)
+        else:
+            self.orch = Orchestrator(req.goal, mgr.registry, llm, self.bus, mode=self.mode, approver=self.approvals, preset=req.preset,
+                                     base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports,
+                                     max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish,
+                                     fast_live=fast, router=mgr.router)
         self.fast_live = fast
         if mgr.scheduler is not None:
             mgr.scheduler.emit = self.bus.emit
@@ -312,7 +322,7 @@ class Session:
             if e["type"] == "project_created":
                 data["slug"], data["path"] = (dest.name, str(dest)) if restored else (data.get("slug", ""), "")
             elif e["type"] == "app_running":
-                url = self._restart_restored_app(dest, rec.meta.get("preset", "")) if restored else ""
+                url = self._restart_restored_app(dest, rec.meta.get("preset", ""), self.tracker.run_cmd, self.tracker.health_path) if restored else ""
                 if not url:
                     continue  # nothing to open: skip the stale recorded URL
                 data.update(url=url, port=int(url.rsplit(":", 1)[-1]), project=dest.name)
@@ -322,13 +332,23 @@ class Session:
             self.bus.emit(e["type"], **data)
         self.state = "done" if ok else "failed"
 
-    def _restart_restored_app(self, dest: Path, preset_name: str) -> str:
+    def _restart_restored_app(self, dest: Path, preset_name: str, run_cmd: str = "", health_path: str = "/") -> str:
         try:
+            if run_cmd:  # an imported project: the run command was recorded with the project
+                return self.mgr.ports.start(dest.name, dest, run_cmd, health_path, ok_below=500).url
             p = load_preset(preset_name)
             return self.mgr.ports.start(dest.name, dest, p.run_cmd, p.health_path).url
         except (PortError, Exception):
             self.bus.emit("error", agent="orchestrator", message="the recorded app could not be started again")
             return ""
+
+    def finish_pick(self, ids: list[str]) -> dict:
+        """Finish my project: the gaps the human chose to fix."""
+        from .finish.build import FinishBuild
+        if self.kind != "live" or not isinstance(self.orch, FinishBuild):
+            raise SessionError("This is not a Finish-my-project build.", 409)
+        self.orch.pick(ids)
+        return {"selected": self.orch.selected or []}
 
     def set_speed(self, speed: float) -> float:
         self.speed = max(0.1, min(float(speed), 1000.0))
@@ -467,9 +487,12 @@ class Session:
     def start_app(self) -> dict:
         if not self.root or not self.root.is_dir():
             raise SessionError("There is no built project to run yet.", 409)
-        preset = load_preset(self.tracker.preset or "fastapi-vanilla")
         try:
-            app = self.mgr.ports.start(self.root.name, self.root, preset.run_cmd, preset.health_path)
+            if self.tracker.run_cmd:
+                app = self.mgr.ports.start(self.root.name, self.root, self.tracker.run_cmd, self.tracker.health_path, ok_below=500)
+            else:
+                preset = load_preset(self.tracker.preset or "fastapi-vanilla")
+                app = self.mgr.ports.start(self.root.name, self.root, preset.run_cmd, preset.health_path)
         except PortError as e:
             raise SessionError(str(e)[:200], 503) from None
         self.bus.emit("app_running", url=app.url, port=app.port, project=self.root.name)
@@ -512,6 +535,14 @@ class SessionManager:
         return s
 
     def create(self, req: CreateRequest) -> Session:
+        if req.import_from:  # Finish my project: decline politely, before anything starts, what Q does not finish
+            from .finish.analyze import ImportDeclined
+            from .finish.importer import check, fetch, scratch_dir
+            try:
+                check(fetch(req.import_from, scratch_dir()))
+            except ImportDeclined as e:
+                raise SessionError(str(e), 422) from None
+            req.goal = req.goal.strip() or "Finish the project " + req.import_from.strip().rstrip("/").split("/")[-1].removesuffix(".git")
         goal = req.goal.strip()
         if not goal or len(goal) > 1000:
             raise SessionError("describe the goal in 1 to 1000 characters")
@@ -523,7 +554,7 @@ class SessionManager:
         if req.record_as:
             check_name(req.record_as)  # RecordingError -> 400 via the API layer
         demo = req.demo or self.settings.q_mode == "replay"
-        if not demo:
+        if not demo and not req.import_from:  # an imported project is not a goal: its name must not be read as one (a 'game' folder)
             scope = classify_goal(goal)
             if scope.level == "impossible":  # refused before any model work, with goals that do work
                 raise SessionError(scope.message, 422)

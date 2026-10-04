@@ -25,6 +25,7 @@ interface Props {
   fast: boolean
   onFast: (v: boolean) => void
   onStart: (goal: string) => void
+  onImport: (source: string, autoFix: boolean) => void
 }
 
 const STATE_COLOR: Record<BoardArea['state'], string> = { waiting: '#3a4466', working: '#6ea8ff', done: '#4ade80', problem: '#f87171' }
@@ -68,8 +69,10 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport }: Props) {
   const [goal, setGoal] = useState(EXAMPLES[0].goal)
+  const [source, setSource] = useState('')
+  const [autoFix, setAutoFix] = useState(false)
   const cards = orderDemos(recordings).map(card)
   const shown = demo ? (cards.find((c) => c.name === recording)?.goal ?? '') : goal
   const submit = () => shown.trim() && !busy && onStart(shown.trim())
@@ -106,6 +109,34 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
           </div>
         </div>}
       </div>
+
+      {!demo && (
+        <div>
+          <Heading>FINISH MY PROJECT</Heading>
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && source.trim() && !busy) onImport(source.trim(), autoFix) }}
+            placeholder="A folder (C:\code\myapp) or a GitHub URL"
+            aria-label="Project to finish"
+            className="w-full rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-1.5 text-[13.5px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          />
+          <div className="mt-1.5 flex items-center gap-2">
+            <button
+              onClick={() => source.trim() && !busy && onImport(source.trim(), autoFix)}
+              disabled={busy || !source.trim()}
+              title="Q copies the project to its own branch (your folder is never touched), lists the gaps, fixes the ones you tick, and shows the diff"
+              className="rounded-md border border-[var(--accent)] px-3 py-1 text-[13px] font-bold text-[var(--text)] disabled:opacity-40"
+            >
+              Find the gaps
+            </button>
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[var(--muted)]">
+              <input type="checkbox" checked={autoFix} onChange={(e) => setAutoFix(e.target.checked)} />
+              fix every gap
+            </label>
+          </div>
+        </div>
+      )}
 
       <div>
         <Heading>STACK PRESET</Heading>

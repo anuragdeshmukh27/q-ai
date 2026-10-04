@@ -176,7 +176,14 @@ def is_stub(fn: ast.AST, source: str = "") -> bool:
         return True
     if len(body) <= 2 and source and re.search(r"TODO|FIXME|placeholder", source, re.I):  # `return {}` / `return []` next to a TODO
         last = body[-1]
-        return isinstance(last, ast.Return) and isinstance(last.value, (ast.Dict, ast.List, ast.Constant)) and not (isinstance(last.value, ast.Constant) and last.value.value not in ("", 0, False, None))
+        if not isinstance(last, ast.Return):
+            return False
+        v = last.value
+        if isinstance(v, ast.Dict):  # only an EMPTY dict or list is "nothing yet": `return {"items": rows}` after a TODO comment is a finished function
+            return not v.keys
+        if isinstance(v, ast.List):
+            return not v.elts
+        return isinstance(v, ast.Constant) and v.value in ("", 0, False, None)
     return False
 
 

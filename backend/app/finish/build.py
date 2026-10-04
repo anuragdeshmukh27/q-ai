@@ -50,6 +50,7 @@ class ReadmeFeatures(BaseModel):
 
 class FinishBuild(Orchestrator):
     STAGES = ("import", "analyse", "pick", "plan", "tasks", "verify")
+    LOCAL_ATTEMPTS = 4  # a task is one small gap and a failed attempt costs about 20 s: more fresh starts beat a longer first try with a 7B
 
     def __init__(self, source: str, registry, llm, bus=None, auto_fix: bool = False, only: list[str] | None = None, **kw):
         kw.update(review=False, qa=False, polish=False)  # the project's own tests and the generated gap tests are the judge; there is no generated design to review against
@@ -135,6 +136,10 @@ class FinishBuild(Orchestrator):
         """The routes the project is missing (the page calls them, the README promises them) are put into the task's file as placeholder functions by rules, so the engineer
         only fills bodies. Nothing else is generated: the project's own files are the starting point."""
         self._trees[t["id"]] = wt
+        if t.get("failure"):  # a retry starts from the integrated version of the files, not from the half-edits of the failed attempt
+            owned = [f for f in self._owned.get(t["owner"], []) if (wt / f).exists()]
+            if owned:
+                subprocess.run(["git", "checkout", self.repo.main, "--", *owned], cwd=wt, capture_output=True)
         a = self.analysis
         if not a or t["owner"] != "backend" or not t.get("files"):
             return None
@@ -259,14 +264,15 @@ class FinishBuild(Orchestrator):
     # -- plan ---------------------------------------------------------------------------
     def _plan_finish(self) -> None:
         chosen = [g for g in self.gaps if g.id in (self.selected or [])]
+        chosen, attached = self._attach_failing_tests(chosen)
         groups: list[tuple[str, list[Gap]]] = []  # (file, its gaps): one task per gap (a 7B closes one gap per attempt reliably), one per file when there are many
         if len(chosen) <= MAX_GAP_TASKS:
-            groups = [(g.file, [g]) for g in sorted(chosen, key=lambda g: (g.owner != "backend", g.file, g.line))]
+            groups = [(g.file, [g, *attached.get(g.id, [])]) for g in sorted(chosen, key=lambda g: (g.owner != "backend", g.file, g.line))]
         else:
             by_file: dict[str, list[Gap]] = {}
             for g in chosen:
                 by_file.setdefault(g.file, []).append(g)
-            groups = sorted(by_file.items(), key=lambda kv: (kv[1][0].owner != "backend", kv[0]))
+            groups = sorted(((f, [x for g in gs for x in (g, *attached.get(g.id, []))]) for f, gs in by_file.items()), key=lambda kv: (kv[1][0].owner != "backend", kv[0]))
         specs = []
         backend_ids = [f"t{i}" for i, (_, gs) in enumerate(groups, 1) if gs[0].owner == "backend"]
         for i, (file, gs) in enumerate(groups, 1):
@@ -290,6 +296,34 @@ class FinishBuild(Orchestrator):
         self.emit("plan_created", tasks=[{k: t[k] for k in ("id", "title", "owner", "depends_on", "files")} for t in self.tasks])
         self._commit("[planner] task plan")
         self._progress()
+
+    STOP = {"test", "tests", "the", "and", "with", "from", "that", "this", "note", "notes", "answers", "returns", "comes", "first", "works", "does", "not", "for", "its"}
+
+    def _attach_failing_tests(self, chosen: list[Gap]) -> tuple[list[Gap], dict[str, list[Gap]]]:
+        """A failing test of the project is the oracle of the gap it is about (test_delete_... and the FIXME in delete()), not a task of its own: it is attached to the gap whose
+        function, path or comment shares the most words with the test's name, so one problem is one task and its test is the check. An unmatched test stays a task."""
+        others = [g for g in chosen if g.kind != "failing_test"]
+        if not others:
+            return chosen, {}
+        stem = lambda w: w[:4]  # noqa: E731
+        kept: list[Gap] = []
+        attached: dict[str, list[Gap]] = {}
+        for g in chosen:
+            if g.kind != "failing_test":
+                kept.append(g)
+                continue
+            words = {stem(w) for w in re.findall(r"[a-z]{3,}", g.test.split("::")[-1].lower()) if w not in self.STOP}
+
+            def score(o: Gap) -> int:
+                text = {stem(w) for w in re.findall(r"[a-z]{3,}", " ".join([o.function, o.path, o.detail, o.title, o.text]).lower())}
+                return sum(1 for w in words if any(w.startswith(x) or x.startswith(w) for x in text))
+
+            best = max(others, key=score)
+            if score(best) > 0:
+                attached.setdefault(best.id, []).append(g)
+            else:
+                kept.append(g)
+        return kept, attached
 
     def _task_text(self, t: dict, previous_failure: str = "", stub=None, db_api: str = "") -> str:
         gaps = [g for g in self.gaps if g.id in t.get("gaps", [])]
@@ -359,6 +393,19 @@ class FinishBuild(Orchestrator):
                 break
         return (chr(10) + chr(10)).join(parts)
 
+    def _clean_comments(self, closed: list[Gap]) -> None:
+        """The TODO comment that described a placeholder is removed once the function is filled (the code is the answer now); every other comment stays."""
+        assert self.root
+        for g in closed:
+            path = self.root / g.file
+            if not path.is_file():
+                continue
+            lines = path.read_text(encoding="utf-8").split(chr(10))
+            gone = {("# " + x.strip()).rstrip() for x in g.detail.split(chr(10)) if x.strip()}
+            kept = [l for l in lines if l.strip() not in gone]
+            if len(kept) != len(lines):
+                path.write_text(chr(10).join(kept), encoding="utf-8", newline=chr(10))
+
     def _db_helpers(self, file: str) -> str:
         """The project's database functions with their exact names, and how the task's file reaches them (a call to a name it does not import is refused by the sandbox)."""
         a = self.analysis
@@ -407,6 +454,7 @@ class FinishBuild(Orchestrator):
             return any(x.kind == g.kind and x.file == g.file and x.text == g.text for x in after.gaps)
 
         fixed = [g.id for g in before.gaps if g.id in (self.selected or []) and not still_open(g)]
+        self._clean_comments([g for g in before.gaps if g.id in fixed and g.kind == "todo_body" and g.detail and not re.match(r"^[\w/.\-]+:\d+$", g.detail)])
         self.emit("gap_status", fixed=fixed, open=[g.id for g in before.gaps if g.id not in fixed], selected=self.selected or [])
         if not passed:
             self.problems.append(f"final test run failed: {summary}")

@@ -133,6 +133,14 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         return baseline_report()
 
     # -- projects -----------------------------------------------------------------
+    class FinishPick(BaseModel):
+        gaps: list[str] = []
+
+    @app.post("/api/projects/{pid}/finish")
+    def finish_pick(pid: str, body: FinishPick):
+        """Finish my project: the human's choice of gaps to fix (the build waits for it unless it was started with auto_fix)."""
+        return mgr.get(pid).finish_pick(body.gaps)
+
     @app.post("/api/projects", status_code=201)
     def create_project(req: CreateRequest):
         return mgr.create(req).status()

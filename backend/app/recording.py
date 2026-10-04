@@ -54,10 +54,17 @@ class Recorder:
         self.started = time.time()
         self.preset = ""
         self.models: set[str] = set()
+        self.finish: dict = {}  # Finish my project: what the demo card says instead of the generated app's tables and pages
 
     def on_event(self, e: dict) -> None:
         if e["type"] == "project_created":
             self.preset = e.get("preset", "")
+        elif e["type"] == "gap_report":
+            self.finish["gaps"] = len(e.get("gaps", []))
+        elif e["type"] == "gap_status":
+            self.finish["fixed"] = len(e.get("fixed", []))
+        elif e["type"] == "finish_summary":
+            self.finish.update(files=len(e.get("files", [])), insertions=e.get("insertions", 0), deletions=e.get("deletions", 0))
         with self._lock:
             self._events.write(json.dumps(e, default=str) + "\n")
             self._events.flush()
@@ -82,7 +89,9 @@ class Recorder:
                 "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - self.started),
                 "events": self.n_events, "llm_calls": self.n_llm, "models": sorted(m for m in self.models if m), "snapshot": snapshot,
                 **{k: str(v)[:120] for k, v in (info or {}).items() if k in ("title", "app", "feature")}}
-        if project_root:
+        if self.finish:
+            meta["stats"] = {"finish": True, **self.finish}
+        elif project_root:
             from .buildstats import project_stats
 
             stats = project_stats(project_root)

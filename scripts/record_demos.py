@@ -32,6 +32,8 @@ DEMOS = {
     "inventory": dict(goal=GOAL["inventory list"], title="Inventory list", app="Inventory", feature="Stock status", args=[]),
     "reddit-replica": dict(goal=GOAL["reddit replica"], title="Reddit replica", app="Forum", feature="Posts, comments and votes", args=[]),
     "instagram": dict(goal="Build Instagram", title="Instagram (small version)", app="Instagram", feature="A famous app by name", args=[]),
+    "finish-it": dict(goal="", title="Finish a half-built app", app="Fest manager", feature="Finish my project",
+                      args=["--import", str(ROOT / "samples" / "half-built" / "fest-app")]),
     "flagship": dict(goal=FLAGSHIP, title="College tech fest manager: 4 modules", app="Tech fest manager", feature="4 linked modules", args=[]),
 }
 
@@ -54,6 +56,14 @@ def judge(name: str) -> list[str]:
         bad.append("the build did not pass")
     if not meta.get("snapshot"):
         bad.append("no snapshot")
+    if name == "finish-it":  # an imported project: no spec or review; every gap must be closed and the finishing branch shown (failed attempts are retried, so escalation events are expected)
+        for need in ("gap_report", "gap_status", "finish_summary", "merge_result", "test_result", "app_running", "metrics"):
+            if need not in types:
+                bad.append(f"no {need} event")
+        status = next((e for e in ev if e["type"] == "gap_status"), {})
+        if status.get("open") or not status.get("fixed"):
+            bad.append(f"gaps still open: {status.get('open')}")
+        return bad
     for need in ("metrics", "app_running", "spec_ready", "architecture_ready", "merge_result", "test_result"):
         if need not in types:
             bad.append(f"no {need} event")

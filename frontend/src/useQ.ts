@@ -131,6 +131,26 @@ export function useQ() {
     [mode, demo, recording, speed, preset, fast, model, fail, builds],
   )
 
+  const startImport = useCallback(
+    async (source: string, autoFix: boolean) => {
+      setBusy(true)
+      try {
+        const s = await api.create({ goal: '', mode, demo: false, import_from: source, auto_fix: autoFix, fast_live: fast })
+        model.reset()
+        model.setGoal(s.goal)
+        model.setMode(s.mode)
+        setProjectId(s.id)
+        setReplay(false)
+        setBuilds((await api.projects().catch(() => [])).length || builds + 1)
+      } catch (e) {
+        fail(e)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [mode, fast, model, fail, builds],
+  )
+
   const setMode = useCallback(
     async (m: string) => {
       setModeState(m)
@@ -166,6 +186,6 @@ export function useQ() {
   return {
     config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
-    metrics, builds, busy, start, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
+    metrics, builds, busy, start, startImport, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }
 }

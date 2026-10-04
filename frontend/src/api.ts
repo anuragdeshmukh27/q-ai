@@ -34,7 +34,7 @@ export interface RecordingMeta {
   app?: string
   feature?: string
   /** What the build is made of (modules, tables, endpoints, pages, functions, lines, the agents' share); absent in older recordings. */
-  stats?: { modules: number; tables: number; endpoints: number; pages: number; functions?: number; lines?: number; agent_share_functions?: number; agent_share_lines?: number; functions_repair?: number }
+  stats?: { modules: number; tables: number; endpoints: number; pages: number; functions?: number; lines?: number; agent_share_functions?: number; agent_share_lines?: number; functions_repair?: number; finish?: boolean; gaps?: number; fixed?: number; files?: number; insertions?: number; deletions?: number }
 }
 
 export interface LoadedModel {
@@ -44,6 +44,21 @@ export interface LoadedModel {
 }
 
 /** GPU/RAM gauges. `loaded`, `budget_gb` and `tokens_per_s` come from the scheduler (absent in old recordings). */
+/** Finish my project: one thing the analyst found in an imported project. */
+export interface GapInfo {
+  id: string
+  kind: string
+  title: string
+  file: string
+  owner: string
+  detail: string
+  method: string
+  path: string
+  function: string
+  line: number
+  test: string
+}
+
 export interface Metrics {
   gpu: { name: string; used_gb: number; total_gb: number } | null
   ram: { used_gb: number; total_gb: number }
@@ -205,8 +220,9 @@ export const api = {
   recordings: () => call<RecordingMeta[]>('/api/recordings'),
   metrics: () => call<Metrics>('/api/metrics'),
   projects: () => call<ProjectStatus[]>('/api/projects'),
-  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string; fast_live?: boolean }) =>
+  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string; fast_live?: boolean; import_from?: string; auto_fix?: boolean }) =>
     call<ProjectStatus>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
+  finishPick: (id: string, gaps: string[]) => call<{ selected: string[] }>(`/api/projects/${id}/finish`, { method: 'POST', body: JSON.stringify({ gaps }) }),
   setMode: (id: string, mode: string) => call<unknown>(`/api/projects/${id}/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   setSpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),
 }

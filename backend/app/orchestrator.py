@@ -214,6 +214,7 @@ class Orchestrator:
         return self._finish(time.time() - started)
 
     STAGES = ("design", "plan", "tasks", "qa", "polish", "verify")
+    LOCAL_ATTEMPTS = 2  # attempts at a task on the local model before the cloud consultant or the human (Finish my project uses more: its tasks are small)
 
     def _pipeline(self, start: str = "design") -> None:
         """The team's workflow (the single-agent baseline in baseline.py replaces it)."""
@@ -638,7 +639,7 @@ class Orchestrator:
             return
         if feature and self._replans < MAX_REPLANS and t["attempts"] < 2 and self._replan(t, res):
             self._replans += 1
-        elif t["local_failures"] < 2:
+        elif t["local_failures"] < self.LOCAL_ATTEMPTS:
             t["status"], t["failure"] = "pending", reason
         elif self.consultant and not t.get("consulted") and self._consult(t, reason, preset):
             pass
