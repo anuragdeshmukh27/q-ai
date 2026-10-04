@@ -24,7 +24,7 @@ DEMOS = {
     "calculator-fault": dict(goal=GOAL["calculator with history"], title="Calculator with history", app="Calculator", feature="QA bug fix",
                              args=["--inject-fault"]),
     "todo-approvals": dict(goal=GOAL["todo app"], title="Todo app with priorities", app="Todo app", feature="Approvals",
-                           args=["--mode", "assisted"]),
+                           args=["--mode", "assisted"], hold_approvals=3),  # the replay stops at the first 3 approvals for the presenter to answer
     "ask-employee": dict(goal=GOAL["todo app"], title="Todo app, then a request", app="Todo app", feature="Ask employee",
                          args=["--ask", "frontend=" + ASK_TEXT]),
     "notes-search": dict(goal=GOAL["notes app"], title="Notes with search", app="Notes app", feature="Clean fast run", args=[]),
@@ -78,7 +78,8 @@ def judge(name: str) -> list[str]:
         bad.append("still waiting or in error at the end: " + ", ".join(stuck))
     if name == "calculator-fault" and not ({"fault_injected", "bug_filed", "bug_fixed"} <= set(types)):
         bad.append("the injected fault was not caught and fixed")
-    if name == "notes-search" and not any(e["type"] == "file_changed" and e["path"] == "static/index.html" and 'id="search"' in e.get("diff", "") for e in ev):
+    if name == "notes-search" and not any(e["type"] == "file_changed" and ((e["path"] == "static/index.html" and 'id="search"' in e.get("diff", ""))
+                                                                           or (e["path"] == "static/app.js" and '"search": ["' in e.get("diff", ""))) for e in ev):  # the multi-page shell: search is a property of the module's list page
         bad.append("the page has no search box")
     if name == "todo-approvals":
         asked = [e for e in ev if e["type"] == "approval_needed"]
@@ -140,6 +141,11 @@ def one(name: str, tries: int) -> bool:
         bad = judge(name)
         print(f"   {time.time() - t0:.0f}s -> {'KEEP' if not bad else 'DISCARD: ' + '; '.join(bad)}", flush=True)
         if not bad:
+            if cfg.get("hold_approvals"):
+                meta_file = ROOT / "recordings" / name / "meta.json"
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta["hold_approvals"] = cfg["hold_approvals"]
+                meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
             return True
         kept = ROOT / "workspace" / "_logs" / "discarded" / f"{name}-{attempt}"  # events only, to see why it was judged bad
         shutil.rmtree(kept, ignore_errors=True)

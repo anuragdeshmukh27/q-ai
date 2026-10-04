@@ -4,10 +4,10 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:15:20",
-  "seconds": 93,
-  "events": 335,
-  "llm_calls": 21,
+  "recorded_at": "2026-10-05 00:37:07",
+  "seconds": 83,
+  "events": 324,
+  "llm_calls": 18,
   "models": [
     "qwen2.5-coder:7b"
   ],
@@ -15,5 +15,16 @@
   "title": "Todo app with priorities",
   "app": "Todo app",
   "feature": "Approvals",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 4,
+    "pages": 4,
+    "functions": 8,
+    "lines": 134,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.216,
+    "functions_repair": 0
+  },
   "hold_approvals": 3
 }

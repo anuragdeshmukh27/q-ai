@@ -4,9 +4,9 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:26:39",
-  "seconds": 62,
-  "events": 335,
+  "recorded_at": "2026-10-05 00:58:53",
+  "seconds": 64,
+  "events": 338,
   "llm_calls": 32,
   "models": [
     "qwen2.5-coder:7b"
@@ -14,5 +14,16 @@
   "snapshot": true,
   "title": "Instagram (small version)",
   "app": "Instagram",
-  "feature": "A famous app by name"
+  "feature": "A famous app by name",
+  "stats": {
+    "modules": 2,
+    "tables": 2,
+    "endpoints": 9,
+    "pages": 6,
+    "functions": 20,
+    "lines": 265,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.272,
+    "functions_repair": 0
+  }
 }

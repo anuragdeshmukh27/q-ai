@@ -4,15 +4,26 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:22:49",
-  "seconds": 85,
-  "events": 233,
-  "llm_calls": 20,
+  "recorded_at": "2026-10-05 00:48:18",
+  "seconds": 77,
+  "events": 228,
+  "llm_calls": 19,
   "models": [
     "qwen2.5-coder:7b"
   ],
   "snapshot": true,
   "title": "Contact book",
   "app": "Contact book",
-  "feature": "Search and groups"
+  "feature": "Search and groups",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 4,
+    "pages": 4,
+    "functions": 8,
+    "lines": 130,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.223,
+    "functions_repair": 0
+  }
 }

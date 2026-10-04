@@ -244,7 +244,7 @@ def check_examples(e: Endpoint) -> list[str]:
         if x.status not in statuses:
             out.append(f"{where}: example '{x.description}' has status {x.status}, which is neither {e.response_status} nor a listed error")
         for f in e.request_fields:
-            if f.options and f.name in x.request and x.request[f.name] not in f.options:
+            if f.options and f.name in x.request and x.request[f.name] not in f.options and x.status < 400:  # an error example is MEANT to send a value that is not an option
                 out.append(f"{where}: example '{x.description}' sends {x.request[f.name]!r} for '{f.name}', which is not one of its options {f.options}")
             if f.name in x.request and not _type_ok(f.type, x.request[f.name]):
                 out.append(f"{where}: example '{x.description}' sends {x.request[f.name]!r} for the {f.type} field '{f.name}'. Wrong types are answered "
@@ -400,6 +400,16 @@ def normalize_design(a: ArchitectOutput, spec: "SpecOutput | None") -> Architect
     """The spec renamed a field that is an SQL keyword (group -> group_value); a 7B Architect often keeps writing the old name. Mechanical repair: the design uses the spec's name."""
     if spec is None:
         return a
+    labels: dict[str, list[str]] = {}  # the spec's options are the truth: a 7B Architect lists a category's options differently in each endpoint
+    for r in spec.resources:
+        for f in r.fields:
+            if f.options and f.type == "string":
+                labels.setdefault(f.name, f.options)
+    if labels:
+        for e in a.endpoints:
+            for fld in [*e.request_fields, *e.response_fields]:
+                if fld.type == "string" and fld.name in labels and fld.options and fld.options != labels[fld.name]:
+                    fld.options = list(labels[fld.name])
     for r in spec.resources:
         for f in r.fields:
             for suffix in ("_value", "_name"):

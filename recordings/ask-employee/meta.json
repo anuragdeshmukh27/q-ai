@@ -4,15 +4,26 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:20:00",
-  "seconds": 115,
-  "events": 316,
-  "llm_calls": 28,
+  "recorded_at": "2026-10-05 01:08:22",
+  "seconds": 88,
+  "events": 276,
+  "llm_calls": 23,
   "models": [
     "qwen2.5-coder:7b"
   ],
   "snapshot": true,
   "title": "Todo app, then a request",
   "app": "Todo app",
-  "feature": "Ask employee"
+  "feature": "Ask employee",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 4,
+    "pages": 4,
+    "functions": 8,
+    "lines": 134,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.216,
+    "functions_repair": 0
+  }
 }

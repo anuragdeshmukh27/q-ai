@@ -4,10 +4,10 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 22:03:39",
-  "seconds": 330,
-  "events": 865,
-  "llm_calls": 106,
+  "recorded_at": "2026-10-05 01:03:26",
+  "seconds": 269,
+  "events": 727,
+  "llm_calls": 93,
   "models": [
     "qwen2.5-coder:7b"
   ],
@@ -21,9 +21,9 @@
     "endpoints": 19,
     "pages": 10,
     "functions": 42,
-    "lines": 578,
+    "lines": 568,
     "agent_share_functions": 0.381,
-    "agent_share_lines": 0.126,
+    "agent_share_lines": 0.111,
     "functions_repair": 26
   }
 }

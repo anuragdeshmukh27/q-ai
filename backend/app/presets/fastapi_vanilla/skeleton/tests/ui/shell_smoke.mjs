@@ -54,6 +54,11 @@ const body = new Node('body')
 html.appendChild(body)
 const app = new Node('div'); app.id = 'app'; body.appendChild(app)
 const slot = new Node('div'); slot.id = 'top-slot'; app.appendChild(slot)
+{ // what a request added to the slot in index.html (a progress bar, a banner) exists in a real browser: make the same elements here
+  const page = readFileSync(join(root, 'static', 'index.html'), 'utf8')
+  const inner = (page.match(/<div id="top-slot">([\s\S]*?)<\/div>\s*<\/div>\s*<noscript/) ?? [])[1] ?? ''
+  for (const m of inner.matchAll(/id="([\w-]+)"/g)) { const n = new Node('div'); n.id = m[1]; slot.appendChild(n) }
+}
 const listeners = {}
 const location = { hash: '' }
 globalThis.document = { createElement: (t) => new Node(t), createTextNode: (t) => new Text(t), getElementById: (id) => html.all((n) => n.id === id)[0] ?? null, querySelector: (s) => html.querySelector(s), body, documentElement: html }
@@ -93,6 +98,7 @@ globalThis.fetch = async (url, opts = {}) => {
 
 // ---- load the shell and the app ---------------------------------------------------------------------------------------------------------------------
 const read = (f) => readFileSync(join(root, 'static', f), 'utf8')
+try { vm.runInThisContext(read('ui-kit.js'), { filename: 'ui-kit.js' }) } catch (e) { globalThis.UI = globalThis.UI ?? {} }  // the page loads the kit before the shell: a request may call UI.progress
 vm.runInThisContext(read('shell.js'), { filename: 'shell.js' })
 const real = window.Q.mount
 window.Q.mount = (c, h) => { cfg = c; return real(c, h) }

@@ -4,15 +4,26 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:21:20",
-  "seconds": 77,
-  "events": 226,
-  "llm_calls": 19,
+  "recorded_at": "2026-10-05 01:10:51",
+  "seconds": 69,
+  "events": 221,
+  "llm_calls": 18,
   "models": [
     "qwen2.5-coder:7b"
   ],
   "snapshot": true,
   "title": "Notes with search",
   "app": "Notes app",
-  "feature": "Clean fast run"
+  "feature": "Clean fast run",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 4,
+    "pages": 4,
+    "functions": 8,
+    "lines": 125,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.224,
+    "functions_repair": 0
+  }
 }

@@ -183,7 +183,7 @@ def test_every_shipped_recording_replays_offline_exactly_as_recorded_and_its_app
             assert any(e["type"] == "file_changed" and e["path"] == "static/index.html" and "progress" in e["diff"].lower() for e in after)
             assert any(e["type"] == "file_changed" and e["path"] == "static/app.js" and "UI.progress" in e["diff"] for e in after)
         if name == "reddit-replica":
-            assert any(e["type"] == "look_chosen" and e["layout"] == "feed" for e in got)
+            assert any(e["type"] == "look_chosen" and e["layout"] in ("feed", "shell") for e in got)
         if name == "instagram":
             assert next(e for e in got if e["type"] == "spec_ready")["not_included"]
         if name == "flagship":

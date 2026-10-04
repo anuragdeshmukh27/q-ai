@@ -4,15 +4,26 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:24:12",
-  "seconds": 80,
-  "events": 228,
-  "llm_calls": 19,
+  "recorded_at": "2026-10-05 01:14:34",
+  "seconds": 112,
+  "events": 251,
+  "llm_calls": 21,
   "models": [
     "qwen2.5-coder:7b"
   ],
   "snapshot": true,
   "title": "Inventory list",
   "app": "Inventory",
-  "feature": "Stock status"
+  "feature": "Stock status",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 4,
+    "pages": 4,
+    "functions": 8,
+    "lines": 150,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.207,
+    "functions_repair": 0
+  }
 }

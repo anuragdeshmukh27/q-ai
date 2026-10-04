@@ -4,9 +4,9 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-04 14:13:45",
-  "seconds": 112,
-  "events": 317,
+  "recorded_at": "2026-10-05 00:34:26",
+  "seconds": 110,
+  "events": 319,
   "llm_calls": 29,
   "models": [
     "qwen2.5-coder:7b"
@@ -14,5 +14,16 @@
   "snapshot": true,
   "title": "Calculator with history",
   "app": "Calculator",
-  "feature": "QA bug fix"
+  "feature": "QA bug fix",
+  "stats": {
+    "modules": 1,
+    "tables": 1,
+    "endpoints": 3,
+    "pages": 4,
+    "functions": 9,
+    "lines": 168,
+    "agent_share_functions": 0.889,
+    "agent_share_lines": 0.292,
+    "functions_repair": 0
+  }
 }
