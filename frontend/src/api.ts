@@ -195,6 +195,7 @@ export const api = {
   commits: (id: string) => call<Commit[]>(`/api/projects/${id}/commits`),
   commit: (id: string, sha: string) => call<{ sha: string; merge: boolean; diff: string; truncated: boolean }>(`/api/projects/${id}/commits/${sha}`),
   decide: (id: string, aid: string, approve: boolean) => post(`/api/projects/${id}/approvals/${aid}`, { approve }),
+  escalate: (id: string, action: 'retry' | 'replan' | 'stop', agent: string) => post(`/api/projects/${id}/escalation`, { action, agent }),
   override: (id: string, agent: string, model: string | null) => post(`/api/projects/${id}/agents/${agent}/model`, { model }),
   ask: (id: string, agent: string, text: string, asTask: boolean) => post(`/api/projects/${id}/agents/${agent}/ask`, { text, as_task: asTask }),
   startApp: (id: string) => post(`/api/projects/${id}/app`, {}),

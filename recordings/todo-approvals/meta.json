@@ -14,5 +14,6 @@
   "snapshot": true,
   "title": "Todo app with priorities",
   "app": "Todo app",
-  "feature": "Approvals"
+  "feature": "Approvals",
+  "hold_approvals": 3
 }

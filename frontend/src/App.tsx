@@ -61,9 +61,9 @@ export default function App() {
               Waiting for the Q backend on port 8000…
             </div>
           )}
-          <Toasts toasts={q.toasts} onDismiss={q.dismissToast} />
+          <Toasts toasts={q.toasts} onDismiss={q.dismissToast} onDecide={q.decide} onEscalate={q.escalate} />
         </main>
-        {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} />}
+        {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} onEscalate={q.escalate} />}
       </div>
       <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} />
     </div>

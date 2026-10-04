@@ -107,6 +107,9 @@ class Orchestrator:
         self.fast_live = fast_live  # live-demo speed: no polish when the page already uses the UI kit, one LLM review round per task
         self.router = router  # picks a model per employee from the benchmark scores (None: the registry's capability default)
         self.finished = False
+        self.stopped = threading.Event()  # the human pressed "Stop build": no new work starts, running agents stop at their next step
+        self.stage = ""  # the pipeline stage that is running, or the one that stopped the build (failed_stage): "Retry this step" resumes there
+        self.failed_stage: str | None = None
         self.repo: Repo | None = None
         self.integrator: Integrator | None = None
         self.fault = None
@@ -199,20 +202,75 @@ class Orchestrator:
             self._pipeline()
         except AgentFailed as e:
             self.problems.append(str(e))
+            self.failed_stage = self.stage
             self.emit("error", agent=e.agent, message=e.reason)
         except Exception as e:  # the demo path must never crash: report and stop cleanly
             self.problems.append(f"internal error: {type(e).__name__}: {e}"[:300])
+            self.failed_stage = self.stage
             self.emit("error", agent="orchestrator", message="the build stopped unexpectedly; see the log")
         return self._finish(time.time() - started)
 
-    def _pipeline(self) -> None:
+    STAGES = ("design", "plan", "tasks", "qa", "polish", "verify")
+
+    def _pipeline(self, start: str = "design") -> None:
         """The team's workflow (the single-agent baseline in baseline.py replaces it)."""
-        self._design()
-        self._plan()
-        self._execute_tasks()
-        self._qa_phase()
-        self._polish()
-        self._verify()
+        steps = {"design": self._design, "plan": self._plan, "tasks": self._execute_tasks, "qa": self._qa_phase, "polish": self._polish, "verify": self._verify}
+        for name in self.STAGES[self.STAGES.index(start):]:
+            if self.stopped.is_set():
+                break
+            self.stage = name
+            steps[name]()
+
+    # -- the human steps in after an escalation ("Retry this step", "Re-plan", "Stop build") -------
+    def stop(self) -> None:
+        self.stopped.set()
+
+    def prepare_recovery(self, agent_id: str = "") -> tuple[str, dict | None]:
+        """Where a retry or a re-plan resumes, and which task it is about; ValueError (user-safe text) when nothing has stopped."""
+        if self.failed_stage in ("design", "plan"):
+            return self.failed_stage, None  # the Architect or the Planner gave up: that step runs again
+        failed = [t for t in self.tasks if t["status"] == "failed"]
+        if failed:
+            return "tasks", next((x for x in reversed(failed) if x["owner"] == agent_id), failed[-1])
+        if self.failed_stage:
+            return self.failed_stage, None
+        raise ValueError("Nothing has stopped, so there is nothing to retry. If a step fails, these buttons will work.")
+
+    def resume(self, action: str, start: str, task: dict | None) -> BuildResult:
+        """Retry the stopped step with fresh attempts, or (action == "replan") let the Planner split the failed task first, then carry on to the end."""
+        started = time.time()
+        self.failed_stage = None
+        self.finished = False
+        try:
+            if task is None:
+                self.problems = []
+            else:
+                self.problems = [p for p in self.problems if not p.startswith(f"task {task['id']} ") and not p.startswith(("final test run failed", "QA:"))]
+                task.update(status="pending", attempts=0, local_failures=0)
+                task.pop("consulted", None)
+                if action == "replan" and not self._replan(task, AgentResult("escalated", task.get("failure") or "failed by the team")):
+                    self.emit("agent_thought", agent="planner", text="I could not split this step differently, so it is tried again as it is.", model="rules", tokens=0, seconds=0.0)
+                self._unblock()
+            self._pipeline(start)
+        except AgentFailed as e:
+            self.problems.append(str(e))
+            self.failed_stage = self.stage
+            self.emit("error", agent=e.agent, message=e.reason)
+        except Exception as e:
+            self.problems.append(f"internal error: {type(e).__name__}: {e}"[:300])
+            self.failed_stage = self.stage
+            self.emit("error", agent="orchestrator", message="the build stopped unexpectedly; see the log")
+        return self._finish(time.time() - started)
+
+    def _unblock(self) -> None:
+        """Tasks that waited for a failed task wait again, now for its retry (or its replacements)."""
+        changed = True
+        while changed:
+            changed = False
+            for x in self.tasks:
+                if x["status"] == "blocked" and not any(self._status(d) in ("failed", "blocked") for d in x["depends_on"]):
+                    x["status"] = "pending"
+                    changed = True
 
     def _design(self) -> None:
         arch_agent = self.agents["architect"]
@@ -520,7 +578,7 @@ class Orchestrator:
         with ThreadPoolExecutor(max_workers=self.max_parallel, thread_name_prefix="agent") as pool:
             while True:
                 busy = {t["owner"] for t in running.values()}
-                while len(running) < self.max_parallel:
+                while len(running) < self.max_parallel and not self.stopped.is_set():
                     t = self._next_ready(busy)
                     if t is None:
                         break
@@ -545,6 +603,11 @@ class Orchestrator:
     def _handle(self, t: dict, res: AgentResult, preset) -> None:
         if res.status == "finished":
             self._complete(t, res)
+            return
+        if self.stopped.is_set():  # the human stopped the build: no retry, no re-plan
+            t["status"] = "failed"
+            self.problems.append(f"task {t['id']} ({t['title']}) stopped by you")
+            self._block_dependents(t["id"])
             return
         # Escalation ladder: the contract repair (a generated contract only), local retry / re-plan, then (opt-in) one visible cloud "senior consultant" attempt.
         t["local_failures"] = t.get("local_failures", 0) + 1
@@ -680,7 +743,7 @@ class Orchestrator:
         res = self._generated_page_is_enough(t, stub, wt, agent)
         generated = res is not None  # nobody wrote anything: the page is the one generated from the contract, so there is nothing for an LLM review to judge
         if res is None:
-            res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
+            res = run_agent(agent, task_text, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit, stop=self.stopped.is_set)
             self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
         if res.status != "finished":
             return res
@@ -737,7 +800,7 @@ class Orchestrator:
             fix = (f"{task_text}\n\nYour work was reviewed and the reviewer requested changes. Address EVERY item with the smallest change, "
                    f"then run_tests again:\n{asked}")
             tools = self._toolbox(agent, preset.test_cmd, [preset.run_cmd], root=wt)
-            res = run_agent(agent, fix, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit)
+            res = run_agent(agent, fix, tools, self.llm, model.id, num_ctx=model.num_ctx, context=context, emit=self.emit, stop=self.stopped.is_set)
             self._stat(agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
             if res.status != "finished":
                 return res

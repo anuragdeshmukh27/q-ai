@@ -74,6 +74,11 @@ def play_replay(server: OfflineServer, recording: str | None = None, total: int 
         while True:
             e = __import__("json").loads(ws.recv(timeout=60))
             got.append(e)
+            if e["type"] == "approval_needed" and e.get("replayed"):  # a recording that waits for the presenter: click Approve like they would
+                for _ in range(100):
+                    if http.post(f"/api/projects/{pid}/approvals/{e['id']}", json={"approve": True}).status_code != 404:
+                        break
+                    time.sleep(0.05)
             if e["type"] == "project_done" and (total is None or len(got) >= total):
                 return pid, got
 

@@ -526,6 +526,19 @@ def is_relational(spec: SpecOutput) -> bool:
     return any(r.parent or r.actions for r in spec.resources)
 
 
+_DATE_LIKE = re.compile(r"(time|date|_at$|when)", re.I)
+_GOAL_RELATION = re.compile(r"\b(?:each|every)\s+([a-z]+)\s+(?:has|have|can have)\s+(?:many|several|multiple)\s+([a-z_]+)", re.I)
+
+
+def goal_relations(goal: str) -> list[tuple[str, str]]:
+    """'Each driver has many rides' -> [('driver', 'rides')]: the parent -> child pairs a detailed goal states in words."""
+    return [(p.lower(), c.lower()) for p, c in _GOAL_RELATION.findall(goal or "")]
+
+
+def _named(res: list["SpecResource"], word: str) -> "SpecResource | None":
+    return next((r for r in res if singular(r.name) == singular(word)), None)
+
+
 def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
     """Repair what is mechanical instead of asking a 7B model to repeat itself (mutates and returns the spec):
     a post_id style field is the link to the parent, counters (upvotes...) are integers owned by the server with an action each,
@@ -546,6 +559,10 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
     for r in res:
         if r.parent and (r.parent not in names or r.parent == r.name):
             r.parent = ""
+    for parent_word, child_word in goal_relations(goal):  # the goal says 'each driver has many rides': that is the relation, whatever the model wrote
+        owner, child = _named(res, parent_word), _named(res, child_word)
+        if owner is not None and child is not None and owner is not child and not any(r.parent for r in res):
+            child.parent = owner.name
     if len(res) > 1 and not any(r.parent for r in res):  # a model often forgets `parent`: comments of posts, tasks of projects are unmistakable
         text = " ".join(spec.features).lower()
         kids = [r for r in res if r.name in CHILD_WORDS]
@@ -568,6 +585,7 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
             r.parent = ""
     spec.resources = keep
     # 3. counters and actions
+    no_button: list[list[str]] = []  # words of the one-click actions that were left out
     for r in keep:
         by = {f.name: f for f in r.fields}
         for f in r.fields:
@@ -582,6 +600,12 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
                     if guess not in by:
                         by[guess] = SpecField(name=guess, type="integer")
                         r.fields.append(by[guess])
+            if a.kind == "toggle" and a.field in by and (by[a.field].options or any(x.kind == "toggle" and x.field == a.field for x in fixed)):
+                # a labelled status (Requested / Completed / Cancelled) cannot be flipped like a yes/no box, and two flips of one field are one column twice:
+                # the field keeps its labels, they are changed in Edit, and the one-click action is listed as left out
+                left.append(f"one-click {a.name.replace('_', ' ')} (change the {a.field.replace('_', ' ')} in Edit)")
+                no_button.append(a.name.split("_"))
+                continue
             if a.field in by and a.name not in {x.name for x in fixed}:
                 by[a.field].type, by[a.field].options = ("integer" if a.kind == "increment" else "boolean"), []
                 fixed.append(a)
@@ -589,6 +613,13 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
         r.actions = fixed[:MAX_ACTIONS_PER_RESOURCE]
         r.fields = [f for f in r.fields if not (f.name in COUNTERS and any(a.field == f.name for a in dropped))]
         r.sorts = ["new", "top"] if any(a.kind == "increment" for a in r.actions) else []
+        counted = [f for f in r.fields if f.name != "id" and f.name not in COUNTERS]
+        while len(counted) > MAX_FIELDS_PER_RESOURCE:  # over the cap: the 7B often cannot cut and then loses the whole resource, so the least important field goes (and is listed)
+            pool = [f for f in counted[1:] if not f.options and f.type not in ("number", "integer")] or counted[1:]
+            gone = next((f for f in pool if _DATE_LIKE.search(f.name)), pool[-1])
+            r.fields.remove(gone)
+            counted.remove(gone)
+            left.append(f"{singular(r.name)} {gone.name.replace('_', ' ')}")
     # 4. features that cannot be built here
     if is_relational(spec):
         features: list[str] = []
@@ -598,6 +629,8 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
             if _SEARCH_FEATURE.search(x):
                 left.append("search and filters")
                 continue
+            if any(all(w in x.lower() for w in words) for words in no_button):
+                continue  # 'Mark a ride as completed': the button is not built
             features.append(x)
         if any(r.sorts for r in keep):
             features.append("Sort the list by Newest or Top")
@@ -609,8 +642,12 @@ def normalize_spec(spec: SpecOutput, goal: str = "") -> SpecOutput:
     return spec
 
 
-def check_spec(spec: SpecOutput) -> list[str]:
+def check_spec(spec: SpecOutput, goal: str = "") -> list[str]:
     problems: list[str] = []
+    for parent_word, child_word in goal_relations(goal):  # a repair round must not drop the child resource the goal names
+        if _named(spec.resources, parent_word) is not None and _named(spec.resources, child_word) is None:
+            problems.append(f"the goal says each {parent_word} has many {child_word}: add {child_word} as its own resource with parent {_named(spec.resources, parent_word).name}; "
+                            "drop a less important field or feature instead of the resource")
     if not spec.features:
         problems.append("list the features the page offers")
     if len(spec.features) > 8:
@@ -845,4 +882,10 @@ def normalize_plan(p: PlannerOutput) -> PlannerOutput:
                 deps.append(d)
         t.depends_on = [d for d in dict.fromkeys(deps) if d != t.id and any(k.id == d for k in kept)]
     p.tasks = kept
+    for t in kept:  # a router needs its tables: the missing database -> backend edges are added, unless one would close a cycle
+        if t.owner != "backend":
+            continue
+        for u in kept:
+            if u.owner == "database" and u.id not in _ancestors(kept, t.id) and t.id not in _ancestors(kept, u.id):
+                t.depends_on.append(u.id)
     return p

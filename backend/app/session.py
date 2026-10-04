@@ -166,7 +166,7 @@ class Session:
         self.state = "starting"
         self.created = time.time()
         self.overrides: dict[str, str] = {}
-        self.approvals = ApprovalQueue(self.bus.emit, mgr.settings.approval_timeout, lambda a: self.tracker.agents.get(a, {}).get("state", "idle"))
+        self.approvals = ApprovalQueue(self._emit_approval, mgr.settings.approval_timeout, lambda a: self.tracker.agents.get(a, {}).get("state", "idle"))
         self.recorder: Recorder | None = None
         self.orch: Orchestrator | None = None
         self.root: Path | None = None
@@ -180,7 +180,12 @@ class Session:
         self._thread: threading.Thread | None = None
         self._extra = threading.Lock()
         self._stop = threading.Event()
+        self.pending_recovery: tuple[str, str] | None = None  # a Retry / Re-plan clicked while the build was still running
         self.bus.subscribe(self._watch)
+
+    def _emit_approval(self, type_: str, **fields):
+        """Approval events of a replay carry the replay flag like every other replayed event (the presenter's click is part of the replay)."""
+        return self.bus.emit(type_, **({**fields, "replayed": True} if self.kind == "replay" else fields))
 
     def _watch(self, e: dict) -> None:
         if e["type"] == "project_created" and self.kind == "live":
@@ -212,6 +217,13 @@ class Session:
         try:
             res = self.orch.run()  # type: ignore[union-attr]
             ok, problems = res.ok, res.problems
+            if self.pending_recovery and not self.orch.stopped.is_set():  # type: ignore[union-attr]
+                action, agent = self.pending_recovery
+                self.pending_recovery = None
+                try:
+                    ok, problems = self._recover(action, agent)
+                except ValueError:
+                    pass  # nothing had stopped after all
             if ok and self.recorder and self.then_ask:
                 ok, problems = self._run_followups()
         except Exception:
@@ -267,6 +279,11 @@ class Session:
                 self.bus.emit("error", agent="orchestrator", message="the saved project could not be restored; files and Open app are unavailable")
         prev_ts = None
         ok = True
+        hold_n = int(rec.meta.get("hold_approvals") or 0)  # a recording may stop at its first approvals for the presenter to answer
+        held = 0
+        outcome = {x["id"]: x.get("approve") for x in rec.events() if x["type"] == "approval_resolved"} if hold_n else {}
+        skip_resolved: set[str] = set()  # recorded answers to approvals the presenter answered
+        skip_waiting: set[str] = set()  # the recorded 'waiting for a human' that the player has already shown
         for e in rec.events():
             if self._stop.is_set():
                 return
@@ -275,6 +292,23 @@ class Session:
             prev_ts = e["ts"]
             data = {k: v for k, v in e.items() if k not in ("seq", "ts", "type")}
             data["replayed"] = True
+            if e["type"] == "approval_resolved":
+                if e["id"] in skip_resolved:
+                    continue
+                data["by"] = "recording-auto" if hold_n else "recording"  # nobody clicked: it was decided while the recording was made
+            elif e["type"] == "agent_state" and e.get("state") == "waiting_human" and e.get("agent") in skip_waiting:
+                skip_waiting.discard(e["agent"])
+                continue
+            elif e["type"] == "approval_needed" and held < hold_n:
+                held += 1
+                self.bus.emit("approval_needed", **data)
+                self.bus.emit("agent_state", agent=e["agent"], state="waiting_human", replayed=True)
+                recorded = "approved" if outcome.get(e["id"]) is not False else "denied"
+                item = self.approvals.hold(e["id"], e["agent"], e["kind"], e.get("summary", ""), e.get("details", {}), f"in the recording this was {recorded}")
+                self.approvals.wait_held(item)
+                skip_resolved.add(e["id"])
+                skip_waiting.add(e["agent"])
+                continue
             if e["type"] == "project_created":
                 data["slug"], data["path"] = (dest.name, str(dest)) if restored else (data.get("slug", ""), "")
             elif e["type"] == "app_running":
@@ -361,6 +395,62 @@ class Session:
         self.chats[agent_id] += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
         self.bus.emit("message_sent", **{"from": agent_id, "to": "human", "text": reply})
         return {"reply": reply}
+
+    # -- an employee needs the human: Retry this step, Re-plan, Stop build ----------------------
+    def escalation(self, action: str, agent_id: str) -> dict:
+        if action not in ("retry", "replan", "stop"):
+            raise SessionError("action must be retry, replan or stop")
+        if self.kind == "replay" or self.orch is None:
+            raise SessionError("Demo mode replays a recording; these buttons work in a live build.", 409)
+        if action == "stop":
+            return self._stop_build(agent_id)
+        if self.state == "running":  # the rest of the team is still working: the step is picked up the moment the build stops
+            self.pending_recovery = (action, agent_id)
+            message = "Noted. " + ("The step is retried" if action == "retry" else "The Planner re-plans the step") + " as soon as the work that is running now has stopped."
+            self.bus.emit("escalation_action", agent=agent_id, action=action, message=message, queued=True)
+            return {"message": message, "queued": True}
+        try:
+            self.orch.prepare_recovery(agent_id)
+        except ValueError as e:
+            raise SessionError(str(e), 409) from None
+        if not self._extra.acquire(blocking=False):
+            raise SessionError("Something is already running; try again in a moment.", 409)
+        threading.Thread(target=self._run_recovery, args=(action, agent_id), name=f"recover-{self.id}", daemon=True).start()
+        return {"message": self._recovery_text(action, agent_id), "queued": False}
+
+    def _recovery_text(self, action: str, agent_id: str) -> str:
+        who = self.mgr.roster[agent_id].name if agent_id in self.mgr.roster else "The team"
+        return f"{who} tries the step again with fresh attempts." if action == "retry" else "The Planner splits the step differently, then the team carries on."
+
+    def _recover(self, action: str, agent_id: str) -> tuple[bool, list[str]]:
+        start, task = self.orch.prepare_recovery(agent_id)  # type: ignore[union-attr]  # ValueError when nothing has stopped
+        self.bus.emit("escalation_action", agent=agent_id, action=action, message=self._recovery_text(action, agent_id), queued=False)
+        res = self.orch.resume(action, start, task)  # type: ignore[union-attr]
+        return res.ok, res.problems
+
+    def _run_recovery(self, action: str, agent_id: str) -> None:
+        try:
+            self.state = "running"
+            try:
+                ok, _ = self._recover(action, agent_id)
+            except ValueError:
+                ok = False
+            self.state = "done" if ok else "failed"
+        finally:
+            self._extra.release()
+
+    def _stop_build(self, agent_id: str) -> dict:
+        running = self.state == "running"
+        self.pending_recovery = None
+        self.orch.stop()  # type: ignore[union-attr]
+        self.approvals.release_all(False, "stopped")
+        message = ("The team stops after the step in hand. Everything already merged is kept." if running
+                   else "Nothing is running; the build stays as it is. Everything already merged is kept.")
+        self.bus.emit("escalation_action", agent=agent_id, action="stop", message=message, queued=False)
+        for aid, a in list(self.tracker.agents.items()):
+            if a.get("state") == "waiting_human":
+                self.bus.emit("agent_state", agent=aid, state="idle")
+        return {"message": message, "queued": False}
 
     def _run_extra(self) -> None:
         try:

@@ -107,6 +107,7 @@ def _run_agent(
     num_ctx: int = 8192,
     context: str = "",
     emit: Callable[..., object] | None = None,
+    stop: Callable[[], bool] | None = None,
 ) -> AgentResult:
     emit = emit or toolbox.emit
     system = system_prompt or build_system_prompt(agent)
@@ -133,6 +134,9 @@ def _run_agent(
         return result(status, reason)
 
     for n in count(1):
+        if stop is not None and stop():  # the human pressed "Stop build"
+            emit("agent_state", agent=agent.id, state="idle")
+            return result("stopped", "stopped by you")
         emit("iteration", agent=agent.id, n=n, max=agent.max_iterations)
         emit("agent_state", agent=agent.id, state="thinking")
         messages = fit_messages(system, first_user, steps, budget)

@@ -24,12 +24,19 @@ export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
   const [open, setOpen] = useState(true)
   const pending = model.approvals.filter((a) => a.state === 'pending').length
 
-  // A live build that needs a decision brings the Approvals tab forward.
+  // A build that needs a decision brings the Approvals tab forward. In a replay only an approval that stays open does (the recording's own ones resolve within a second).
   useEffect(() => {
-    if (pending > 0 && !replay) {
+    if (pending === 0) return
+    const go = () => {
       setTab('Approvals')
       setOpen(true)
     }
+    if (!replay) {
+      go()
+      return
+    }
+    const t = window.setTimeout(go, 900)
+    return () => window.clearTimeout(t)
   }, [pending, replay])
 
   const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' && model.messages.length ? model.messages.length : 0)

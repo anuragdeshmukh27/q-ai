@@ -18,11 +18,12 @@ class Approval:
     created: float = field(default_factory=time.time)
     approve: bool | None = None
     by: str = ""
+    note: str = ""  # shown next to a rejection (a replay: what the recording did)
     event: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def public(self) -> dict:
         return {"id": self.id, "agent": self.agent, "kind": self.kind, "summary": self.summary, "details": self.details,
-                "created": self.created, "approve": self.approve, "by": self.by}
+                "created": self.created, "approve": self.approve, "by": self.by, **({"note": self.note} if self.note else {})}
 
 
 class UnknownApproval(KeyError):
@@ -57,9 +58,21 @@ class ApprovalQueue:
             if a.approve is not None:
                 return False
             a.approve, a.by = approve, by
-        self.emit("approval_resolved", id=a.id, agent=a.agent, kind=a.kind, approve=approve, by=by)
+        self.emit("approval_resolved", id=a.id, agent=a.agent, kind=a.kind, approve=approve, by=by, **({"note": a.note} if a.note and not approve else {}))
         a.event.set()
         return True
+
+    def hold(self, approval_id: str, agent: str, kind: str, summary: str, details: dict, note: str = "") -> Approval:
+        """A replay holds a recorded approval for the presenter: it is registered under its recorded id and nothing is announced here (the player did that)."""
+        a = Approval(approval_id, agent, kind, summary, details, note=note)
+        with self._lock:
+            self._items[a.id] = a
+        return a
+
+    def wait_held(self, a: Approval) -> None:
+        """Block the player until the presenter clicks; nobody clicking for the timeout lets the recording go on as recorded."""
+        if not a.event.wait(self.timeout):
+            self._decide(a, True, "recording-auto")
 
     def resolve(self, approval_id: str, approve: bool, by: str = "human") -> bool:
         """True if this call decided it, False if it was already decided. Raises UnknownApproval for a bad id."""

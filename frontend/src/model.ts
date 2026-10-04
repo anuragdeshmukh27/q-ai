@@ -1,4 +1,6 @@
 // Client-side view of a project, derived only from the event stream (so live builds and replays look identical).
+import { decidedBy } from './approvalText'
+import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
 import type { Metrics } from './api'
 
 export interface QEvent {
@@ -47,8 +49,11 @@ export type Visual =
   | { kind: 'celebrate'; agents?: string[] } // agents: only these employees get a small burst (an Ask-employee request); none: the whole office
   | { kind: 'reset' }
   | { kind: 'alert'; agent: string }
-  | { kind: 'toast'; level: Tone; title: string; text: string; key?: string }
+  | { kind: 'toast'; level: Tone; title: string; text: string; key?: string; action?: ToastAction }
   | { kind: 'toast_update'; key: string; level: Tone; title: string; text: string }
+
+/** A toast that can be answered with its own buttons (an approval, or an employee who needs you). */
+export type ToastAction = { type: 'approval'; id: string } | { type: 'escalation'; agent: string }
 
 export interface ChatMsg {
   seq: number
@@ -73,6 +78,7 @@ export interface ApprovalView {
   details: Record<string, unknown>
   state: 'pending' | 'approved' | 'denied'
   by: string
+  note?: string
 }
 
 export interface FileChange {
@@ -113,6 +119,7 @@ export class OfficeModel {
   messages: ChatMsg[] = []
   terminal: TermLine[] = []
   approvals: ApprovalView[] = []
+  escalations = new Map<string, Escalation>() // employees who stopped and need a human, until their state moves on
   changes = new Map<string, FileChange[]>()
   contractVersion = 0
   contractHistory: { version: number; endpoints: string[] }[] = []
@@ -171,6 +178,7 @@ export class OfficeModel {
     this.messages = []
     this.terminal = []
     this.approvals = []
+    this.escalations = new Map()
     this.changes = new Map()
     this.contractVersion = this.filesVersion = 0
     this.contractHistory = []
@@ -256,7 +264,13 @@ export class OfficeModel {
     const a = e.agent ? this.agents.get(e.agent) : undefined
     switch (e.type) {
       case 'agent_state':
-        if (a) a.state = str(e.state)
+        if (a) {
+          a.state = str(e.state)
+          if (a.state !== 'waiting_human' && this.escalations.has(a.id)) {
+            this.escalations = new Map(this.escalations)
+            this.escalations.delete(a.id)
+          }
+        }
         break
       case 'iteration':
         if (a) {
@@ -402,27 +416,42 @@ export class OfficeModel {
         this.say(`${this.name(from)} → ${this.name(to)}: ${clip(str(e.text), 80)}`)
         break
       }
-      case 'escalation':
+      case 'escalation': {
+        const esc: Escalation = { agent: a ? a.id : 'team', reason: str(e.reason), detail: str(e.detail), task: str(e.task) }
+        this.escalations = new Map(this.escalations).set(esc.agent, esc)
         if (a) this.show({ kind: 'alert', agent: a.id }, visuals)
-        this.show({ kind: 'toast', level: 'warn', title: `${a ? a.name : 'Team'} needs a decision`, text: clip(str(e.detail) || str(e.reason), 140) }, visuals)
-        this.say(`Escalation from ${a ? a.name : 'the team'}: ${clip(str(e.detail) || str(e.reason), 80)}`)
+        const who = a ? a.name : 'The team'
+        this.show({ kind: 'toast', level: 'warn', title: `${who} needs you`, text: `${explainEscalation(esc, who)} ${ESCALATION_CHOICES}`, key: `escalation:${esc.agent}`, action: { type: 'escalation', agent: esc.agent } }, visuals)
+        this.say(`Escalation from ${who}: ${clip(explainEscalation(esc, who), 80)}`)
         break
+      }
+      case 'escalation_action': {
+        const act = str(e.action)
+        const gone = this.escalations.get(a ? a.id : 'team')
+        if (gone || act) {
+          this.escalations = new Map(this.escalations)
+          this.escalations.delete(a ? a.id : 'team')
+        }
+        const label = act === 'retry' ? 'Retrying the step' : act === 'replan' ? 'Re-planning the step' : 'Build stopped'
+        this.show({ kind: 'toast_update', key: `escalation:${a ? a.id : 'team'}`, level: act === 'stop' ? 'bad' : 'info', title: label, text: clip(str(e.message), 140) }, visuals)
+        break
+      }
       case 'approval_needed': {
         const id = str(e.id)
         if (id && !this.approvals.some((x) => x.id === id)) {
           this.approvals = [...this.approvals, { id, agent: str(e.agent), kind: str(e.kind), summary: str(e.summary), details: (e.details ?? {}) as Record<string, unknown>, state: 'pending', by: '' }]
         }
-        this.show({ kind: 'toast', level: 'warn', title: 'Approval needed', text: clip(str(e.summary), 140), key: id ? `approval:${id}` : undefined }, visuals)
+        this.show({ kind: 'toast', level: 'warn', title: 'Approval needed', text: clip(str(e.summary), 140), key: id ? `approval:${id}` : undefined, action: id ? { type: 'approval', id } : undefined }, visuals)
         break
       }
       case 'approval_resolved': {
         const id = str(e.id)
         const ok = e.approve === true
         const by = str(e.by)
-        this.approvals = this.approvals.map((x) => (x.id === id ? { ...x, state: ok ? 'approved' : 'denied', by } : x))
-        const who = by === 'human' ? 'you' : by || 'the system'
+        const note = str(e.note)
+        this.approvals = this.approvals.map((x) => (x.id === id ? { ...x, state: ok ? 'approved' : 'denied', by, note } : x))
         const item = this.approvals.find((x) => x.id === id)
-        this.show({ kind: 'toast_update', key: `approval:${id}`, level: ok ? 'good' : 'bad', title: ok ? 'Approval resolved: approved' : 'Approval resolved: denied', text: `${clip(item?.summary ?? str(e.kind), 100)} (decided by ${who})` }, visuals)
+        this.show({ kind: 'toast_update', key: `approval:${id}`, level: ok ? 'good' : 'bad', title: ok ? 'Approval resolved: approved' : 'Rejected', text: `${clip(item?.summary ?? str(e.kind), 100)} (${decidedBy(by)})${note ? `. Note: ${note}.` : ''}` }, visuals)
         break
       }
       case 'error':

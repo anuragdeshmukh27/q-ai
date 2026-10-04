@@ -31,6 +31,7 @@ _GAME_BUT_DATA = r"tracker|list|library|collection|catalog|catalogue|inventory|l
 IMPOSSIBLE = [
     (re.compile(rf"\b({_GAME_TITLES})\b", re.I), "a game that is played in the browser"),
     (re.compile(r"\b(?:video|board|card|puzzle|computer|2d|3d|multiplayer|browser|platform|arcade) game\b", re.I), "a game that is played in the browser"),
+    (re.compile(r"\b(?:build|make|create|develop|design|code|write)\b(?: me)?(?: an?| the)?(?: [\w-]+){0,4} games?\b", re.I), "a game that is played in the browser"),  # 'a 3D cab racing game'
     (re.compile(r"\b(?:android|ios|iphone|ipad|mobile|native|desktop|windows|mac|electron|flutter|react native) (?:app|application)\b", re.I), "a native or mobile app"),
     (re.compile(r"\b(?:chart|graph|plot|visuali[sz]ation)s? (?:app|maker|tool|builder|generator|dashboard)\b|\bdashboard (?:of|with|showing) (?:charts?|graphs?)\b", re.I), "a charting or visualisation tool"),
     (re.compile(r"\b(?:3d|ar|vr|augmented reality|virtual reality)\b (?:app|viewer|model|scene|editor)|\b(?:video|audio|photo|image) (?:editor|player|streaming|encoder)\b|\b(?:machine learning|neural network|ai model|chatbot|image recognition)\b", re.I), "media editing or machine learning"),

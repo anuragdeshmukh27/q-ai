@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError, api, type ModelInfo } from '../api'
 import { STATE_COLOR, STATE_LABEL } from '../office/palette'
+import { ESCALATION_BUTTONS, explainEscalation, type EscalationAction } from '../escalation'
 import type { AgentView, OfficeModel } from '../model'
 
 const ENGINEERS = ['backend', 'frontend', 'database']
@@ -13,9 +14,10 @@ interface Props {
   models: ModelInfo[]
   onClose: () => void
   onError: (e: unknown) => void
+  onEscalate: (action: EscalationAction, agent: string) => void
 }
 
-function ModelPicker({ agent, model, projectId, replay, models, onError }: Omit<Props, 'onClose'>) {
+function ModelPicker({ agent, model, projectId, replay, models, onError }: Omit<Props, 'onClose' | 'onEscalate'>) {
   const value = model.overrides.get(agent.id) ?? ''
   const off = !projectId || replay
   return (
@@ -39,7 +41,7 @@ function ModelPicker({ agent, model, projectId, replay, models, onError }: Omit<
   )
 }
 
-function AskBox({ agent, model, projectId, replay }: Omit<Props, 'onClose' | 'models' | 'onError'>) {
+function AskBox({ agent, model, projectId, replay }: Omit<Props, 'onClose' | 'models' | 'onError' | 'onEscalate'>) {
   const [text, setText] = useState('')
   const [task, setTask] = useState(false)
   const [waiting, setWaiting] = useState(false)
@@ -113,6 +115,34 @@ function Row({ k, children }: { k: string; children: ReactNode }) {
   )
 }
 
+/** An employee who stopped: what happened in plain words, and the three things the human can do about it. */
+function NeedsYou({ agent, model, replay, onEscalate }: Pick<Props, 'agent' | 'model' | 'replay' | 'onEscalate'>) {
+  const esc = model.escalations.get(agent.id)
+  if (agent.state !== 'waiting_human' || !esc) return null
+  return (
+    <div className="rounded-lg border border-[var(--warn)] bg-[#2a210a] p-3" role="alert">
+      <div className="text-[13px] font-bold tracking-wide text-[var(--warn)]">{agent.name.toUpperCase()} NEEDS YOU</div>
+      <div className="mt-1 text-[14px] leading-snug">{explainEscalation(esc, agent.name)}</div>
+      <div className="mt-1 text-[13px] leading-snug text-[var(--muted)]">What you can do:</div>
+      <div className="mt-1.5 flex flex-col gap-1.5">
+        {ESCALATION_BUTTONS.map((b) => (
+          <button
+            key={b.action}
+            disabled={replay}
+            onClick={() => onEscalate(b.action, agent.id)}
+            title={b.hint}
+            className={`rounded-md px-3 py-1.5 text-left text-[13.5px] font-bold text-white disabled:opacity-40 ${b.action === 'stop' ? 'bg-[#b9434f]' : 'bg-[#3563e6]'}`}
+          >
+            {b.label}
+            <span className="block text-[12px] font-normal text-[#dbe4ff]">{b.hint}</span>
+          </button>
+        ))}
+      </div>
+      {replay && <div className="mt-1 text-[12px] text-[var(--muted)]">Replay: these buttons work in a live build.</div>}
+    </div>
+  )
+}
+
 export function Inspector(p: Props) {
   const { agent, onClose } = p
   const col = STATE_COLOR[agent.state] ?? '#7c8499'
@@ -132,6 +162,8 @@ export function Inspector(p: Props) {
         <span className="inline-block h-2 w-2 rounded-full" style={{ background: col }} />
         {STATE_LABEL[agent.state] ?? agent.state}
       </div>
+
+      <NeedsYou agent={agent} model={p.model} replay={p.replay} onEscalate={p.onEscalate} />
 
       <Row k="MODEL">
         <ModelPicker {...p} />

@@ -40,6 +40,11 @@ class OverrideBody(BaseModel):
     model: str | None = None
 
 
+class EscalationBody(BaseModel):
+    action: str
+    agent: str = ""
+
+
 class AskBody(BaseModel):
     text: str
     as_task: bool = False
@@ -183,6 +188,10 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         if not text or len(text) > 2000:
             raise SessionError("write a message of 1 to 2000 characters")
         return session(pid).ask(agent_id, text, body.as_task)
+
+    @app.post("/api/projects/{pid}/escalation")
+    def escalation(pid: str, body: EscalationBody):
+        return session(pid).escalation(body.action, body.agent)
 
     # -- the built app ----------------------------------------------------------------
     @app.get("/api/projects/{pid}/app")
