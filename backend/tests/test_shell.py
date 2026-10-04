@@ -186,3 +186,17 @@ def test_a_calculator_keeps_its_panel():
 
     d = ArchitectOutput.model_validate(DESIGN)
     assert choose_look("Build a calculator with history", None, d).layout == "calculator"
+
+
+def test_the_numbers_of_a_build_are_read_from_the_project(tmp_path):
+    from app.buildstats import project_stats, stats_line
+
+    q = tmp_path / ".q"
+    q.mkdir()
+    spec, design = designed(FEST)
+    (q / "design.json").write_text(design.model_dump_json(), encoding="utf-8")
+    (q / "authorship.json").write_text(json.dumps({"app": {"functions": 62, "lines": 1240, "agent_share_functions": 0.71, "agent_share_lines": 0.2}}), encoding="utf-8")
+    stats = project_stats(tmp_path)
+    assert stats["modules"] == 4 and stats["tables"] == 4 and stats["pages"] == 10 and stats["endpoints"] == len(design.endpoints) and stats["functions"] == 62
+    assert stats_line(stats).startswith("4 modules, 4 tables,") and "62 functions (71% written by agents), 1,240 lines" in stats_line(stats)
+    assert project_stats(tmp_path / "nowhere") == {}

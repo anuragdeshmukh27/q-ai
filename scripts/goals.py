@@ -54,3 +54,8 @@ FAMOUS = [
     ("hospital system", "Build a hospital management system"),
     ("library system", "Build a library management system"),
 ]
+
+
+# The flagship (four linked modules, exact text) and the clinic goal (a parent with three children): both are read by rules (backend/app/goalspec.py).
+FLAGSHIP = 'Build a college tech fest manager: events have name, category Coding/Robotics/Gaming/Quiz/Workshop, venue, date, start time, capacity and entry fee in rupees. Each event has many registrations: student name, college, email, phone, team name and status Registered/Checked in/Cancelled; actions: check in and cancel. Each event has many volunteers: name, phone, role Coordinator/Helper/Tech support and shift Morning/Afternoon/Evening. Each event has many sponsors: company name, contact person, amount in rupees and status Pledged/Paid; action: mark paid. Show total registrations, total sponsorship received, registrations per event, filter registrations by status and events by category, search events by name, edit and delete everything.'
+CLINIC = 'Build a clinic app: doctors have name, speciality General/Cardiology/Dermatology/Pediatrics/Orthopedics, phone, email, consultation fee in rupees and rating 1-5. Each doctor has many appointments: patient name, patient phone, date, time, reason and status Scheduled/Completed/Cancelled; actions: complete and cancel. Each doctor has many prescriptions: patient name, medicine and dosage. Each doctor has many reviews: author, rating 1-5 and comment.'

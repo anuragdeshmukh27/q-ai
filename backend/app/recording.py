@@ -82,6 +82,12 @@ class Recorder:
                 "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - self.started),
                 "events": self.n_events, "llm_calls": self.n_llm, "models": sorted(m for m in self.models if m), "snapshot": snapshot,
                 **{k: str(v)[:120] for k, v in (info or {}).items() if k in ("title", "app", "feature")}}
+        if project_root:
+            from .buildstats import project_stats
+
+            stats = project_stats(project_root)
+            if stats:
+                meta["stats"] = stats  # shown on the demo card: tables, endpoints, pages, functions, lines, how much the agents wrote
         (self.tmp / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         shutil.rmtree(self.final, ignore_errors=True)
         self.tmp.rename(self.final)

@@ -983,7 +983,7 @@ def topo_order(tasks: list[TaskSpec]) -> list[TaskSpec]:
     return out
 
 
-def normalize_plan(p: PlannerOutput) -> PlannerOutput:
+def normalize_plan(p: PlannerOutput, tables: int | None = None) -> PlannerOutput:
     """Repair what is mechanical instead of asking a 7B model to repeat itself (it often sends the same rejected plan three times):
     a file named by two tasks stays with the first one, and a task left with no files is dropped, its dependencies passed on to the tasks that waited for it."""
     seen: set[str] = set()
@@ -1009,6 +1009,16 @@ def normalize_plan(p: PlannerOutput) -> PlannerOutput:
             if d:
                 deps.append(d)
         t.depends_on = [d for d in dict.fromkeys(deps) if d != t.id and any(k.id == d for k in kept)]
+    if tables == 1:  # one table: one database task (a 7B Planner often splits it, or calls it "all tables", and then sends the same rejected plan again and again)
+        dbs = [t for t in kept if t.owner == "database"]
+        for t in dbs:
+            t.title = re.sub(r"\ball (the )?tables\b", "the table", t.title, flags=re.I)
+        if len(dbs) > 1:
+            first, gone = dbs[0], {t.id for t in dbs[1:]}
+            first.files = first.files[:1]
+            kept = [t for t in kept if t.id not in gone]
+            for t in kept:
+                t.depends_on = [d for d in dict.fromkeys(first.id if d in gone else d for d in t.depends_on) if d != t.id]
     p.tasks = kept
     for t in kept:  # a router needs its tables: the missing database -> backend edges are added, unless one would close a cycle
         if t.owner != "backend":

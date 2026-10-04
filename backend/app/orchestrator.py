@@ -660,6 +660,7 @@ class Orchestrator:
             return False
         agent = self._engineer(t["owner"])
         wt = self.repo.worktree(agent.id)
+        self._strip_strays(wt, t)
         if t["owner"] == "database":
             source = db_stub(d, ri.name, fill=True)
         else:
@@ -684,6 +685,8 @@ class Orchestrator:
         self.repo.commit(wt, f"[{agent.id}] {t['title']} (from the contract)"[:72])
         self.memory.append_decision(f"Contract repair: {agent.name} could not finish {path} ({reason}); the functions the contract implies were applied and every test passes")
         self.emit("contract_repair", task=t["id"], path=path, ok=True, reason=reason)
+        self.emit("escalation_action", agent=agent.id, action="repaired", message=f"{agent.name}'s step was finished from the contract (the functions it implies); every test passes.", queued=False)
+        self.emit("agent_state", agent=agent.id, state="idle")  # nobody needs to step in any more
         return self._complete(t, AgentResult("finished", summary=f"{path} from the contract after the engineer escalated ({reason}); {summary}"))
 
     def _complete(self, t: dict, res: AgentResult) -> bool:
@@ -749,6 +752,7 @@ class Orchestrator:
             self.repo.sync(agent.id)
         except GitError as e:
             return AgentResult("error", "sync_failed", summary=str(e))
+        self._strip_strays(wt, t)
         tools = self._toolbox(agent, preset.test_cmd, [preset.run_cmd], root=wt)
         stub = self._scaffold(t, agent, wt)
         own, modules = self._db_scope(t)
@@ -768,6 +772,7 @@ class Orchestrator:
             self._stat(stat_key or agent.id, model, res.iterations, res.prompt_tokens, res.completion_tokens)
         if res.status != "finished":
             return res
+        self._strip_strays(wt, t)
         self.repo.commit(wt, f"[{agent.id}] {t['title']}"[:72])
         if t.get("kind") == "polish":
             # The Reviewer's static checks still apply (innerHTML, eval, ...); the LLM review is skipped: it judges polish against generic criteria.
@@ -777,6 +782,20 @@ class Orchestrator:
         elif self.review and t["owner"] in ENGINEERS and not generated:  # a 7B reviewer's request to "improve" the generated page made the engineer rewrite it and lose its layout
             res = self._review_loop(t, agent, res, wt, model, preset, task_text, context)
         return res
+
+    def _strip_strays(self, wt: Path, t: dict) -> None:
+        """An engineer sometimes writes the module of ANOTHER resource (backend/api/sponsors.py during the registrations task) with imports that do not exist. backend.main
+        imports every router, so one such file makes the whole suite fail to load, and the contract repair of the real task can never pass. A database or backend task keeps
+        only its own file: a module that is not on main, not in the task and not part of the plan is removed."""
+        folder = {"backend": "backend/api", "database": "database"}.get(t["owner"])
+        if not (folder and self.design and self.design.resources and self.repo and (wt / folder).is_dir()):
+            return
+        on_main, own = self.repo.on_main(), set(t.get("files", []))
+        for f in (wt / folder).glob("*.py"):
+            rel = f"{folder}/{f.name}"
+            if f.stem not in ("__init__", "connection") and rel not in own and rel not in on_main:
+                f.unlink()
+                self.emit("agent_thought", agent=t["owner"], text=f"{f.name} is not part of this task: removed.", model="rules", tokens=0, seconds=0.0)
 
     def _generated_page_is_enough(self, t: dict, stub, wt: Path, agent: AgentConfig) -> AgentResult | None:
         """A page generated from the contract that already passes every UI test needs no engineer: asked to "finish", a 7B rewrites the page and breaks it
@@ -1059,6 +1078,7 @@ class Orchestrator:
                                      reason, [res.last_test["summary"]] if res.last_test else [], contract_brief(self.memory.contract() or {"version": 1, "endpoints": []}),
                                      self.memory.read("database_schema.md"), next_id, bool(self.design.tables), self.emit)
         except AgentFailed:
+            self.emit("agent_state", agent=agent.id, state="idle")  # the Planner could not split the step; the ladder goes on (retry, repair), nobody needs to step in yet
             return False
         self._stat("planner", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
         new = [{**x.model_dump(), "status": "pending", "summary": "", "attempts": 1, "local_failures": t.get("local_failures", 0), "failure": f"{reason}; the previous attempt did: {res.summary or 'see the files'}"}

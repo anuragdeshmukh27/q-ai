@@ -111,7 +111,7 @@ def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit
 def run_planner(agent, llm, model_id, goal: str, contract_text: str, schema_text: str, needs_db: bool, endpoints: list[Endpoint], emit, tables: int = 1):
     user = f"Goal: {goal}\n\n{contract_text}\n\n{schema_text}"
     return structured_step(agent, llm, model_id, role_prompt(agent), user, PlannerOutput,
-                           lambda p: check_plan(normalize_plan(p), needs_db, endpoints, tables), emit)
+                           lambda p: check_plan(normalize_plan(p, tables), needs_db, endpoints, tables), emit)
 
 
 def run_replanner(agent, llm, model_id, goal: str, failed: dict, reason: str, recent: list[str], contract_text: str, schema_text: str,

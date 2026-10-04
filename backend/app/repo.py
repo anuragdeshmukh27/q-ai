@@ -86,6 +86,10 @@ class Repo:
         spec = ["--", ".", *(f":(exclude){d}" for d in GENERATED_TEST_DIRS)] if skip_generated_tests else []
         return run_git(self.root, "diff", f"main...{self.branch(agent_id)}", *spec).stdout
 
+    def on_main(self) -> set[str]:
+        """Every file that is tracked on main."""
+        return {l.strip() for l in run_git(self.root, "ls-tree", "-r", "--name-only", "main").stdout.splitlines() if l.strip()}
+
     def changed_files(self, agent_id: str) -> list[str]:
         out = run_git(self.root, "diff", "--name-only", f"main...{self.branch(agent_id)}").stdout
         return [l.strip() for l in out.splitlines() if l.strip()]

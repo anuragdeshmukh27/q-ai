@@ -266,3 +266,22 @@ def test_only_the_todo_approvals_recording_pauses():
     assert json.loads((root / "todo-approvals" / "meta.json").read_text(encoding="utf-8"))["hold_approvals"] == 3
     others = [p for p in root.glob("*/meta.json") if p.parent.name != "todo-approvals"]
     assert others and not any("hold_approvals" in json.loads(p.read_text(encoding="utf-8")) for p in others)
+
+
+def test_a_module_of_another_resource_written_by_an_engineer_is_removed_before_the_repair_and_the_merge(tmp_path):
+    """Regression (flagship): the registrations engineer wrote backend/api/sponsors.py with imports that do not exist; backend.main imports every router, so the suite
+    could not load and the contract repair of the real task never passed (3 of 3 flagship builds failed)."""
+    from test_relational_build import RelationalLLM
+
+    o, _ = make(tmp_path, RelationalLLM())
+    o.goal = "Build a discussion board with comments and votes"
+    o._design()
+    wt = o.repo.worktree("backend")
+    api = wt / "backend" / "api"
+    api.mkdir(parents=True, exist_ok=True)
+    (api / "comments.py").write_text("from backend.database.comments import x\n", encoding="utf-8")  # another router, not on main, not in this task
+    (api / "posts.py").write_text("router = None\n", encoding="utf-8")  # the task's own file
+    o._strip_strays(wt, {"owner": "backend", "files": ["backend/api/posts.py"]})
+    assert not (api / "comments.py").exists() and (api / "posts.py").exists()
+    o._strip_strays(wt, {"owner": "frontend", "files": ["static/app.js"]})  # a frontend task is not touched
+    assert (api / "posts.py").exists()

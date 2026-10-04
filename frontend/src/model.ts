@@ -432,8 +432,8 @@ export class OfficeModel {
           this.escalations = new Map(this.escalations)
           this.escalations.delete(a ? a.id : 'team')
         }
-        const label = act === 'retry' ? 'Retrying the step' : act === 'replan' ? 'Re-planning the step' : 'Build stopped'
-        this.show({ kind: 'toast_update', key: `escalation:${a ? a.id : 'team'}`, level: act === 'stop' ? 'bad' : 'info', title: label, text: clip(str(e.message), 140) }, visuals)
+        const label = act === 'retry' ? 'Retrying the step' : act === 'replan' ? 'Re-planning the step' : act === 'repaired' ? 'Finished from the contract' : 'Build stopped'
+        this.show({ kind: 'toast_update', key: `escalation:${a ? a.id : 'team'}`, level: act === 'stop' ? 'bad' : act === 'repaired' ? 'good' : 'info', title: label, text: clip(str(e.message), 140) }, visuals)
         break
       }
       case 'approval_needed': {

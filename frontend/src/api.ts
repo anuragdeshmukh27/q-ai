@@ -33,6 +33,8 @@ export interface RecordingMeta {
   title?: string
   app?: string
   feature?: string
+  /** What the build is made of (modules, tables, endpoints, pages, functions, lines, the agents' share); absent in older recordings. */
+  stats?: { modules: number; tables: number; endpoints: number; pages: number; functions?: number; lines?: number; agent_share_functions?: number; agent_share_lines?: number; functions_repair?: number }
 }
 
 export interface LoadedModel {

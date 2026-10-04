@@ -156,3 +156,17 @@ def test_a_reserved_word_renamed_by_the_spec_is_renamed_in_the_architects_design
     names = {f.name for e in d.endpoints for f in [*e.request_fields, *e.response_fields]}
     assert "group_value" in names and "group" not in names
     assert d.tables[0].columns[2].name == "group_value" and "group_value: str" in d.db_functions[0].signature
+
+
+def test_a_planner_that_splits_the_one_table_or_calls_it_all_tables_is_repaired_by_rules():
+    """Regression (calculator chip, 2 of 3 runs): 'use exactly ONE database task' / 'never all tables' were sent back to the 7B until it gave up."""
+    from app.schemas import PlannerOutput, normalize_plan, check_plan
+
+    p = PlannerOutput.model_validate({"tasks": [
+        _task("t1", "database", ["database/calculations.py"]), _task("t2", "database", ["database/history.py"], ["t1"]),
+        {**_task("t3", "backend", ["backend/api/calculator.py"], ["t2"]), "title": "API"}, _task("t4", "frontend", ["static/index.html"]), _task("t5", "frontend", ["static/app.js"], ["t4"])]})
+    p.tasks[0].title = "Implement all tables"
+    out = normalize_plan(p, 1)
+    assert [t.id for t in out.tasks] == ["t1", "t3", "t4", "t5"] and out.tasks[0].title == "Implement the table"
+    assert [t.depends_on for t in out.tasks] == [[], ["t1"], [], ["t4"]]
+    assert not any("ONE database task" in x or "all tables" in x for x in check_plan(out, True, [], 1))

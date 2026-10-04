@@ -143,6 +143,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
                     <span className="truncate">{c.title}</span>
                     <span className="ml-auto shrink-0 text-[12px] font-semibold text-[var(--muted)]">{c.duration}</span>
                   </div>
+                  {c.stats && <div className="ml-5 mt-0.5 text-[11.5px] leading-snug text-[#9fb0d4]" data-testid="demo-stats">{c.stats}</div>}
                   <div className="ml-5 mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--muted)]">
                     {c.app && <span>{c.app}</span>}
                     {c.feature && <span className="rounded bg-[#243055] px-1.5 py-[1px] text-[10.5px] font-bold tracking-wide text-[#a9c1ff]">{c.feature.toUpperCase()}</span>}

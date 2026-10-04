@@ -24,3 +24,12 @@ describe('demo picker', () => {
     expect(card(rec('old')).title).toBe('Todo app')
   })
 })
+
+describe('the build numbers on a demo card', () => {
+  it('reads as one line, and is empty for an older recording', () => {
+    const stats = { modules: 4, tables: 4, endpoints: 41, pages: 10, functions: 62, lines: 1240, agent_share_functions: 0.71, agent_share_lines: 0.2 }
+    expect(card(rec('flagship', { stats })).stats).toBe('4 modules, 4 tables, 41 endpoints, 10 pages, 62 functions (71% written by agents), 1,240 lines')
+    expect(card(rec('old')).stats).toBe('')
+    expect(orderDemos([rec('flagship'), rec('instagram'), rec('inventory')]).map((r) => r.name)).toEqual(['inventory', 'instagram', 'flagship'])
+  })
+})

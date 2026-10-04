@@ -2,7 +2,7 @@
 import type { RecordingMeta } from './api'
 
 export const DEFAULT_DEMO = 'calculator-fault'
-const ORDER = ['calculator-fault', 'todo-approvals', 'ask-employee', 'notes-search', 'contact-book', 'inventory', 'reddit-replica', 'instagram']
+const ORDER = ['calculator-fault', 'todo-approvals', 'ask-employee', 'notes-search', 'contact-book', 'inventory', 'reddit-replica', 'instagram', 'flagship']
 
 export interface DemoCard {
   name: string
@@ -11,6 +11,16 @@ export interface DemoCard {
   feature: string
   duration: string
   goal: string
+  /** "4 modules, 4 tables, 41 endpoints, 10 pages, 62 functions (71% written by agents), 1,240 lines", or '' for an older recording. */
+  stats: string
+}
+
+/** What the build is made of, as one line. */
+export function statsLine(s: RecordingMeta['stats']): string {
+  if (!s) return ''
+  const parts = [s.modules > 1 ? `${s.modules} modules` : '1 module', `${s.tables} tables`, `${s.endpoints} endpoints`, `${s.pages} pages`]
+  if (s.functions !== undefined) parts.push(`${s.functions} functions (${Math.round(100 * (s.agent_share_functions ?? 0))}% written by agents${s.functions_repair ? `, ${s.functions_repair} repaired from the contract` : ''})`, `${(s.lines ?? 0).toLocaleString('en-US')} lines`)
+  return parts.join(', ')
 }
 
 /** "3 min 05 s", "45 s". */
@@ -39,5 +49,6 @@ export function card(r: RecordingMeta): DemoCard {
     feature: r.feature || '',
     duration: duration(r.seconds),
     goal: r.goal,
+    stats: statsLine(r.stats),
   }
 }

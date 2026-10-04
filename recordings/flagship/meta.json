@@ -1,0 +1,29 @@
+{
+  "name": "flagship",
+  "goal": "Build a college tech fest manager: events have name, category Coding/Robotics/Gaming/Quiz/Workshop, venue, date, start time, capacity and entry fee in rupees. Each event has many registrations: student name, college, email, phone, team name and status Registered/Checked in/Cancelled; actions: check in and cancel. Each event has many volunteers: name, phone, role Coordinator/Helper/Tech support and shift Morning/Afternoon/Evening. Each event has many sponsors: company name, contact person, amount in rupees and status Pledged/Paid; action: mark paid. Show total registrations, total sponsorship received, registrations per event, filter registrations by status and events by category, search events by name, edit and delete everything.",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-04 22:03:39",
+  "seconds": 330,
+  "events": 865,
+  "llm_calls": 106,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "College tech fest manager: 4 modules",
+  "app": "Tech fest manager",
+  "feature": "4 linked modules",
+  "stats": {
+    "modules": 4,
+    "tables": 4,
+    "endpoints": 19,
+    "pages": 10,
+    "functions": 42,
+    "lines": 578,
+    "agent_share_functions": 0.381,
+    "agent_share_lines": 0.126,
+    "functions_repair": 26
+  }
+}

@@ -28,6 +28,13 @@ REQUIRED: dict[str, tuple[str, ...]] = {
 }
 
 
+HINTS = {
+    "implement": "implement needs three fields in the same reply: path, function and content, and content is the lines inside the function (never leave it out; to look at a file use read_file)",
+    "replace": "replace needs path, pattern (a short text that occurs once in the file) and content (the text that takes its place)",
+    "write_file": "write_file needs path and content (the whole file)",
+}
+
+
 class Action(BaseModel):
     thought: str
     action: ActionName
@@ -56,7 +63,8 @@ class Action(BaseModel):
     def _has_required_args(self) -> "Action":
         missing = [f for f in REQUIRED[self.action] if getattr(self, f) is None]
         if missing:
-            raise ValueError(f"action '{self.action}' requires: {', '.join(missing)}")
+            hint = HINTS.get(self.action, "")
+            raise ValueError(f"action '{self.action}' requires: {', '.join(missing)}" + (f". {hint}" if hint else ""))
         return self
 
     def args(self) -> dict[str, str]:

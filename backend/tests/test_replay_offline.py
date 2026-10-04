@@ -139,7 +139,7 @@ SHIPPED = sorted(d.name for d in REPO_RECORDINGS.glob("*") if (d / "meta.json").
 
 def test_the_demo_set_is_complete():
     """The demo picker needs all of these; an empty list would make the parametrized replay test below pass without testing anything."""
-    assert {"calculator-fault", "todo-approvals", "ask-employee", "notes-search", "contact-book", "inventory", "reddit-replica", "instagram"} <= set(SHIPPED)
+    assert {"calculator-fault", "todo-approvals", "ask-employee", "notes-search", "contact-book", "inventory", "reddit-replica", "instagram", "flagship"} <= set(SHIPPED)
 
 
 @pytest.mark.parametrize("name", SHIPPED)
@@ -158,7 +158,8 @@ def test_every_shipped_recording_replays_offline_exactly_as_recorded_and_its_app
         app = httpx.get(f"{server.url}/api/projects/{pid}").json()["app"]["url"]
         page = httpx.get(app + "/", timeout=5).text
         assert "ui-kit" in page and "app.js" in page
-        assert "UI." in httpx.get(app + "/static/app.js", timeout=5).text
+        js = httpx.get(app + "/static/app.js", timeout=5).text
+        assert "UI." in js or "Q.mount" in js  # the older pages call the kit, the shell pages describe the app
         contract = httpx.get(f"{server.url}/api/projects/{pid}/file", params={"path": ".q/api_contract.json"}).json()
         text = contract["content"] if isinstance(contract, dict) and "content" in contract else json.dumps(contract)
         for ep in json.loads(text)["endpoints"]:
@@ -185,5 +186,12 @@ def test_every_shipped_recording_replays_offline_exactly_as_recorded_and_its_app
             assert any(e["type"] == "look_chosen" and e["layout"] == "feed" for e in got)
         if name == "instagram":
             assert next(e for e in got if e["type"] == "spec_ready")["not_included"]
+        if name == "flagship":
+            assert any(e["type"] == "look_chosen" and e["layout"] == "shell" for e in got)
+            stats = rec.meta["stats"]
+            assert stats["modules"] == 4 and stats["tables"] == 4 and stats["pages"] == 10 and stats["functions"] > 40 and 0 < stats["agent_share_functions"] <= 1
+            assert next(e for e in got if e["type"] == "spec_ready")["skill_title"] == "Events and fests"
+            app_js = httpx.get(app + "/static/app.js", timeout=5).text
+            assert all(f'"name": "{n}"' in app_js for n in ("events", "registrations", "volunteers", "sponsors")) and "/api/registrations/{id}/check_in" in app_js
     finally:
         server.stop()
