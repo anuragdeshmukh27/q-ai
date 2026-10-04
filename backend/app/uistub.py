@@ -173,6 +173,7 @@ def page_stub(design: ArchitectOutput, title: str = "") -> str | None:
 <body>
   <main class="container stack layout-{s.layout}">
     {header_html(heading, look)}{notice_html(look)}{stats}
+    <!-- request-hook:top -->
     <section class="card{panel}">
       <h2 class="card-title">{card_title}</h2>
       <form id="form" class="stack">
@@ -337,6 +338,7 @@ def script_stub(design: ArchitectOutput, title: str = "") -> str | None:
             parts.append(f"by: {j(by.name)}" + (f", byField: {j(money.name)}, byFormat: {j(fmt_of(money))}" if money else ""))
         out.append("  UI.statStrip(stats, shown, { " + ", ".join(parts) + " });")
     out.append(f'  count.textContent = UI.count(shown.length, {j(s.one)}, {j(s.noun)});')
+    out.append("  // request-hook:loaded")
     rows = "shown.map((i) => ({ ...i, summary: summary(i) }))" if summary_mode else "shown"
     if layout == "table":
         opts = [f"    columns: {_cols_js(_columns(s))},"]

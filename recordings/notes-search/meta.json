@@ -4,10 +4,10 @@
   "ok": true,
   "problems": [],
   "preset": "fastapi-vanilla",
-  "recorded_at": "2026-10-03 23:36:08",
-  "seconds": 109,
-  "events": 298,
-  "llm_calls": 29,
+  "recorded_at": "2026-10-04 14:21:20",
+  "seconds": 77,
+  "events": 226,
+  "llm_calls": 19,
   "models": [
     "qwen2.5-coder:7b"
   ],

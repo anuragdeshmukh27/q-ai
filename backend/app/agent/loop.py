@@ -14,7 +14,7 @@ from .termination import REASON_TEXT, TerminationTracker
 
 STATE_BY_ACTION = {
     "list_dir": "reading", "read_file": "reading", "search": "reading",
-    "write_file": "typing", "implement": "typing", "run": "executing", "run_tests": "testing",
+    "write_file": "typing", "implement": "typing", "replace": "typing", "run": "executing", "run_tests": "testing",
     "send_message": "walking", "ask_human": "waiting_human", "finish": "idle",
 }
 STALL_HINT = (
@@ -159,7 +159,7 @@ def _run_agent(
         emit("agent_state", agent=agent.id, state=STATE_BY_ACTION[action.action] if action.action != "finish" else "thinking")
 
         tr = _execute(action, toolbox, emit, agent, res.last_test, dirty)
-        if action.action in ("write_file", "implement") and (tr.ok or tr.data.get("wrote")):
+        if action.action in ("write_file", "implement", "replace") and (tr.ok or tr.data.get("wrote")):
             dirty = True
         signature = None
         if action.action == "run_tests" and "signature" in tr.data:
@@ -167,7 +167,7 @@ def _run_agent(
             res.last_test = {k: tr.data[k] for k in ("passed", "failed", "summary", "signature")}
             dirty = False
             emit("test_result", agent=agent.id, **res.last_test)
-        stuck = stuck + 1 if (action.action in ("write_file", "implement") and not tr.ok) else 0
+        stuck = stuck + 1 if (action.action in ("write_file", "implement", "replace") and not tr.ok) else 0
         tracker.record(action, signature)
         step = _step(len(steps) + 1, action, tr, tracker.repeat_warning(), action.action == "run_tests" and tracker.stall_warning())
         steps.append(step)

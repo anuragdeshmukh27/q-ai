@@ -95,3 +95,46 @@ class Leaderboard:
                 "tasks": [{"task": r["task"], "passed": bool(r["passed"]), "iterations": r["iterations"], "seconds": round(r["seconds"], 1)} for r in rs],
             }
         return {"runs": len(runs), "roles": sorted(matrix), "models": sorted({m for r in matrix.values() for m in r}), "matrix": matrix, **self.meta()}
+
+
+# --- team vs single agent (scripts/baseline.py) ---------------------------------------------------------------------
+
+BASELINE_RESULTS = ROOT / "backend" / "benchmarks" / "baseline_results.json"
+
+
+def _mean(xs: list[float]) -> float:
+    return round(sum(xs) / len(xs), 1) if xs else 0.0
+
+
+def _arm(runs: list[dict]) -> dict:
+    """Totals of one way of building (team or single agent) over its runs."""
+    n = len(runs)
+    passed = [r for r in runs if r["ok"]]
+    tp, tf = sum(r.get("tests_passed", 0) for r in runs), sum(r.get("tests_failed", 0) for r in runs)
+    app = [r["authorship"]["app"] for r in runs if r.get("authorship", {}).get("app")]
+    fn, fa = sum(a["functions"] for a in app), sum(a["functions_agent"] for a in app)
+    ln, la = sum(a["lines"] for a in app), sum(a["lines_agent"] for a in app)
+    return {
+        "runs": n, "passed": len(passed), "pass_rate": round(len(passed) / n, 3) if n else 0.0,
+        "avg_seconds": _mean([r["seconds"] for r in runs]), "avg_seconds_passed": _mean([r["seconds"] for r in passed]),
+        "tests_passed": tp, "tests_failed": tf, "test_pass_rate": round(tp / (tp + tf), 3) if tp + tf else 0.0,
+        "qa_bugs": sum(r.get("qa_bugs", 0) for r in runs), "review_requests": sum(r.get("review_requests", 0) for r in runs),
+        "contract_repairs": sum(r.get("contract_repairs", 0) for r in runs), "builds_with_repair": sum(1 for r in runs if r.get("contract_repairs", 0)),
+        "functions": fn, "functions_agent": fa, "lines": ln, "lines_agent": la,
+        "agent_share_functions": round(fa / fn, 3) if fn else 0.0, "agent_share_lines": round(la / ln, 3) if ln else 0.0,
+    }
+
+
+def baseline_report(path: Path = BASELINE_RESULTS) -> dict:
+    """The saved team-vs-single-agent runs plus totals per goal and overall (empty when the benchmark has not been run)."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"runs": [], "goals": [], "overall": {}}
+    runs = [r for r in data.get("runs", []) if r.get("mode") in ("team", "solo")]
+    goals = []
+    for key in dict.fromkeys(r["goal_key"] for r in runs):
+        rs = [r for r in runs if r["goal_key"] == key]
+        goals.append({"key": key, "goal": rs[0]["goal"], "team": _arm([r for r in rs if r["mode"] == "team"]), "solo": _arm([r for r in rs if r["mode"] == "solo"])})
+    return {**{k: data[k] for k in ("generated", "machine", "model", "method", "notes") if k in data}, "runs": runs, "goals": goals,
+            "overall": {"team": _arm([r for r in runs if r["mode"] == "team"]), "solo": _arm([r for r in runs if r["mode"] == "solo"])}}

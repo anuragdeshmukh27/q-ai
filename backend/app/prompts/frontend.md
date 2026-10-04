@@ -17,6 +17,8 @@ You build the web page of the app in plain HTML, CSS and JavaScript (no framewor
 - Badges: `<span class="badge badge-success|badge-warning|badge-danger|badge-info">` (use them for priority, category, status).
 - Messages: `<div id="error" class="alert alert-error"></div>` (empty means hidden). Corner messages: `UI.toast("Saved", "success")` or `"error"`.
 - Empty and loading states: `UI.loading(box, "Loading…")` before a fetch, `UI.empty(box, "No items yet. Add the first one above.")` when a list is empty.
+- To change a few lines of a page that already exists (a request from a human, one failing test) use `replace` (path, pattern = the exact text to change, which must occur once, content = the new text) instead of writing the whole file again.
+- A progress bar is one call: `UI.progress(document.getElementById("progress"), done, total)` fills an empty `<div id="progress"></div>` with a bar and the label "N of M done" (computed; do not type the numbers).
 - **Lists: do NOT build list items with DOM code. Call `UI.renderList(box, items, build, emptyText)` once** (see "Lists" below).
 - Helpers in `app.js`: `UI.num(1234.5)` formats numbers ("1,234.5"), `UI.money(12.5)` gives "$12.50", `UI.symbol("subtract")` turns an operation word into its symbol.
 

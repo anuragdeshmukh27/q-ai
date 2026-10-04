@@ -1,4 +1,6 @@
 import { api, type BenchCell, type Leaderboard, type RouterRow } from '../api'
+import { useState } from 'react'
+import { BaselinePanel } from './BaselinePanel'
 import { Empty } from './Explorer'
 import { useRefetch } from './hooks'
 
@@ -35,8 +37,34 @@ function Cell({ c, chosen }: { c?: BenchCell; chosen: boolean }) {
   )
 }
 
-/** Role x model benchmark scores, and which model the router gives each employee (with the reason). */
+type View = 'models' | 'compare' | 'authorship'
+const VIEWS: [View, string][] = [['models', 'Models by role'], ['compare', 'Team vs single agent'], ['authorship', 'Who wrote the code']]
+
 export function LeaderboardTab() {
+  const [view, setView] = useState<View>('models')
+  return (
+    <div className="h-full overflow-auto p-3">
+      <div className="mb-3 flex gap-1" role="tablist">
+        {VIEWS.map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => setView(id)}
+            className="rounded-md border px-3 py-1 text-[12.5px] font-semibold"
+            style={{ borderColor: view === id ? 'var(--accent)' : 'var(--line)', background: view === id ? '#16213f' : 'transparent', color: view === id ? 'var(--text)' : 'var(--muted)' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'models' ? <ModelsView /> : <BaselinePanel view={view} />}
+    </div>
+  )
+}
+
+/** Role x model benchmark scores, and which model the router gives each employee (with the reason). */
+function ModelsView() {
   const lb = useRefetch(() => api.leaderboard(), 'lb', 0, 0)
   if (!lb.data) return <Empty text={lb.error || 'Loading…'} />
   const d: Leaderboard = lb.data
@@ -47,7 +75,7 @@ export function LeaderboardTab() {
   const routed = new Map(d.router.map((r) => [r.agent, r]))
   const rows = d.roles.map((r) => ({ role: r, route: routed.get(r) }))
   return (
-    <div className="h-full overflow-auto p-3">
+    <div>
       <div className="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12.5px] text-[var(--muted)]">
         <span className="text-[14px] font-bold text-[var(--text)]">Benchmark leaderboard</span>
         <span>{d.runs} runs</span>

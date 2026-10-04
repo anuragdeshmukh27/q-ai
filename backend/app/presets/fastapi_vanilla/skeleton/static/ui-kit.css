@@ -180,6 +180,10 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid c
 .card-item .item-actions { display: flex; gap: 0.4rem; margin-top: auto; padding-top: 0.6rem; flex-wrap: wrap; }
 .card-item.done .item-title { color: var(--muted); text-decoration: line-through; }
 /* stat strip */
+.progress { padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.progress-label { font-weight: 600; margin-bottom: 0.45rem; }
+.progress-track { height: 0.7rem; border-radius: 999px; background: var(--border); overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width 0.4s ease; }
 .stat-strip { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .stat { flex: 1 1 150px; padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 .stat-label { font-size: 0.75rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-family: var(--font-meta); }
@@ -205,6 +209,8 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 3px solid c
 .byline { margin-top: 0.1rem; font-size: 0.85rem; color: var(--muted); }
 .feed-foot { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; }
 .feed-foot .item-badges { display: flex; gap: 0.4rem; margin-right: 0.3rem; }
+.feed-check { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+.feed-check .item-check { width: 1.05rem; height: 1.05rem; accent-color: var(--primary); cursor: pointer; }
 .feed-foot .item-actions { display: flex; gap: 0.3rem; margin-left: auto; }
 .btn-comments { padding: 0.25rem 0.7rem; font-size: 0.85rem; font-weight: 650; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; }
 .btn-comments:hover { color: var(--text); background: var(--surface-3); }

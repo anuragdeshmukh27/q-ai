@@ -1,0 +1,18 @@
+{
+  "name": "reddit-replica",
+  "goal": "Build a reddit-style forum: posts with title, content and author, comments on each post, upvote and downvote posts, sort by top or newest, edit and delete",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-04 14:25:33",
+  "seconds": 76,
+  "events": 356,
+  "llm_calls": 35,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Reddit replica",
+  "app": "Forum",
+  "feature": "Posts, comments and votes"
+}

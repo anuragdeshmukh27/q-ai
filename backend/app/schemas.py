@@ -499,13 +499,22 @@ class SpecOutput(BaseModel):
     summary: str = Field(description="One sentence: what the app does for the user")
     resources: list[SpecResource] = Field(default_factory=list)
     features: list[str] = Field(default_factory=list, description="What the page lets the user do, as short statements")
-    not_included: list[str] = Field(default_factory=list, description="Things the goal suggests that this small version leaves out (login, subreddits, uploads...)")
+    not_included: list[str] = Field(default_factory=list, description="Things the real product has that this small version leaves out (login, uploads, payments...)")
 
 
 CHILD_WORDS = {"comments", "answers", "replies", "tasks", "subtasks", "reviews", "responses", "entries", "messages", "lessons", "chapters"}
 SERVER_FILLED = re.compile(r"^(id|created_at|updated_at|created|updated|timestamp)$")
 _SORT_FEATURE = re.compile(r"\b(filter|sort|order)\w*\b[^.]*\b(upvotes?|downvotes?|votes?|likes?|score|created_at|created|date|newest|latest|top|popular|recent)\b", re.I)
 _SEARCH_FEATURE = re.compile(r"\b(search|filter)\w*\b", re.I)
+
+
+_LEAKED = re.compile(r"subreddits?|kinds? of things|things? than two", re.I)  # a 7B copies these out of the spec prompt into unrelated goals
+
+
+def drop_leaked(spec: SpecOutput, goal: str) -> SpecOutput:
+    """Remove the words a model copies out of the spec prompt's examples into an unrelated goal's `not_included` (called on the model's raw answer only)."""
+    spec.not_included = [x for x in spec.not_included if not (_LEAKED.search(x) and not re.search("reddit", goal, re.I))]
+    return spec
 
 
 def relations_enabled() -> bool:

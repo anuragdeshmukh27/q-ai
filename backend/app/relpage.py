@@ -83,6 +83,7 @@ def page(design: ArchitectOutput, title: str = "") -> str:
 <body>
   <main class="container stack layout-feed">
     {header_html(heading, look)}{notice_html(look)}
+    <!-- request-hook:top -->
   <div id="feed-view" class="stack">{stats}
     <section class="card">
       <h2 class="card-title">New {esc(parent.singular)}</h2>
@@ -145,6 +146,10 @@ def _row(ri: ResourceInfo, fields_const: str, compact: bool, opens: bool = False
         out += ["    comments: item.commentCount,", f"    noun: {j(singular(opens))},", "    onOpen: open ? () => openItem(item) : undefined,"]
     if compact:
         out.append("    compact: true,")
+    booleans = [f.name for f in ri.fields if f.type == "boolean"]
+    if booleans:  # a yes/no field (certificate, paid) is a checkbox in the row: ticking it saves the whole item at once
+        out += [f"    done: {j(booleans[0])},",
+                f"    onToggle: (checked) => save{S}(item.id, {{ ...Object.fromEntries({fields_const}.map((f) => [f.name, item[f.name]])), {booleans[0]}: checked }}),"]
     actions = []
     increments = [a for a in ri.actions if a.kind == "increment"]
     for a in ri.actions:
@@ -212,7 +217,8 @@ def script(design: ArchitectOutput, title: str = "") -> str:
                 "    i.commentCount = r.ok ? (await r.json()).items.length : 0;", "  }));", "  return items;", "}"]
     out += ["async function load() {", "  UI.loading(list);", f'  const res = await fetch("/api/{parent.name}"' + (' + "?sort=" + ' + sort if parent.sorts else "") + ");",
             "  const data = await res.json();", "  const items = " + ("await withCounts(data.items)" if child else "data.items") + ";",
-            f'  count.textContent = UI.count(items.length, {j(parent.singular.replace("_", " "))}, {j(parent.name.replace("_", " "))});']
+            f'  count.textContent = UI.count(items.length, {j(parent.singular.replace("_", " "))}, {j(parent.name.replace("_", " "))});',
+            "  // request-hook:loaded"]
     if _numbers(parent):
         out.append("  " + _stat_call(parent, '$("stats")', "items", False))
     out.append(f'  UI.renderFeed(list, items, (item) => {parent.singular}Options(item, true), "{EMPTY}");')

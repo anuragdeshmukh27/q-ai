@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from .approvals import UnknownApproval
 from .config import load_env
+from .leaderboard import baseline_report
 from .metrics import read_metrics
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
@@ -120,6 +121,11 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         mgr.router.refresh()
         return {**board.summary(), "router": mgr.router.table(list(caps), caps), "margin": mgr.router.margin, "min_runs": mgr.router.min_runs,
                 "safe_default": mgr.router.default_model("coding").id, "note": mgr.registry.router_config.get("note", "")}
+
+    @app.get("/api/baseline")
+    def baseline():
+        """Team vs a single agent on the same goals and the same model (scripts/baseline.py), with who wrote the code in every build."""
+        return baseline_report()
 
     # -- projects -----------------------------------------------------------------
     @app.post("/api/projects", status_code=201)

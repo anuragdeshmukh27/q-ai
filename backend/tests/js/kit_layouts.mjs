@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import assert from 'node:assert'
 
 class N {
-  constructor(t) { this.tag = t; this.className = ''; this.childNodes = []; this._t = ''; this.l = {}; this.attrs = {}; this.classList = { add: (c) => { this.className += ' ' + c } } }
+  constructor(t) { this.tag = t; this.className = ''; this.childNodes = []; this._t = ''; this.l = {}; this.attrs = {}; this.style = {}; this.classList = { add: (c) => { this.className += ' ' + c } } }
   set textContent(v) { this._t = v; this.childNodes = [] }
   get textContent() { return this._t + this.childNodes.map((c) => c.textContent).join('') }
   appendChild(c) { this.childNodes.push(c); return c }
@@ -91,6 +91,29 @@ UI.renderFeed(compact, [{ id: 1, content: 'Nice', author: 'bob', rating: 4 }], (
 assert.ok(cls(compact, 'feed-comment').length, 'a comment row is compact')
 assert.deepEqual(texts(compact, 'byline'), ['by bob · ★★★★☆'], 'a rating reads as stars in the byline')
 assert.equal(cls(compact, 'item-values').length, 0, 'and is not drawn a second time as a value')
+
+// a yes/no field of a post: a captioned checkbox in the footer that reports the new state
+let ticked = null
+const yesno = new N('div')
+UI.renderFeed(yesno, [{ id: 1, title: 'Course', certificate: false }], () => ({ title: 'title', done: 'certificate', onToggle: (c) => { ticked = c }, labels: { certificate: 'Certificate' } }))
+const yesCheck = yesno.find((n) => n.tag === 'input' && n.className.includes('item-check'))[0]
+assert.ok(yesCheck, 'the feed row shows a checkbox for the yes/no field')
+assert.equal(yesCheck.attrs['aria-label'], 'Certificate')
+yesCheck.checked = true
+yesCheck.l.change()
+assert.equal(ticked, true)
+
+// a progress bar: the label and a track whose fill is the share done
+const bar = new N('div')
+UI.progress(bar, 1, 4)
+assert.deepEqual(texts(bar, 'progress-label'), ['1 of 4 done'])
+assert.equal(cls(bar, 'progress-fill')[0].style.width, '25%')
+assert.equal(cls(bar, 'progress-track')[0].attrs['aria-valuenow'], '25')
+UI.progress(bar, 0, 0)
+assert.equal(cls(bar, 'progress-fill')[0].style.width, '0%', 'an empty list is 0 percent, not NaN')
+assert.deepEqual(texts(bar, 'progress-label'), ['0 of 0 done'], 'and the label is still shown')
+UI.progress(bar, 7, 4)
+assert.equal(cls(bar, 'progress-fill')[0].style.width, '100%')
 
 // stat strip: the count, the total, the average and the sums per category
 const strip = new N('div')

@@ -99,7 +99,15 @@ backend\.venv\Scripts\python.exe scripts\build.py "Build a calculator with histo
 backend\.venv\Scripts\python.exe scripts\record.py "<goal>" --name my-demo --title "My demo" --app "My app" --feature "What it shows"
 backend\.venv\Scripts\python.exe scripts\record_demos.py            # re-record the whole demo set (keeps only good runs)
 backend\.venv\Scripts\python.exe scripts\benchmark.py --help        # model benchmarks that feed the router and the leaderboard
+backend\.venv\Scripts\python.exe scripts\baseline.py --reps 2       # team vs one agent on the same model and goals (about 85 minutes), feeds the Leaderboard tab
+backend\.venv\Scripts\python.exe scripts\judge.py --goal "Build Notion"   # what a short product name builds
 ```
+
+## Proof, measured and shown in the Leaderboard tab
+
+- **Team vs single agent** (`scripts/baseline.py`, results in `backend/benchmarks/baseline_results.json`): same 7B model, same 9 goals, same generated stubs, page and tests. The team passed 17 of 18 builds; one agent doing the whole job in one loop passed 2 of 18. Small samples, one attempt for the single agent; the Reviewer and QA asked for no change in these builds, so the gain is from narrow tasks, branches and retries.
+- **Who wrote the code** (`backend/app/authorship.py`, `.q/authorship.json` in every build): in the team's builds agents wrote 62% of the functions and 16% of the lines of the app code; rules generate the stubs, the page and the tests.
+- **Ask employee** edits a finished app with small `replace` edits at hooks the generated page already has (`<!-- request-hook:top -->`, `// request-hook:loaded`); a request that needs a new endpoint is not supported.
 
 ## Tests
 
@@ -137,6 +145,7 @@ All pixel art is generated in code from palettes; no third-party assets are used
 - **In scope:** one resource (a list with add, edit, delete), or a parent with its children (posts with comments, questions with answers, projects with tasks) with up to two one-click actions per resource (upvote, downvote, like, toggle) and a sort (newest or top).
 - **Bigger goals** (login, real-time, uploads, payments, a third kind of thing) build the small version that fits; the spec and the Contract tab say "Not in this version: ..." so nothing is silently missing.
 - **Famous apps by name** (Instagram, Twitter, Amazon, Zomato, YouTube, LinkedIn, WhatsApp, Uber, a hospital or library system and a few more, `backend/app/platforms.py`): a short goal that names one maps to a hand-written small version (Instagram = posts with a caption, comments and likes), so the same name builds the same app on every run. The page says "Not in this version: ..." (photo uploads, followers, ...), and the agents still build the whole app from that spec.
+- **A product name that is not in the table** (Notion, Dropbox, Duolingo...): the model guesses a small spec from the name, the contract and tests come from the same rules, and the page says "Not in this version: most of what the real X does, ...". If the model cannot write a spec, a plain list app is built with the same banner.
 - **Impossible for this preset** (games, charts, native or mobile apps) are refused before any model work, with three goals that do work.
 - For related resources the contract is completed by rules from the spec (`backend/app/relations.py`), not written by the model: the 7B kept getting foreign keys, vote counters and nesting wrong. Agents still write every function. `Q_RELATIONS=0` falls back to parent-only builds.
 

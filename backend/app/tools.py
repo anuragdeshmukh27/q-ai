@@ -207,6 +207,21 @@ class ToolBox:
             return _fail(f"{a.path} is a directory")
         return self._store(p, content)
 
+    def _replace(self, a: Action) -> ToolResult:
+        """A small edit of an existing file: the exact text `pattern` (it must occur once) becomes `content`. The rest of the file is untouched."""
+        p = self.paths.resolve_write(a.path or "")
+        if not p.is_file():
+            return _fail(f"{a.path} does not exist; create it with write_file first")
+        old, find = p.read_text(encoding="utf-8", errors="replace"), a.pattern or ""
+        if not find:
+            return _fail("not applied: `pattern` is empty; give the exact text to replace")
+        n = old.count(find)
+        if n == 0:
+            return _fail(f"not applied: the text in `pattern` is not in {a.path}. Copy it exactly from the file (same spaces and line breaks); read_file shows the current content.")
+        if n > 1:
+            return _fail(f"not applied: the text in `pattern` occurs {n} times in {a.path}. Make it longer (add the line before or after it) so it occurs exactly once.")
+        return self._store(p, old.replace(find, a.content or "", 1), "replaced text in")
+
     def _implement(self, a: Action) -> ToolResult:
         """Replace the body of one function in a Python file; the rest of the file is untouched."""
         p = self.paths.resolve_write(a.path or "")

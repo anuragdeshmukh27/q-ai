@@ -25,6 +25,7 @@
 //       author: "author"  details: ["content"]  score: 3  comments: 2  noun: "comment"  onOpen: () => open(item)  compact: true (a comment row)
 //       actions with slot: "up" | "down" are drawn as the vote buttons around the score; the others sit in the footer of the post
 //   UI.statStrip(box, items, { noun, plural, sums: [{ field, label, format }], averages: [{ field, label, format }], by: "category", byField: "amount", byFormat: "money" })
+//   UI.progress(box, done, total)   a progress bar with its label ("2 of 5 done", computed) inside a container (box is an empty <div id="..."> placed where the bar belongs)
 //   UI.count(n, "post", "posts") -> "1 post" / "2 posts"     UI.timeAgo(item.created_at) -> "5 min ago"     UI.label("due_date") -> "Due date"
 //   UI.form("Edit task", fields, item, async (values) => {...})   a dialog to edit an item (Edit button). fields:
 //       [{ name: "title", label: "Title" }, { name: "priority", label: "Priority", options: ["Low", "Medium", "High"] },
@@ -245,6 +246,13 @@ window.UI = (() => {
           const values = valuesOf(item, { ...o, values: (o.values ?? []).filter((f) => !starred.includes(f)) });
           if (values) main.appendChild(values);
           const foot = el("div", "feed-foot");
+          if (o.done && o.onToggle) {  // a yes/no field of a post (certificate, paid): a captioned checkbox that saves at once
+            const label = el("label", "feed-check");
+            const box = checkbox(item, o);
+            box.setAttribute("aria-label", caption(o, o.done));
+            label.append(box, document.createTextNode(" " + caption(o, o.done)));
+            foot.appendChild(label);
+          }
           if (o.comments !== undefined && o.onOpen) {
             const c = el("button", "btn-comments", "💬 " + api.count(o.comments, o.noun ?? "comment"));
             c.type = "button";
@@ -261,6 +269,21 @@ window.UI = (() => {
         }
         box.appendChild(ul);
       });
+    },
+    progress(box, done, total, label) {
+      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((100 * done) / total))) : 0;
+      box.textContent = "";
+      box.classList.add("progress");
+      box.appendChild(el("div", "progress-label", label ?? `${done} of ${total} done`));
+      const track = el("div", "progress-track");
+      track.setAttribute("role", "progressbar");
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      track.setAttribute("aria-valuenow", String(pct));
+      const fill = el("div", "progress-fill");
+      fill.style.width = pct + "%";
+      track.appendChild(fill);
+      box.appendChild(track);
     },
     statStrip(box, items, o = {}) {
       box.textContent = "";

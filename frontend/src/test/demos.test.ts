@@ -13,7 +13,7 @@ describe('demo picker', () => {
     expect(pickDefault([])).toBe('')
   })
   it('orders the shipped recordings and hides failed ones', () => {
-    expect(orderDemos([rec('inventory'), rec('bad', { ok: false }), rec('expense-ask'), rec('calculator-fault')]).map((r) => r.name)).toEqual(['calculator-fault', 'expense-ask', 'inventory'])
+    expect(orderDemos([rec('inventory'), rec('bad', { ok: false }), rec('ask-employee'), rec('calculator-fault')]).map((r) => r.name)).toEqual(['calculator-fault', 'ask-employee', 'inventory'])
   })
   it('reads durations', () => {
     expect(duration(45)).toBe('45 s')

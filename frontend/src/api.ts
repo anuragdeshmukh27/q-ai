@@ -124,12 +124,72 @@ export interface Leaderboard {
   notes?: string
 }
 
+export interface Authorship {
+  app?: { functions: number; functions_agent: number; functions_generated: number; functions_repair: number; lines: number; lines_agent: number; lines_generated: number; lines_repair: number }
+  tests?: { files: number; lines: number; lines_agent: number; lines_generated: number }
+  spec_by?: string
+  contract_by?: string
+  plan_by?: string
+  repairs?: string[]
+}
+
+export interface BaselineRun {
+  goal_key: string
+  goal: string
+  mode: 'team' | 'solo'
+  rep: number
+  ok: boolean
+  seconds: number
+  tests: string
+  tests_passed: number
+  tests_failed: number
+  qa_bugs: number
+  review_requests: number
+  contract_repairs: number
+  escalations?: number
+  problems: string[]
+  authorship: Authorship
+}
+
+export interface BaselineArm {
+  runs: number
+  passed: number
+  pass_rate: number
+  avg_seconds: number
+  avg_seconds_passed: number
+  tests_passed: number
+  tests_failed: number
+  test_pass_rate: number
+  qa_bugs: number
+  review_requests: number
+  contract_repairs: number
+  builds_with_repair: number
+  functions: number
+  functions_agent: number
+  lines: number
+  lines_agent: number
+  agent_share_functions: number
+  agent_share_lines: number
+}
+
+export interface BaselineReport {
+  runs: BaselineRun[]
+  goals: { key: string; goal: string; team: BaselineArm; solo: BaselineArm }[]
+  overall: { team?: BaselineArm; solo?: BaselineArm }
+  generated?: string
+  machine?: string
+  model?: string
+  method?: string
+  notes?: string
+}
+
 const post = (path: string, body: unknown) => call<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })
 
 export const api = {
   config: () => call<ConfigInfo>('/api/config'),
   models: () => call<ModelInfo[]>('/api/models'),
   leaderboard: () => call<Leaderboard>('/api/leaderboard'),
+  baseline: () => call<BaselineReport>('/api/baseline'),
   files: (id: string) => call<TreeFile[]>(`/api/projects/${id}/files`),
   file: (id: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
   commits: (id: string) => call<Commit[]>(`/api/projects/${id}/commits`),

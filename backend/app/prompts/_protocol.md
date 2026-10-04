@@ -8,6 +8,7 @@ Actions and their arguments:
 - read_file: path - read a file
 - write_file: path, content - create or overwrite a whole file with the full content
 - implement: path, function, content - replace ONLY the body of one function in an existing Python file (content = the lines inside the function, no def line). Use it to fill generated stubs and to fix one function
+- replace: path, pattern, content - in an existing file, replace the exact text `pattern` (it must occur exactly once) with `content`. Use it for a small change to a page instead of rewriting the whole file
 - search: pattern, path (optional) - find text in files
 - run: command - run one command (no pipes, no &&, no redirects)
 - run_tests: (no arguments) - run the test suite and see the failures

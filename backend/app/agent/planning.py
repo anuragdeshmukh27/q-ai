@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from ..config import PROMPTS_DIR, AgentConfig
 from ..llm import InvalidOutputError, LLMClient, agent_context
 from ..providers.base import ProviderError
-from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, SpecOutput, check_acceptance, check_architecture, check_plan, check_spec, normalize_plan, normalize_spec, spec_text
+from ..schemas import ArchitectOutput, Endpoint, PlannerOutput, SpecOutput, check_acceptance, check_architecture, check_plan, check_spec, drop_leaked, normalize_plan, normalize_spec, spec_text
 
 T = TypeVar("T", bound=BaseModel)
 MAX_ATTEMPTS = 3
@@ -92,7 +92,7 @@ def structured_step(
 def run_spec(agent, llm, model_id, goal: str, emit):
     """Goal enrichment: a short goal becomes a small MVP spec; a detailed goal is followed as written. Both stay inside the size caps."""
     system = (PROMPTS_DIR / "spec.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", agent.role)
-    return structured_step(agent, llm, model_id, system, f"Goal: {goal}", SpecOutput, lambda s: check_spec(normalize_spec(s, goal)), emit)
+    return structured_step(agent, llm, model_id, system, f"Goal: {goal}", SpecOutput, lambda s: check_spec(normalize_spec(drop_leaked(s, goal), goal)), emit)
 
 
 def run_architect(agent, llm, model_id, goal: str, presets: dict[str, str], emit, forced_preset: str | None = None, spec: SpecOutput | None = None):

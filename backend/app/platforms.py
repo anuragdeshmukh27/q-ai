@@ -168,3 +168,39 @@ def match_platform(goal: str) -> SpecOutput | None:
         if rx.search(text):
             return SpecOutput.model_validate(spec)
     return None
+
+
+# --- a product name that is NOT in the table -----------------------------------------------------------------------------
+# "Build Notion", "Build a Dropbox clone": a short goal whose object is a proper noun. The model guesses a small spec from the name (it did well on Tinder,
+# Duolingo and Canva); the design, plan and tests then come from the rules path, like the known platforms (the free Architect path failed Notion and Dropbox),
+# and the page always says so. If the model cannot write a spec at all, a plain list app is built with the same banner.
+BRAND = re.compile(
+    r"^\s*(?i:please\s+)?(?i:build|make|create|develop|code|design)\s+(?i:me\s+)?(?i:an?\s+|the\s+)?(?i:(?:clone|copy|replica|version)\s+of\s+)?"
+    r"(?P<name>[A-Z][\w.+&'-]*(?:\s+[A-Z][\w.+&'-]*){0,2})(?i:\s+(?:clone|copy|replica|app|website|platform|site))?\s*[.!]?\s*$")
+
+
+def brand_name(goal: str) -> str | None:
+    """The product name of a short goal that names one (and is not a known platform), else None."""
+    text = goal.strip()
+    if ":" in text or len(text.split()) > MAX_WORDS:
+        return None
+    m = BRAND.match(text)
+    return m.group("name").rstrip(".!") if m else None
+
+
+def brand_note(brand: str) -> str:
+    return f"most of what the real {brand} does"
+
+
+def mark_small_version(spec: SpecOutput, brand: str) -> SpecOutput:
+    """The page and the spec must say that this is a small version made from a name: the first thing in `not_included`."""
+    spec.not_included = list(dict.fromkeys([brand_note(brand), *spec.not_included]))[:6]
+    return spec
+
+
+def generic_spec(brand: str) -> SpecOutput:
+    """A plain list app named after the product, for when the model could not write a spec: it still builds, and says what it is."""
+    return mark_small_version(SpecOutput.model_validate({
+        "title": brand, "summary": f"A simple list of items, made from the name {brand}.",
+        "features": ["Form to add an item with a name and a description", "List of items", "Edit and Delete buttons"],
+        "resources": [{"name": "items", "fields": [_f("name"), _f("description")], "operations": CRUD}]}), brand)

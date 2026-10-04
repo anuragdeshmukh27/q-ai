@@ -18,17 +18,20 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from goals import CHIPS  # noqa: E402
 
 GOAL = {label: goal for label, goal in CHIPS}
+ASK_TEXT = "Add a progress bar at the top showing how many todos are done"  # the exact line of the optional live step in docs/DEMO_SCRIPT.md
 
 DEMOS = {
     "calculator-fault": dict(goal=GOAL["calculator with history"], title="Calculator with history", app="Calculator", feature="QA bug fix",
                              args=["--inject-fault"]),
     "todo-approvals": dict(goal=GOAL["todo app"], title="Todo app with priorities", app="Todo app", feature="Approvals",
                            args=["--mode", "assisted"]),
-    "expense-ask": dict(goal=GOAL["expense tracker"], title="Expense tracker", app="Expense tracker", feature="Ask employee",
-                        args=["--ask", "frontend=Add a total spent card at the top"]),
+    "ask-employee": dict(goal=GOAL["todo app"], title="Todo app, then a request", app="Todo app", feature="Ask employee",
+                         args=["--ask", "frontend=" + ASK_TEXT]),
     "notes-search": dict(goal=GOAL["notes app"], title="Notes with search", app="Notes app", feature="Clean fast run", args=[]),
     "contact-book": dict(goal=GOAL["contact book"], title="Contact book", app="Contact book", feature="Search and groups", args=[]),
     "inventory": dict(goal=GOAL["inventory list"], title="Inventory list", app="Inventory", feature="Stock status", args=[]),
+    "reddit-replica": dict(goal=GOAL["reddit replica"], title="Reddit replica", app="Forum", feature="Posts, comments and votes", args=[]),
+    "instagram": dict(goal="Build Instagram", title="Instagram (small version)", app="Instagram", feature="A famous app by name", args=[]),
 }
 
 
@@ -72,18 +75,32 @@ def judge(name: str) -> list[str]:
         asked = [e for e in ev if e["type"] == "approval_needed"]
         if len(asked) < 5:
             bad.append(f"only {len(asked)} approvals")
-    if name == "expense-ask":
-        if not any(e["type"] == "message_sent" and e.get("from") == "human" and e.get("to") == "frontend" for e in ev):
+    if name == "ask-employee":
+        if not any(e["type"] == "message_sent" and e.get("from") == "human" and e.get("to") == "frontend" and ASK_TEXT in e.get("text", "") for e in ev):
             bad.append("the Ask-employee message is missing")
         if types.count("project_done") < 2 or "project_resumed" not in types:
             bad.append("the request was not run after the build")
         else:
             after = ev[types.index("project_resumed"):]
             edits = [e for e in after if e["type"] == "file_changed" and e.get("agent") == "frontend" and e["path"].startswith("static/")]
+            html = " ".join(e.get("diff", "") for e in edits if e["path"] == "static/index.html").lower()
+            js = " ".join(e.get("diff", "") for e in edits if e["path"] == "static/app.js").lower()
             if not edits:
                 bad.append("Meera did not change the page")
-            elif not any("total spent" in e.get("diff", "").lower() for e in edits):
-                bad.append("the page change does not mention 'total spent'")
+            elif "progress" not in html:
+                bad.append("the page has no progress bar in index.html")
+            elif "progress" not in js:
+                bad.append("app.js never fills the progress bar (a bar that never moves)")
+    if name == "reddit-replica":
+        spec = next((e for e in ev if e["type"] == "spec_ready"), {})
+        if not any(e["type"] == "look_chosen" and e.get("layout") == "feed" for e in ev):
+            bad.append("not a feed layout")
+        if "comments" not in spec.get("text", "").lower():
+            bad.append("the spec has no comments")
+    if name == "instagram":
+        spec = next((e for e in ev if e["type"] == "spec_ready"), {})
+        if not spec.get("not_included"):
+            bad.append("no 'Not in this version' list")
     return bad
 
 

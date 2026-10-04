@@ -20,6 +20,7 @@ from pathlib import Path
 from .agent.actions import Action
 from .agent.loop import AgentResult, run_agent
 from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner, run_spec
+from . import authorship
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
 from .agent.review import ReviewOutput, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
@@ -38,7 +39,7 @@ from .contract_tests import api_test_source, edge_test_source, ui_page_test_sour
 from .scaffold import db_stub, endpoints_for_task, route_stub
 from .relations import plan_for_relations, resource_for_file, synthesize_design
 from .look import choose_look
-from .platforms import match_platform
+from .platforms import brand_name, generic_spec, mark_small_version, match_platform
 from .scope import classify_goal
 from .relation_tests import db_test_source
 from .uistub import is_placeholder, page_stub, script_stub
@@ -123,6 +124,11 @@ class Orchestrator:
         self.design: ArchitectOutput | None = None
         self.spec: SpecOutput | None = None
         self.tests_passed, self.test_summary, self.app_url = False, "", ""
+        self.generated: dict[str, str] = {}  # app files the rules wrote (stubs, the generated page): the reference for "who wrote the code"
+        self.repaired: set[str] = set()  # files the contract repair rewrote
+        self.authorship: dict = {}
+        self.known_platform = False  # the spec came from the platform table (platforms.py), not from the model
+        self.brand: str | None = None  # a product name that is not in the table
 
     # -- helpers --------------------------------------------------------------------
     def _model(self, agent: AgentConfig) -> ModelConfig:
@@ -190,12 +196,7 @@ class Orchestrator:
             scope = classify_goal(self.goal)
             if scope.level == "impossible":  # before any model work: say what Q cannot build, and what it can
                 raise AgentFailed("architect", scope.message)
-            self._design()
-            self._plan()
-            self._execute_tasks()
-            self._qa_phase()
-            self._polish()
-            self._verify()
+            self._pipeline()
         except AgentFailed as e:
             self.problems.append(str(e))
             self.emit("error", agent=e.agent, message=e.reason)
@@ -204,12 +205,24 @@ class Orchestrator:
             self.emit("error", agent="orchestrator", message="the build stopped unexpectedly; see the log")
         return self._finish(time.time() - started)
 
+    def _pipeline(self) -> None:
+        """The team's workflow (the single-agent baseline in baseline.py replaces it)."""
+        self._design()
+        self._plan()
+        self._execute_tasks()
+        self._qa_phase()
+        self._polish()
+        self._verify()
+
     def _design(self) -> None:
         arch_agent = self.agents["architect"]
         model = self._model(arch_agent)
         self.emit("agent_state", agent="architect", state="thinking")
         presets = {n: load_preset(n).description for n in list_presets()}
         known = match_platform(self.goal)  # a famous app by name: its small version is written down, so it is the same on every run
+        self.known_platform = known is not None
+        brand = None if known is not None else brand_name(self.goal)  # a product name that is not in the table: see platforms.py
+        self.brand = brand
         try:  # goal enrichment is a bonus: if the model cannot produce a valid spec, the Architect designs from the goal alone
             if known is not None:
                 self.spec = normalize_spec(known, self.goal)
@@ -218,13 +231,29 @@ class Orchestrator:
                 self.spec, sst = run_spec(arch_agent, self.llm, model.id, self.goal, self.emit)
                 normalize_spec(self.spec, self.goal)
                 self._stat("architect", model, sst["iterations"], sst["prompt_tokens"], sst["completion_tokens"], sst["seconds"])
+                if brand:
+                    mark_small_version(self.spec, brand)
             self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec),
                       not_included=self.spec.not_included)
         except AgentFailed:
             self.spec = None
+        if self.spec is None and brand:  # the model could not write a spec for a name it does not know: a plain list app, and the page says so
+            self.spec = normalize_spec(generic_spec(brand), self.goal)
+            self.emit("agent_thought", agent="architect", text=f"I could not make a spec from the name {brand}: building a plain list app and saying so on the page", model="rules", tokens=0, seconds=0.0)
+            self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec), not_included=self.spec.not_included)
         self.emit("agent_state", agent="architect", state="thinking")
-        if self.spec is not None and (is_relational(self.spec) or known is not None):  # a famous app's contract is always generated by rules
-            design = self._relational_design(presets)
+        if self.spec is not None and (is_relational(self.spec) or known is not None or brand):  # a famous app's (or a named product's) contract is always generated by rules
+            try:
+                design = self._relational_design(presets)
+            except AgentFailed as e:
+                if not brand or known is not None:
+                    raise
+                # the model's guess at an unknown name made a contract that fails the checks (a `type` field without options, say): a plain list app, and the page says so
+                self.emit("agent_thought", agent="architect", text=f"The small version I guessed from the name {brand} did not pass the design checks ({e.reason[:120]}): building a plain list app and saying so on the page",
+                          model="rules", tokens=0, seconds=0.0)
+                self.spec = normalize_spec(generic_spec(brand), self.goal)
+                self.emit("spec_ready", title=self.spec.title, summary=self.spec.summary, features=self.spec.features, text=spec_text(self.spec), not_included=self.spec.not_included)
+                design = self._relational_design(presets)
         else:
             design, st = run_architect(arch_agent, self.llm, model.id, self.goal, presets, self.emit, self.forced_preset, self.spec)
             self._stat("architect", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
@@ -320,6 +349,7 @@ class Orchestrator:
         else:
             return None
         self._write(agent, path, content, root=wt)
+        self.generated.setdefault(path, content)
         return path, content
 
     def _page_stub(self, t: dict, agent: AgentConfig, wt: Path, design: ArchitectOutput) -> tuple[str, str] | None:
@@ -332,6 +362,7 @@ class Orchestrator:
             if content is None or (target.exists() and not is_placeholder(target.read_text(encoding="utf-8", errors="replace"))):
                 continue
             self._write(agent, path, content, root=wt)
+            self.generated.setdefault(path, content)
             written.append((path, content))
         if not written:  # an earlier task (or attempt) already made the page: show its files, so the engineer edits them instead of writing a new script from scratch
             for p in t["files"]:
@@ -408,8 +439,14 @@ class Orchestrator:
             text = (f"Task {t['id']}: {t['title']}\nA human on the team asked you directly: {t['request']}\n"
                     f"The request is NOT done yet, even if the app already has something similar and the tests pass: make the change the human described, so it is "
                     f"visible in the app (for example a card or section where they said), with the smallest edit. "
-                    + ("A new card, section or label is markup: edit static/index.html first (static/app.js already fills the ids on the page, for example the total and the list); "
-                       "change static/app.js only for data the page does not show yet, and never rewrite it. "
+                    + ("Make the change with `replace` (a small edit of an existing file), never by writing the whole file again: one `replace` per edit, and `pattern` is a short text that occurs "
+                       "exactly once in the file (copy it from the current content below). The page has two hooks made for requests: the HTML comment `<!-- request-hook:top -->` (the top of the page, "
+                       "before the first card) in static/index.html, and the JavaScript comment `// request-hook:loaded` in static/app.js (inside load(), after the list is read; there `data.items` is the whole list). Each hook is one short line, so copy it whole as the pattern. "
+                       "To use a hook, replace it with itself followed by your lines (pattern = the hook line, content = the hook line, a new line, then your lines), so the hook stays for the next request. "
+                       "A new card, section, bar or label is markup: put it at `<!-- request-hook:top -->` when the human says \"at the top\", and fill it from the items at `// request-hook:loaded`. "
+                       "A progress bar is ONE kit call, `UI.progress(document.getElementById('progress'), done, total)` (the label \"N of M done\" is computed; never type the numbers), with done for example `data.items.filter((i) => i.done).length` and total `data.items.length`: "
+                       "the kit draws the bar inside an empty `<div id=\"progress\"></div>` that you put in static/index.html. "
+                       "If a hook is missing from the file, use `</header>` (index.html) or the line `const data = await res.json();` (app.js, the first one in load()) as the pattern instead. "
                        "If you move something (the total, a counter) to a new place, delete the old one: an id may appear only once on the page. " if t["owner"] == "frontend" else "")
                     + f"Then run_tests. Do not rewrite files. A counter, total or badge you add always has a "
                     f"text label (for example '2 pending', never just '2'); anything you add to a list shows every important field of an item.\nAcceptance criteria:\n{crit}")
@@ -558,6 +595,8 @@ class Orchestrator:
         if not passed:
             self.emit("contract_repair", task=t["id"], path=path, ok=False, reason=summary)
             return False
+        self.generated[path] = source
+        self.repaired.add(path)
         self.repo.commit(wt, f"[{agent.id}] {t['title']} (from the contract)"[:72])
         self.memory.append_decision(f"Contract repair: {agent.name} could not finish {path} ({reason}); the functions the contract implies were applied and every test passes")
         self.emit("contract_repair", task=t["id"], path=path, ok=True, reason=reason)
@@ -1045,7 +1084,23 @@ class Orchestrator:
             except PortError as e:
                 self.problems.append(f"the app did not start: {e}")
 
+    def _provenance(self) -> dict:
+        """Which parts of the design came from the model and which from rules (the other half of "who wrote the code")."""
+        rules = bool(self.design and self.design.resources)
+        return {"spec_by": "platform table" if self.known_platform else ("model" if self.spec else "none"), "contract_by": "rules" if (rules or self.brand) else "model",
+                "plan_by": "rules" if rules else "model", "contract_repairs": len(self.repaired)}
+
+    def _measure_authorship(self) -> None:
+        if not (self.root and self.design):
+            return
+        try:
+            self.authorship = authorship.measure(self.root, self.generated, self.repaired, self.design.preset, self._provenance())
+            authorship.save(self.root, self.authorship)
+        except Exception:  # a report problem must never fail a build
+            self.authorship = {}
+
     def _finish(self, seconds: float) -> BuildResult:
+        self._measure_authorship()
         ok = bool(self.root) and not self.problems and self.tests_passed and all(t["status"] in ("done", "skipped") for t in self.tasks) and bool(self.tasks)
         if self.memory:
             self.memory.write("agents.json", json.dumps(self.stats, indent=2))

@@ -2,7 +2,7 @@
 import type { RecordingMeta } from './api'
 
 export const DEFAULT_DEMO = 'calculator-fault'
-const ORDER = ['calculator-fault', 'todo-approvals', 'expense-ask', 'notes-search', 'contact-book', 'inventory']
+const ORDER = ['calculator-fault', 'todo-approvals', 'ask-employee', 'notes-search', 'contact-book', 'inventory', 'reddit-replica', 'instagram']
 
 export interface DemoCard {
   name: string

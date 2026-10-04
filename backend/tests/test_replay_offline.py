@@ -134,7 +134,7 @@ SHIPPED = sorted(d.name for d in REPO_RECORDINGS.glob("*") if (d / "meta.json").
 
 def test_the_demo_set_is_complete():
     """The demo picker needs all of these; an empty list would make the parametrized replay test below pass without testing anything."""
-    assert {"calculator-fault", "todo-approvals", "expense-ask", "notes-search", "contact-book", "inventory"} <= set(SHIPPED)
+    assert {"calculator-fault", "todo-approvals", "ask-employee", "notes-search", "contact-book", "inventory", "reddit-replica", "instagram"} <= set(SHIPPED)
 
 
 @pytest.mark.parametrize("name", SHIPPED)
@@ -170,9 +170,15 @@ def test_every_shipped_recording_replays_offline_exactly_as_recorded_and_its_app
             assert {"fault_injected", "bug_filed", "bug_fixed"} <= set(types)
         if name == "todo-approvals":
             assert types.count("approval_needed") >= 5 and "approval_resolved" in types
-        if name == "expense-ask":
+        if name == "ask-employee":
             assert types.count("project_done") == 2 and "project_resumed" in types
-            assert any(e["type"] == "message_sent" and e["from"] == "human" and e["to"] == "frontend" for e in got)
-            assert any(e["type"] == "file_changed" and e["path"].startswith("static/") and "total spent" in e["diff"].lower() for e in got[types.index("project_resumed"):])
+            assert any(e["type"] == "message_sent" and e["from"] == "human" and e["to"] == "frontend" and "progress bar" in e["text"] for e in got)
+            after = got[types.index("project_resumed"):]
+            assert any(e["type"] == "file_changed" and e["path"] == "static/index.html" and "progress" in e["diff"].lower() for e in after)
+            assert any(e["type"] == "file_changed" and e["path"] == "static/app.js" and "UI.progress" in e["diff"] for e in after)
+        if name == "reddit-replica":
+            assert any(e["type"] == "look_chosen" and e["layout"] == "feed" for e in got)
+        if name == "instagram":
+            assert next(e for e in got if e["type"] == "spec_ready")["not_included"]
     finally:
         server.stop()

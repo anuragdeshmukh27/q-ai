@@ -64,7 +64,10 @@ def main() -> int:
     ap.add_argument("--tag", default="after")
     ap.add_argument("--only", default="")
     ap.add_argument("--reps", type=int, default=1)
+    ap.add_argument("--goal", action="append", default=[], help="build these goals instead of the built-in list (no expected resources: only 'built, banner shown' or 'refused' is judged)")
     args = ap.parse_args()
+    if args.goal:
+        GOALS[:] = [(g, []) for g in args.goal]
     tree = Path(args.tree)
     pick = [int(x) for x in args.only.split(",")] if args.only else list(range(1, len(GOALS) + 1))
     rows = []

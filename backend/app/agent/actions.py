@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, model_validator
 
 ActionName = Literal[
-    "list_dir", "read_file", "write_file", "implement", "search", "run", "run_tests", "send_message", "ask_human", "finish"
+    "list_dir", "read_file", "write_file", "implement", "replace", "search", "run", "run_tests", "send_message", "ask_human", "finish"
 ]
 
 REQUIRED: dict[str, tuple[str, ...]] = {
@@ -18,6 +18,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "read_file": ("path",),
     "write_file": ("path", "content"),
     "implement": ("path", "function", "content"),
+    "replace": ("path", "pattern", "content"),
     "search": ("pattern",),
     "run": ("command",),
     "run_tests": (),
@@ -44,7 +45,7 @@ class Action(BaseModel):
     @classmethod
     def _misfiled_code(cls, data):
         """Small models sometimes put the code of write_file/implement into the wrong text field; accept it."""
-        if isinstance(data, dict) and data.get("action") in ("implement", "write_file") and data.get("content") is None:
+        if isinstance(data, dict) and data.get("action") in ("implement", "write_file", "replace") and data.get("content") is None:
             for alt in ("body", "code", "text", "command", "summary"):
                 if isinstance(data.get(alt), str) and data[alt].strip():
                     data = {**data, "content": data[alt], alt: None}
