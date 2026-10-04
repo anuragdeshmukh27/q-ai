@@ -118,6 +118,7 @@ def _run_agent(
     res = AgentResult("running")
     dirty = False  # code changed since the last test run
     stuck = 0  # consecutive rejected writes: the model keeps re-sending the same broken code
+    invalid, invalid_note = 0, ""  # consecutive replies that were not a valid action, and why the last one was refused
 
     def result(status: str, reason: str = "", **kw) -> AgentResult:
         res.status, res.reason, res.iterations = status, reason, tracker.iterations
@@ -140,10 +141,15 @@ def _run_agent(
         emit("iteration", agent=agent.id, n=n, max=agent.max_iterations)
         emit("agent_state", agent=agent.id, state="thinking")
         messages = fit_messages(system, first_user, steps, budget)
+        if invalid_note:  # the model is told why its last reply was refused (it would otherwise send the same one again)
+            messages = [*messages, {"role": "user", "content": f"Your last reply was refused: {invalid_note}\nReply again with ONE complete JSON action."}]
         try:
-            out = llm.call(model_id, messages, Action, temperature=min(0.9, BASE_TEMPERATURE + 0.3 * stuck))  # warmer when stuck, to escape loops
+            out = llm.call(model_id, messages, Action, temperature=min(0.9, BASE_TEMPERATURE + 0.3 * (stuck + invalid)))  # warmer when stuck, to escape loops
+            invalid, invalid_note = 0, ""
         except InvalidOutputError as e:
             emit("error", agent=agent.id, message=f"model returned invalid output: {e}")
+            invalid += 1  # the retry says why the reply was refused and is a little warmer, so it can differ
+            invalid_note = str(e)[:400]
             tracker.record_failed()
             reason = tracker.check()
             if reason:

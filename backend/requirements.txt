@@ -9,3 +9,4 @@ gitpython>=3.1
 python-dotenv>=1.0
 pytest>=8.0
 pytest-asyncio>=0.24
+flask>=3.0  # imported Flask projects (Finish my project) run in Q's own environment
