@@ -226,3 +226,20 @@ def test_the_api_declines_a_missing_folder_politely_before_anything_starts(tmp_p
 
     r = TestClient(create_app()).post("/api/projects", json={"goal": "", "mode": "supervised", "demo": False, "import_from": str(tmp_path / "nope")})
     assert r.status_code == 422 and "could not find" in r.json()["detail"]
+
+
+def test_a_well_known_missing_import_is_added_by_the_sandbox_and_an_invented_name_is_not(tmp_path):
+    from app.config import load_agents
+    from app.tools import ToolBox
+
+    (tmp_path / "main.py").write_text("import os\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.post('/b/{id}/return')\ndef give_back(id: int):\n    raise NotImplementedError\n", encoding="utf-8")
+    agent = load_agents()["backend"].model_copy(update={"owned_paths": ["main.py"], "forbidden_paths": []})
+    tb = ToolBox(tmp_path, agent, mode=lambda: "autonomous")
+    tb.auto_imports = {"HTTPException": "from fastapi import HTTPException", "timedelta": "from datetime import timedelta"}
+    r = tb.execute(Action.model_validate(act("implement", path="main.py", function="give_back", content="if id > 5:\n    raise HTTPException(404, 'nope')\nreturn {'due': str(timedelta(days=14))}")))
+    assert r.ok, r.output
+    text = (tmp_path / "main.py").read_text(encoding="utf-8")
+    assert text.index("from fastapi import HTTPException") < text.index("app = FastAPI()") and "from datetime import timedelta" in text and text.startswith("import os\nfrom fastapi import FastAPI\nfrom ")
+    compile(text, "main.py", "exec")
+    bad = tb.execute(Action.model_validate(act("implement", path="main.py", function="give_back", content="return db.nothing(id)")))
+    assert not bad.ok

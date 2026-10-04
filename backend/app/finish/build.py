@@ -86,7 +86,19 @@ class FinishBuild(Orchestrator):
         tb = super()._toolbox(agent, self._scoped_tests(agent.id) or test_cmd, extra_allowed, root)
         tb.allow_new_functions = True
         tb.name_hints = self._name_hints(agent.id)
+        tb.auto_imports = self._auto_imports()
         return tb
+
+    def _auto_imports(self) -> dict[str, str]:
+        """Well-known names and where they come from: Q adds the import when an engineer's function body uses one the file does not have."""
+        out = {"datetime": "from datetime import datetime", "timedelta": "from datetime import timedelta", "date": "from datetime import date", "json": "import json", "re": "import re",
+               "os": "import os", "time": "import time", "math": "import math", "uuid": "import uuid", "sqlite3": "import sqlite3"}
+        fw = self.analysis.framework if self.analysis else ""
+        if fw == "fastapi":
+            out["HTTPException"] = "from fastapi import HTTPException"
+        elif fw == "flask":
+            out.update(request="from flask import request", jsonify="from flask import jsonify", abort="from flask import abort")
+        return out
 
     def _name_hints(self, owner: str) -> dict[str, str]:
         """For the names a 7B keeps inventing: what this project does instead (read from the file of the current task)."""

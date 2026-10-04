@@ -138,6 +138,7 @@ class ToolBox:
         self.log: list[dict] = []
         self.files_touched: list[str] = []
         self.name_hints: dict[str, str] = {}  # Finish my project: what to do instead, per name a 7B keeps inventing (`HTTPException` in a Flask app, `db` where the file has get_db())
+        self.auto_imports: dict[str, str] = {}  # Finish my project: a well-known name the body uses but the file lacks is imported for the engineer (name -> import line)
         self.allow_new_functions = False  # Finish my project: `implement` may create a function when `function` is written as a signature, `get_stats()`
 
     @property
@@ -253,6 +254,14 @@ class ToolBox:
                 found.append((n.func.value.id, n.func.attr, rel, sorted(x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) and not x.name.startswith("_"))))
         return found
 
+    @staticmethod
+    def _add_imports(source: str, lines: list[str]) -> str:
+        """Put the import lines after the file's last top-level import (or at the very top when it has none)."""
+        have = source.split(chr(10))
+        end = max((n.end_lineno or 0 for n in ast.parse(source).body if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
+        new = [l for l in lines if l not in have]
+        return chr(10).join(have[:end] + new + have[end:])
+
     def _name_hint(self, names: list[str]) -> str:
         return next((" " + self.name_hints[n] for n in names if n in self.name_hints), "")
 
@@ -299,6 +308,14 @@ class ToolBox:
         if fn is not None and _must_return(fn) and not any(isinstance(n, ast.Return) and n.value is not None for n in ast.walk(fn)):
             return _fail(f"not applied: {a.function} must return its result (a route returns the response, a database function returns the row, list or flag) "
                          "but your body has no `return <value>`. Add it.")
+        if self.auto_imports:  # a 7B cannot edit the top of the file with `implement` and keeps asking for it: Q adds the import line, like an IDE would
+            wanted = [n for n in [*undefined_calls(tree), *undefined_variables(tree, a.function or "")[0]] if n in self.auto_imports]
+            if wanted:
+                new_source = self._add_imports(new_source, [self.auto_imports[n] for n in dict.fromkeys(wanted)])
+                try:
+                    tree = ast.parse(new_source)
+                except SyntaxError:
+                    return _fail("not applied: the import could not be added; write the import inside the function body.")
         if self.allow_new_functions:
             ghost = self._unknown_module_calls(tree)
             if ghost:
