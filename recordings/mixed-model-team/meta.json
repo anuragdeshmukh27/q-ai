@@ -1,0 +1,31 @@
+{
+  "name": "mixed-model-team",
+  "goal": "Build a Q&A forum: questions with title, details and author, answers to each question, upvote questions and answers, sort by top or newest",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-06 02:07:09",
+  "seconds": 203,
+  "events": 501,
+  "llm_calls": 42,
+  "models": [
+    "qwen2.5-coder:14b",
+    "qwen2.5-coder:7b",
+    "qwen3:4b"
+  ],
+  "snapshot": true,
+  "title": "Q&A forum, a mixed team",
+  "app": "Q&A forum",
+  "feature": "Three models, one team",
+  "stats": {
+    "modules": 2,
+    "tables": 2,
+    "endpoints": 10,
+    "pages": 6,
+    "functions": 22,
+    "lines": 294,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.265,
+    "functions_repair": 0
+  }
+}
