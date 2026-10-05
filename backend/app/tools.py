@@ -362,7 +362,7 @@ class ToolBox:
         old = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
         if p.exists() and old == content:
             return _fail(f"no change: {rel} already has exactly this content, so nothing was fixed. Look at the failure again "
-                         "and change the specific lines it points to.", decision="allow", unchanged=True)
+                         "and change the specific lines it points to. If you have already changed every function the failure points to, do not send the others again: call run_tests now.", decision="allow", unchanged=True)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8", newline="\n")
         diff = "".join(
