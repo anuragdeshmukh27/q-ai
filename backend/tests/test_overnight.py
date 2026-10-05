@@ -60,3 +60,16 @@ def test_a_retry_after_invalid_output_is_warmer():
 def test_fit_messages_keeps_the_task_first():
     msgs = fit_messages("sys", "task", [], 1000)
     assert msgs[1]["content"].startswith("task")
+
+
+def test_size_and_missing_test_claims_are_dropped_when_the_files_disprove_them(tmp_path):
+    (tmp_path / "database").mkdir()
+    (tmp_path / "tests" / "db").mkdir(parents=True)
+    (tmp_path / "database" / "mentors.py").write_text("def add_mentor():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "tests" / "db" / "test_mentors.py").write_text("def test_add():\n    pass\n", encoding="utf-8")
+    review = ReviewOutput(verdict="REQUEST_CHANGES", summary="s", items=[ReviewItem(
+        file="database/mentors.py", problem="The file contains a large number of lines and a single function doing several jobs. It also lacks tests for `add_mentor`.")])
+    assert drop_unfounded(review, tmp_path).verdict == "PASS"
+    (tmp_path / "tests" / "db" / "test_mentors.py").unlink()
+    only_tests = ReviewOutput(verdict="REQUEST_CHANGES", summary="s", items=[ReviewItem(file="database/mentors.py", problem="There are no tests for `add_mentor`.")])
+    assert drop_unfounded(only_tests, tmp_path).verdict == "REQUEST_CHANGES"

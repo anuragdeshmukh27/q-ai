@@ -109,6 +109,8 @@ _MISSING_CLAIM = re.compile(r"(?:does not|doesn't|did not|not) (?:implement|cont
 
 
 _LINES_CLAIM = re.compile(r"\b(\d+) lines?\b|over the \d+-line|line limit", re.I)
+_SIZE_OPINION = re.compile(r"large number of lines|several jobs|doing (?:several|many|multiple) (?:jobs|things)|too (?:long|large|many lines)", re.I)
+_TESTS_CLAIM = re.compile(r"(?:lacks?|missing|no|without|not (?:have|has|include))\b[^.]*\btests?\b|\bnot (?:tested|covered)", re.I)
 _OPINION = re.compile(r"\b(inefficient|consider|could be|should be (?:done|moved|placed|defined)|refactor|readab|best practice|more (?:efficient|robust|maintainable)|separate (?:file|module|function))", re.I)
 
 
@@ -123,6 +125,10 @@ def drop_unfounded(review: ReviewOutput, root: Path) -> ReviewOutput:
             source = f.read_text(encoding="utf-8", errors="replace")
             if _LINES_CLAIM.search(i.problem) and len(source.splitlines()) <= MAX_FILE_LINES:
                 continue  # 'the file has 65 lines, over the 150-line limit'
+            if _SIZE_OPINION.search(i.problem):
+                continue  # 'a large number of lines', 'a single function doing several jobs': the size check is static and has already run
+            if _TESTS_CLAIM.search(i.problem) and any(root.glob(f"tests/**/*{f.stem}*.py")):
+                continue  # 'lacks tests for X': the database tests are generated, and a branch with no tests at all is a static finding
             if _OPINION.search(i.problem):
                 continue  # style and efficiency are not defects (the reviewer's own prompt says so)
             if "SCHEMA" in i.problem and re.search(r"connect\(SCHEMA\)", source):
