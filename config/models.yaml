@@ -13,7 +13,7 @@ router:
     Why every role runs on qwen2.5-coder:7b: no other model beat it by the margin. qwen3:4b ties it on Database and Frontend and is close on Backend,
     but fails the Planner (0 of 4) and QA triage (2 of 8); llama3.2:3b fails every engineering task. Swapping models also costs time: a build with the
     Reviewer on qwen3:4b passed but took 233 s (8 model swaps) against about 120 s on the 7B alone, because each swap is a model load and the GPU
-    serves one model at a time. A different model can still be chosen per employee in the inspector.
+    serves one model at a time. qwen2.5-coder:14b (partial offload, about 5.7 GB VRAM + 4.3 GB RAM, 12 tokens/s) ties the 7B on Architect, Reviewer, QA triage and the Task C analyst and finish engineer (benchmark in PROGRESS.md), so it never passes the margin and is 5 to 8 times slower per answer. A different model can still be chosen per employee in the inspector.
 keep_alive: 60m
 models:
   - id: qwen25-coder-7b
@@ -36,6 +36,17 @@ models:
     capabilities: [reasoning, review]
     num_ctx: 8192
     vram_gb: 2.5
+    enabled: true
+  # Partial offload (8 GB VRAM + 32 GB RAM): Ollama puts as many layers on the GPU as fit and keeps the rest in system RAM. vram_gb / ram_gb are measured
+  # at num_ctx 8192 (scripts/model_perf.py, backend/benchmarks/model_perf.json). The scheduler never loads one of these next to another model.
+  - id: qwen25-coder-14b
+    provider: ollama
+    name: qwen2.5-coder:14b
+    capabilities: [coding, frontend, sql, reasoning, review]
+    num_ctx: 8192
+    vram_gb: 5.7
+    ram_gb: 4.3
+    keep_alive: 5m
     enabled: true
   # Cloud entries: effective only when `requires_env` is set (see registry.py).
   # gemini-2.5-flash is no longer served to new keys; 3.8-flash is the primary.

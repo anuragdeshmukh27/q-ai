@@ -21,7 +21,9 @@ class ModelConfig(BaseModel):
     name: str
     capabilities: list[str] = Field(default_factory=list)
     num_ctx: int = 8192
-    vram_gb: float = 0
+    vram_gb: float = 0  # GPU memory the model takes at its num_ctx
+    ram_gb: float = 0  # partial offload: the part of the model that stays in system RAM (0 = fits in VRAM)
+    keep_alive: str | None = None  # how long Ollama keeps THIS model after its last request (default: the registry's)
     enabled: bool = True
     requires_env: str | None = None
     fallback: str | None = None
@@ -29,6 +31,11 @@ class ModelConfig(BaseModel):
     @property
     def local(self) -> bool:
         return self.provider == "ollama"
+
+    @property
+    def big(self) -> bool:
+        """A local model that does not fit the GPU alone: its layers are split between VRAM and RAM, so it runs by itself."""
+        return self.local and self.ram_gb > 0
 
 
 class ModelRegistry:

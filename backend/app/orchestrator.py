@@ -137,12 +137,13 @@ class Orchestrator:
         self.brand: str | None = None  # a product name that is not in the table
 
     # -- helpers --------------------------------------------------------------------
-    def _model(self, agent: AgentConfig) -> ModelConfig:
+    def _model(self, agent: AgentConfig, route_as: str | None = None) -> ModelConfig:
+        """`route_as`: the router role to look up when the person is not the agent's own role (the Task C analyst is the Architect's chair, the finish engineers are the engineers')."""
         mid = self.overrides.get(agent.id)
         if mid:
             m = self.registry.get(mid)
         elif self.router is not None:
-            m = self.router.choose(agent.id, agent.model_capability, local_only=self.local_only).model
+            m = self.router.choose(route_as or agent.id, agent.model_capability, local_only=self.local_only).model
         else:
             m = self.registry.default_for(agent.model_capability)
         if self.local_only and not m.local:
@@ -194,6 +195,15 @@ class Orchestrator:
     def _save_tasks(self) -> None:
         assert self.memory
         self.memory.write("tasks.json", json.dumps({"tasks": self.tasks}, indent=2))
+
+    def _release_big_models(self) -> None:
+        """The build is over: a partially offloaded model (14b/32b) gives its VRAM and RAM back instead of waiting for its keep_alive."""
+        sched = getattr(self.llm, "scheduler", None)
+        if sched is not None:
+            try:
+                sched.release_big()
+            except Exception:
+                pass
 
     # -- the build ------------------------------------------------------------------
     def run(self) -> BuildResult:
@@ -1233,6 +1243,7 @@ class Orchestrator:
                 self._commit("[q] build record")
             except RuntimeError:
                 pass
+        self._release_big_models()
         self.finished = True
         self._emit_cost(seconds)
         self.emit("project_done", ok=ok, seconds=round(seconds), problems=self.problems, app_url=self.app_url)

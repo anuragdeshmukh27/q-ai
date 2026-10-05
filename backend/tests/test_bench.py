@@ -48,3 +48,12 @@ def test_the_seeded_defects_are_real_and_the_clean_diffs_are_clean():
             assert any(f.file == case["defect_file"] for f in found), case["id"]
         else:
             assert not found
+
+
+def test_the_analyst_cases_have_a_clean_answer_key():
+    from benchmarks.tasks import ANALYST_CASES, _norm
+    from app.finish.analyze import matches
+    for case, (readme, routes, expected) in ANALYST_CASES.items():
+        assert expected and all(p in readme for _, p in expected), case
+        assert not any(matches(routes, m, p) for m, p in expected), f"{case}: an expected feature already exists"
+    assert _norm("/items/<id>/quantity/") == _norm("/items/{item_id}/quantity") == "/items/{}/quantity"

@@ -67,6 +67,10 @@ class FinishBuild(Orchestrator):
         self.design = ArchitectOutput(preset="fastapi-vanilla", architecture="An imported project", endpoints=[])  # only its preset (test command) is used
 
     # -- the people ---------------------------------------------------------------------
+    def _model(self, agent, route_as: str | None = None):
+        """The finishing engineers are benchmarked as one role ("finish"), whatever their desk: they all work from finish.md on one gap at a time."""
+        return super()._model(agent, route_as or ("finish" if agent.system_prompt_file == "finish.md" else None))
+
     def _engineer(self, owner: str):
         """The engineer of the current task may change that task's file and the database module, and nothing else: a 7B that is free to roam edits other tasks' files."""
         a = self.agents[owner]
@@ -258,7 +262,7 @@ class FinishBuild(Orchestrator):
         """A README that is prose, not a checklist: the model lists what it says is not done (validated, and only endpoints that do not exist)."""
         agent = self.agents["architect"]
         try:
-            model = self._model(agent)
+            model = self._model(agent, "analyst")
             system = (PROMPTS_DIR / "analyst.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", "Analyst")
             routes = "\n".join(f"- {r.method} {r.path}" for r in a.routes)
             found, st = structured_step(agent, self.llm, model.id, system, f"README:\n{a.readme}\n\nRoutes that exist:\n{routes}", ReadmeFeatures, lambda f: [], self.emit)

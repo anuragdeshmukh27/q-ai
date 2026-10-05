@@ -25,7 +25,7 @@ class OllamaProvider:
             "messages": messages,
             "stream": False,
             "think": False,  # qwen3 is ~4x slower with thinking on; harmless for other models
-            "keep_alive": self.keep_alive,
+            "keep_alive": model.keep_alive or self.keep_alive,
             "options": {"num_ctx": model.num_ctx, "temperature": temperature, "num_predict": MAX_NEW_TOKENS},
         }
         if schema:

@@ -65,8 +65,35 @@ def unload_everything(control: HttpOllamaControl) -> None:
     time.sleep(1.0)
 
 
+TASK_TIMEOUT = 600  # seconds: a task that runs longer is stopped and recorded as a failed run ("timeout")
+
+
+def run_with_timeout(task: Task, ctx: Ctx, timeout: float = TASK_TIMEOUT) -> Outcome:
+    """Runs one task in a thread. Past the limit the task is asked to stop (a build's stop button) and the run is a failure; the GPU is only handed on after it stopped."""
+    box: dict[str, Outcome] = {}
+
+    def target() -> None:
+        try:
+            box["o"] = task.run(ctx)
+        except Exception as e:  # a crash is a failed run, never a crashed benchmark
+            box["o"] = Outcome(False, 0, 0, f"crashed: {type(e).__name__}: {str(e)[:160]}")
+
+    t = threading.Thread(target=target, daemon=True, name=f"bench-{task.id}")
+    t.start()
+    t.join(timeout)
+    if not t.is_alive():
+        return box["o"]
+    for stop in ctx.stoppers:
+        try:
+            stop()
+        except Exception:
+            pass
+    t.join(300)  # at most one request still in flight
+    return Outcome(False, 0, 0, f"timeout: still running after {round(timeout / 60)} minutes" + ("" if not t.is_alive() else " (and did not stop)"))
+
+
 def run_benchmarks(model_ids: list[str], roles: list[str] | None, board: Leaderboard, reps: int | None = None,
-                   log: Callable[[str], None] = print, workroot: Path | None = None, only: list[str] | None = None) -> list[RunRecord]:
+                   log: Callable[[str], None] = print, workroot: Path | None = None, only: list[str] | None = None, timeout: float = TASK_TIMEOUT) -> list[RunRecord]:
     registry = ModelRegistry.load(env={})  # local models only: the leaderboard is the local-first story
     control = HttpOllamaControl()
     llm = LLMClient(registry, scheduler=ModelScheduler(registry, control))
@@ -86,13 +113,11 @@ def run_benchmarks(model_ids: list[str], roles: list[str] | None, board: Leaderb
                 work.mkdir(parents=True, exist_ok=True)
                 t0 = time.time()
                 with VramPeak(baseline) as peak:
-                    try:
-                        o = task.run(Ctx(model, registry, llm, work))
-                    except Exception as e:  # a crash is a failed run, never a crashed benchmark
-                        o = Outcome(False, 0, 0, f"crashed: {type(e).__name__}: {str(e)[:160]}")
+                    o = run_with_timeout(task, Ctx(model, registry, llm, work), timeout)
                 secs = time.time() - t0
                 board.record(mid, task.role, task.id, o.passed, o.iterations, secs, o.tokens, peak.gb)
                 out.append(RunRecord(mid, task.role, task.id, o, secs, peak.gb))
                 log(f"  {task.role:9} {task.id:28} {'PASS' if o.passed else 'FAIL'}  {secs:6.1f}s  it={o.iterations:<2} tok={o.tokens:<6} vram={peak.gb:.2f}  {o.detail[:110]}")
                 shutil.rmtree(work, ignore_errors=True)
+    unload_everything(control)  # a spilled 14b/32b must not stay in RAM when the benchmark is over
     return out

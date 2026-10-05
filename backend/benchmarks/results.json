@@ -1,8 +1,428 @@
 {
- "generated": "2026-10-03",
- "machine": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB (Windows laptop)",
- "notes": "local Ollama, num_ctx 8192, think off; engineer roles run the real agent loop in the real orchestrator on a fixed design",
+ "generated": "2026-10-05",
+ "machine": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB (Windows laptop, 32 GB RAM)",
+ "notes": "",
  "runs": [
+  {
+   "model": "qwen25-coder-7b",
+   "role": "analyst",
+   "task": "analyst-library",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 9.7,
+   "tokens": 560,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "analyst",
+   "task": "analyst-library",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 5.4,
+   "tokens": 560,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "analyst",
+   "task": "analyst-stockroom",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 2.9,
+   "tokens": 525,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "analyst",
+   "task": "analyst-stockroom",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 2.7,
+   "tokens": 516,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "finish",
+   "task": "finish-library-overdue",
+   "passed": false,
+   "iterations": 56,
+   "seconds": 144.7,
+   "tokens": 248406,
+   "peak_vram_gb": 4.99
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "finish",
+   "task": "finish-library-overdue",
+   "passed": false,
+   "iterations": 28,
+   "seconds": 85.4,
+   "tokens": 79654,
+   "peak_vram_gb": 5.0
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "finish",
+   "task": "finish-notes-delete",
+   "passed": false,
+   "iterations": 30,
+   "seconds": 68.8,
+   "tokens": 69132,
+   "peak_vram_gb": 4.98
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "finish",
+   "task": "finish-notes-delete",
+   "passed": true,
+   "iterations": 25,
+   "seconds": 105.5,
+   "tokens": 88492,
+   "peak_vram_gb": 4.98
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 132.2,
+   "tokens": 4036,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "architect",
+   "task": "design-todo",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 120.3,
+   "tokens": 4030,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 285.6,
+   "tokens": 10039,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "architect",
+   "task": "design-calculator",
+   "passed": true,
+   "iterations": 2,
+   "seconds": 285.2,
+   "tokens": 10020,
+   "peak_vram_gb": 5.77
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 17.3,
+   "tokens": 751,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-sql-injection",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 10.0,
+   "tokens": 675,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 16.2,
+   "tokens": 670,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-xss-innerhtml",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 11.3,
+   "tokens": 616,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 22.1,
+   "tokens": 787,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-missing-validation",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 21.8,
+   "tokens": 785,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 9.7,
+   "tokens": 653,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-eval-input",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 10.9,
+   "tokens": 670,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 5.6,
+   "tokens": 672,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-database",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 3.1,
+   "tokens": 670,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 3.3,
+   "tokens": 653,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-router",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 3.0,
+   "tokens": 653,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 12.1,
+   "tokens": 655,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "reviewer",
+   "task": "review-clean-script",
+   "passed": false,
+   "iterations": 1,
+   "seconds": 14.7,
+   "tokens": 665,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 13.8,
+   "tokens": 1114,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-backend-status",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 12.4,
+   "tokens": 1107,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 9.9,
+   "tokens": 1064,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-database-order",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 9.9,
+   "tokens": 1066,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 11.2,
+   "tokens": 1041,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-frontend-list",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 11.1,
+   "tokens": 1041,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 12.4,
+   "tokens": 1100,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "qa",
+   "task": "triage-backend-edge",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 10.4,
+   "tokens": 1078,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "analyst",
+   "task": "analyst-library",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 15.7,
+   "tokens": 540,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "analyst",
+   "task": "analyst-library",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 16.7,
+   "tokens": 555,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "analyst",
+   "task": "analyst-stockroom",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 13.7,
+   "tokens": 510,
+   "peak_vram_gb": 5.76
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "analyst",
+   "task": "analyst-stockroom",
+   "passed": true,
+   "iterations": 1,
+   "seconds": 13.5,
+   "tokens": 510,
+   "peak_vram_gb": 5.75
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "finish",
+   "task": "finish-library-overdue",
+   "passed": true,
+   "iterations": 15,
+   "seconds": 327.7,
+   "tokens": 62184,
+   "peak_vram_gb": 5.77
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "finish",
+   "task": "finish-library-overdue",
+   "passed": false,
+   "iterations": 35,
+   "seconds": 473.6,
+   "tokens": 127027,
+   "peak_vram_gb": 5.84
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "finish",
+   "task": "finish-notes-delete",
+   "passed": false,
+   "iterations": 26,
+   "seconds": 339.8,
+   "tokens": 39448,
+   "peak_vram_gb": 5.83
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "finish",
+   "task": "finish-notes-delete",
+   "passed": false,
+   "iterations": 28,
+   "seconds": 407.5,
+   "tokens": 39722,
+   "peak_vram_gb": 5.83
+  },
   {
    "model": "qwen25-coder-7b",
    "role": "architect",
