@@ -1,6 +1,6 @@
 """Finish my project from the command line: import a folder (or a GitHub URL), find the gaps, fix them, and (for the sample fixtures) run the hidden acceptance tests.
 
-    backend\\.venv\\Scripts\\python.exe scripts\\finish.py samples\\half-built\\fest-app [--accept] [--keep] [--pick g1,g2]
+    backend\\.venv\\Scripts\\python.exe scripts\\finish.py samples\\half-built\\fest-app [--accept] [--keep] [--pick g1,g2] [--finish-model MODEL_ID]
 """
 import argparse
 import shutil
@@ -49,6 +49,7 @@ def main() -> int:
     ap.add_argument("--base", help="where the copy goes (default: a temp folder)")
     ap.add_argument("--no-app", action="store_true")
     ap.add_argument("--only", help="comma-separated gap ids (default: all)")
+    ap.add_argument("--finish-model", metavar="MODEL_ID", help="the finishing engineers (backend, frontend, database) use this model; the analyst and everyone else keep the default")
     ap.add_argument("--raw", action="store_true", help="print every raw model reply")
     args = ap.parse_args()
 
@@ -59,6 +60,7 @@ def main() -> int:
     base = Path(args.base) if args.base else Path(tempfile.mkdtemp(prefix="q-finish-"))
     started = time.time()
     orch = FinishBuild(args.source, registry, LLMClient(registry, scheduler=ModelScheduler(registry, emit=bus.emit)), bus, auto_fix=True, only=args.only.split(",") if args.only else None, mode="autonomous",
+                       overrides={a: args.finish_model for a in ("backend", "frontend", "database")} if args.finish_model else None,
                        approver=cli_approver, base=base, start_app=not args.no_app, fast_live=True)
     if args.raw:
         orch.llm.observer = lambda o: print("RAW>", o["text"][:1200].replace(chr(10), " | "))
