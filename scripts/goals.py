@@ -71,3 +71,8 @@ HOSPITAL = ('Build a hospital OPD manager: doctors have name, department General
             'Each doctor has many prescriptions: patient name, medicine, dosage, days 1-90 and instructions. '
             'Each doctor has many lab tests: patient name, test name Blood test/X-ray/MRI/ECG/Urine test, cost in rupees and status Ordered/Collected/Reported; actions: collect and report. '
             'Show total doctors, appointments per doctor, lab revenue, filter doctors by department, filter appointments by status, search doctors by name, edit and delete everything.')
+
+MIXED = ('Build a restaurant manager: restaurants have name, cuisine North Indian/South Indian/Chinese/Italian/Other, area, phone and average cost for two in rupees. '
+         'Each restaurant has many menu items: name, category Starter/Main/Dessert/Drink, price in rupees and status Available/Sold out; actions: mark sold out and mark available. '
+         'Each restaurant has many orders: customer name, table number, total in rupees and status Placed/Served/Paid; actions: serve and mark paid. '
+         'Show total restaurants, orders per restaurant, filter menu items by category, search restaurants by name, edit and delete everything.')

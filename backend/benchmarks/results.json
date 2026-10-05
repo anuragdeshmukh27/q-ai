@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-05",
- "machine": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB (Windows laptop, 32 GB RAM)",
- "notes": "",
+ "generated": "2026-10-06",
+ "machine": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB (Windows laptop)",
+ "notes": "backend only, overnight 2026-10-06",
  "runs": [
   {
    "model": "qwen25-coder-7b",
@@ -725,6 +725,196 @@
   },
   {
    "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 24,
+   "seconds": 77.8,
+   "tokens": 94325,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 20,
+   "seconds": 65.3,
+   "tokens": 89235,
+   "peak_vram_gb": 4.8
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 7.3,
+   "tokens": 11938,
+   "peak_vram_gb": 4.77
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 7.1,
+   "tokens": 11964,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 17,
+   "seconds": 42.1,
+   "tokens": 72881,
+   "peak_vram_gb": 4.77
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 11,
+   "seconds": 26.0,
+   "tokens": 50848,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 12,
+   "seconds": 22.8,
+   "tokens": 45804,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 20,
+   "seconds": 59.0,
+   "tokens": 82884,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 17,
+   "seconds": 30.9,
+   "tokens": 72174,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": false,
+   "iterations": 18,
+   "seconds": 38.9,
+   "tokens": 80154,
+   "peak_vram_gb": 4.79
+  },
+  {
+   "model": "qwen25-coder-7b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 10,
+   "seconds": 20.0,
+   "tokens": 45929,
+   "peak_vram_gb": 4.78
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 6,
+   "seconds": 73.7,
+   "tokens": 24810,
+   "peak_vram_gb": 5.88
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 6,
+   "seconds": 66.5,
+   "tokens": 24780,
+   "peak_vram_gb": 5.88
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 37.9,
+   "tokens": 11952,
+   "peak_vram_gb": 5.87
+  },
+  {
+   "model": "qwen25-coder-14b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 4,
+   "seconds": 37.9,
+   "tokens": 11969,
+   "peak_vram_gb": 5.88
+  },
+  {
+   "model": "qwen25-coder-32b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 6,
+   "seconds": 197.0,
+   "tokens": 24682,
+   "peak_vram_gb": 5.91
+  },
+  {
+   "model": "qwen25-coder-32b",
+   "role": "backend",
+   "task": "api-todo",
+   "passed": true,
+   "iterations": 6,
+   "seconds": 164.8,
+   "tokens": 24627,
+   "peak_vram_gb": 5.91
+  },
+  {
+   "model": "qwen25-coder-32b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 10,
+   "seconds": 463.9,
+   "tokens": 46423,
+   "peak_vram_gb": 5.92
+  },
+  {
+   "model": "qwen25-coder-32b",
+   "role": "backend",
+   "task": "api-calculator",
+   "passed": true,
+   "iterations": 6,
+   "seconds": 282.1,
+   "tokens": 27084,
+   "peak_vram_gb": 5.91
+  },
+  {
+   "model": "qwen25-coder-7b",
    "role": "architect",
    "task": "design-todo",
    "passed": true,
@@ -841,46 +1031,6 @@
    "iterations": 5,
    "seconds": 10.2,
    "tokens": 11756,
-   "peak_vram_gb": 4.78
-  },
-  {
-   "model": "qwen25-coder-7b",
-   "role": "backend",
-   "task": "api-todo",
-   "passed": false,
-   "iterations": 16,
-   "seconds": 34.8,
-   "tokens": 63059,
-   "peak_vram_gb": 4.79
-  },
-  {
-   "model": "qwen25-coder-7b",
-   "role": "backend",
-   "task": "api-todo",
-   "passed": true,
-   "iterations": 11,
-   "seconds": 22.0,
-   "tokens": 46862,
-   "peak_vram_gb": 4.78
-  },
-  {
-   "model": "qwen25-coder-7b",
-   "role": "backend",
-   "task": "api-calculator",
-   "passed": true,
-   "iterations": 4,
-   "seconds": 7.2,
-   "tokens": 9920,
-   "peak_vram_gb": 4.78
-  },
-  {
-   "model": "qwen25-coder-7b",
-   "role": "backend",
-   "task": "api-calculator",
-   "passed": true,
-   "iterations": 4,
-   "seconds": 6.9,
-   "tokens": 9908,
    "peak_vram_gb": 4.78
   },
   {

@@ -84,6 +84,7 @@ class CreateRequest(BaseModel):
     then_ask: list[dict[str, str]] | None = None  # recorded builds only: Ask-employee tasks sent after the build ({agent, text}), part of the recording
     import_from: str | None = None  # Finish my project: a folder or a GitHub URL of a half-built project (the goal is then derived from it)
     auto_fix: bool = False  # Finish my project: fix every gap found without waiting for the human to choose
+    overrides: dict[str, str] | None = None  # live builds: a model for some employees from the first call on ({employee id: model id}), the same as the Employee inspector's override but set at the start
 
 
 class AskReply(BaseModel):
@@ -169,7 +170,7 @@ class Session:
         self.mode = req.mode
         self.state = "starting"
         self.created = time.time()
-        self.overrides: dict[str, str] = {}
+        self.overrides: dict[str, str] = dict(req.overrides or {})
         self.approvals = ApprovalQueue(self._emit_approval, mgr.settings.approval_timeout, lambda a: self.tracker.agents.get(a, {}).get("state", "idle"))
         self.recorder: Recorder | None = None
         self.orch: Orchestrator | None = None

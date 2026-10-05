@@ -38,6 +38,7 @@ def main() -> int:
     ap.add_argument("--feature", default="", help="what the run shows, e.g. 'QA bug fix', 'Approvals', 'Ask employee'")
     ap.add_argument("--ask", action="append", default=[], metavar="AGENT=TEXT", help="Ask-employee task sent after the build, recorded too (repeatable)")
     ap.add_argument("--timeout", type=int, default=1500, help="give up after this many seconds")
+    ap.add_argument("--override", action="append", default=[], metavar="EMPLOYEE=MODEL", help="a model for one employee from the first call on, e.g. architect=qwen25-coder-14b (repeatable)")
     args = ap.parse_args()
 
     port = free_port()
@@ -52,7 +53,7 @@ def main() -> int:
                     break
             except httpx.HTTPError:
                 time.sleep(0.5)
-        r = http.post("/api/projects", json={"goal": args.goal, "mode": args.mode, "record_as": args.name, "inject_fault": args.inject_fault, "parallel": args.parallel, **({"import_from": args.import_from, "auto_fix": False} if args.import_from else {}),
+        r = http.post("/api/projects", json={"goal": args.goal, "mode": args.mode, "record_as": args.name, "inject_fault": args.inject_fault, "parallel": args.parallel, "overrides": dict(o.split("=", 1) for o in args.override) or None, **({"import_from": args.import_from, "auto_fix": False} if args.import_from else {}),
                                               "record_info": {k: v for k, v in (("title", args.title), ("app", args.app), ("feature", args.feature)) if v},
                                               "then_ask": [{"agent": a.split("=", 1)[0], "text": a.split("=", 1)[1]} for a in args.ask]})
         if r.status_code != 201:
