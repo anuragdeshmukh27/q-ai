@@ -7,6 +7,7 @@ because a small model that cannot say what is wrong is guessing).
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -101,3 +102,44 @@ def review_markdown(task: dict, review: ReviewOutput, round_no: int) -> str:
     lines = [f"# Review of {task['id']}: {task['title']} (round {round_no})", "", f"**Verdict:** {review.verdict}", "", review.summary, ""]
     lines += [f"- `{i.file}`: {i.problem}" for i in review.items]
     return "\n".join(lines).rstrip() + "\n"
+
+
+_SYNTAX_CLAIM = re.compile(r"incomplete|lacks a closing|is cut off|syntax error|invalid syntax|unclosed|unterminated|missing (?:a )?(?:closing )?(?:parenthes[ie]s|bracket|brace|quote)|not valid python|cannot be parsed", re.I)
+_MISSING_CLAIM = re.compile(r"(?:does not|doesn't|did not|not) (?:implement|contain|define|include)|no functions? for|but not for|missing (?:the )?functions?|still (?:raises?|has) NotImplementedError", re.I)
+
+
+_LINES_CLAIM = re.compile(r"\b(\d+) lines?\b|over the \d+-line|line limit", re.I)
+_OPINION = re.compile(r"\b(inefficient|consider|could be|should be (?:done|moved|placed|defined)|refactor|readab|best practice|more (?:efficient|robust|maintainable)|separate (?:file|module|function))", re.I)
+
+
+def drop_unfounded(review: ReviewOutput, root: Path) -> ReviewOutput:
+    """A 7B reviewer sometimes claims a syntax error or a missing function that is not in the file, and the engineer then spends many calls chasing it.
+    Those two kinds of claim can be checked for free: a file that compiles has no syntax error, and a file with no `NotImplementedError` and a definition for every
+    function name the claim mentions has nothing missing. A claim that fails the check is dropped; every other item stays."""
+    keep: list[ReviewItem] = []
+    for i in review.items:
+        f = root / i.file
+        if f.suffix == ".py" and f.is_file():
+            source = f.read_text(encoding="utf-8", errors="replace")
+            if _LINES_CLAIM.search(i.problem) and len(source.splitlines()) <= MAX_FILE_LINES:
+                continue  # 'the file has 65 lines, over the 150-line limit'
+            if _OPINION.search(i.problem):
+                continue  # style and efficiency are not defects (the reviewer's own prompt says so)
+            if "SCHEMA" in i.problem and re.search(r"connect\(SCHEMA\)", source):
+                continue  # 'the SCHEMA constant is not used': every function opens its connection with it
+            if _SYNTAX_CLAIM.search(i.problem):
+                try:
+                    compile(source, str(f), "exec")
+                    continue
+                except SyntaxError:
+                    pass
+            elif _MISSING_CLAIM.search(i.problem) and "NotImplementedError" not in source:
+                named = re.findall(r"`(\w+)`", i.problem)
+                if all(re.search(rf"^def {re.escape(n)}\(", source, re.M) for n in named):
+                    continue
+        keep.append(i)
+    if len(keep) == len(review.items):
+        return review
+    if keep:
+        return ReviewOutput(verdict="REQUEST_CHANGES", summary=review.summary, items=keep)
+    return ReviewOutput(verdict="PASS", summary="the reviewer's claims were checked against the files and none holds (the code compiles and every function is there)", items=[])

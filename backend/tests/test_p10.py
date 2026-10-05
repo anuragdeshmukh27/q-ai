@@ -119,11 +119,12 @@ def test_a_structured_goal_is_read_by_rules_and_keeps_every_field():
 def test_every_skill_pack_loads_and_matches_its_domain():
     from app.skills import match_skill, packs
 
-    assert len(packs()) == 11
+    assert len(packs()) == 12
     assert match_skill("Build a college tech fest manager: events have name") == "events"
     assert match_skill("Build a cab booking app: drivers have name") == "transport"
     assert match_skill("Build a clinic app with doctors and appointments") == "clinic"
     assert match_skill("Build a hackathon management platform: teams have name") == "hackathon"
+    assert match_skill("Build a hospital OPD manager: doctors have name") == "hospital"
     assert match_skill("Build an expense tracker with categories and totals") == "finance"
     assert match_skill("Build Instagram", "Instagram", ["posts", "comments"]) == "social"
     assert match_skill("Build a calculator with history") == ""

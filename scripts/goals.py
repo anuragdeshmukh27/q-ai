@@ -65,3 +65,9 @@ HACKATHON = ('Build a hackathon management platform: teams have name, college, c
              'Each team has many mentor sessions: mentor name, topic, date, time and status Scheduled/Completed/Cancelled; actions: complete and cancel. '
              'Each team has many judge scores: judge name, innovation 1-10, technical depth 1-10, presentation 1-10, impact 1-10 and comments. '
              'Show total teams, members per team, average judge scores, filter teams by stage and track, search teams by name, edit and delete everything.')
+
+HOSPITAL = ('Build a hospital OPD manager: doctors have name, department General Medicine/Cardiology/Dermatology/Pediatrics/Orthopedics/ENT, phone, email, consultation fee in rupees, room and availability Available/On leave. '
+            'Each doctor has many appointments: patient name, patient phone, date, time, reason and status Booked/Completed/Cancelled; actions: complete and cancel. '
+            'Each doctor has many prescriptions: patient name, medicine, dosage, days 1-90 and instructions. '
+            'Each doctor has many lab tests: patient name, test name Blood test/X-ray/MRI/ECG/Urine test, cost in rupees and status Ordered/Collected/Reported; actions: collect and report. '
+            'Show total doctors, appointments per doctor, lab revenue, filter doctors by department, filter appointments by status, search doctors by name, edit and delete everything.')

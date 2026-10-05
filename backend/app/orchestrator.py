@@ -22,7 +22,7 @@ from .agent.loop import AgentResult, run_agent
 from .agent.planning import AgentFailed, run_amendment, run_architect, run_planner, run_replanner, run_spec
 from . import authorship, cost
 from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
-from .agent.review import ReviewOutput, missing_tests, review_markdown, run_review, static_findings
+from .agent.review import ReviewOutput, drop_unfounded, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
 from .faults import inject_fault
 from .repo import GitError, Repo
@@ -562,10 +562,17 @@ class Orchestrator:
         elif stub:
             text += (f"\n\nStarting point: `{stub[0]}` already exists. It was generated from the contract and schema, so its names, paths, "
                      f"models, status codes and SQL are correct. Do NOT rewrite the file. Fill each stub function with the `implement` action "
-                     f"(path, function name, and only the lines inside the function), one call per function, replacing its `raise NotImplementedError`. "
+                     f"(path, function name, and only the lines inside the function), one call per function; the lines you send take the place of `raise NotImplementedError`. "
+                     f"Every reply has exactly these keys, and the code goes in `content`: {self._implement_example(stub)} "
                      + (self._relational_steps(t, stub[1]) if self.design and self.design.resources else "Then write the tests. Current content:")
                      + f"\n```\n{stub[1]}```")
         return text
+
+    @staticmethod
+    def _implement_example(stub: tuple[str, str]) -> str:
+        """The exact shape of the first reply, with this file and its first function (a 7B otherwise sends `pattern` or `to` with `implement`)."""
+        first = re.search(r"^def (\w+)\(", stub[1], re.M)
+        return '{"thought": "...", "action": "implement", "path": "' + stub[0] + '", "function": "' + (first.group(1) if first else "name") + '", "content": "<the lines inside the function>"}'
 
     @staticmethod
     def _relational_steps(t: dict, stub_text: str) -> str:
@@ -575,9 +582,12 @@ class Orchestrator:
         return (f"There are {len(names)} functions to implement, each ONCE: {', '.join(names)}. The tests for {what} are already written; "
                 "after the last function call run_tests, fix only what fails, and when run_tests passes call finish. Current content:")
 
-    def _context(self, owner: str) -> str:
+    def _context(self, owner: str, task: dict | None = None) -> str:
         assert self.memory and self.messages
-        parts = [self.memory.context_for(owner)]
+        only = None
+        if owner == "backend" and task and self.design and self.design.resources and task.get("files"):  # a router task: the stub holds its endpoints, the other modules' are noise
+            only = {e.path for e in endpoints_for_task(self.design, task, sum(1 for x in self.tasks if x["owner"] == "backend"))}
+        parts = [self.memory.context_for(owner, only)]
         done = [f"- {t['id']} {t['title']} (files: {', '.join(t['files'])}) - {t['summary']}" for t in self.tasks if t["status"] == "done" and t["files"]]
         if done:
             parts.append("Already built by colleagues:\n" + "\n".join(done))
@@ -605,7 +615,7 @@ class Orchestrator:
                         break
                     model = self._model(self._engineer(t["owner"]))
                     self._begin(t, model)
-                    running[pool.submit(self._work, t, preset, model, None, self._context(t["owner"]))] = t
+                    running[pool.submit(self._work, t, preset, model, None, self._context(t["owner"], t))] = t
                     busy.add(t["owner"])
                 if not running:
                     break
@@ -719,7 +729,7 @@ class Orchestrator:
         self.memory.append_decision(f"Senior consultant ({cm.name}, cloud) called for {t['id']} after two local escalations ({reason})")
         t["failure"] = f"{reason}; two local attempts failed"
         self._begin(t, cm)
-        res = self._work(t, preset, cm, f"{agent.id}+consultant", self._context(agent.id))
+        res = self._work(t, preset, cm, f"{agent.id}+consultant", self._context(agent.id, t))
         ok = res.status == "finished"
         self.emit("consultant_result", task=t["id"], agent=agent.id, model=cm.name, ok=ok, iterations=res.iterations)
         if ok and self._complete(t, res):
@@ -826,6 +836,7 @@ class Orchestrator:
             self.emit("agent_state", agent=reviewer.id, state="reading")
             review, st = run_review(reviewer, self.llm, rmodel.id, t, self.repo.diff_vs_main(agent.id, skip_generated_tests=True),
                                     self._automatic_findings(agent, wt, t["owner"]), self.emit)
+            review = drop_unfounded(review, wt)
             self._stat("reviewer", rmodel, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
             self._write(reviewer, f".q/reviews/{t['id']}-r{rnd}.md", review_markdown(t, review, rnd))
             self.emit("review_result", agent=reviewer.id, task=t["id"], round=rnd, verdict=review.verdict, summary=review.summary,

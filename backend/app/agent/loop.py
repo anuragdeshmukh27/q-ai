@@ -111,8 +111,11 @@ def _run_agent(
 ) -> AgentResult:
     emit = emit or toolbox.emit
     system = system_prompt or build_system_prompt(agent)
-    first_user = f"## Task\n{task}" + (f"\n\n## Project context\n{context}" if context else "")
     budget = max(4000, (num_ctx - 1536) * CHARS_PER_TOKEN)
+    room = budget - len(system) - len(task) - 1500  # a prompt that does not fit num_ctx loses its START (the system prompt and the task): the project context gives way, never the task
+    if context and len(context) > max(room, 1500):
+        context = context[:max(room, 1500)] + "\n[... project context shortened ...]"
+    first_user = f"## Task\n{task}" + (f"\n\n## Project context\n{context}" if context else "")
     tracker = TerminationTracker(agent.max_iterations)
     steps: list[Step] = []
     res = AgentResult("running")
@@ -145,6 +148,7 @@ def _run_agent(
         except InvalidOutputError as e:
             emit("error", agent=agent.id, message=f"model returned invalid output: {e}")
             tracker.record_failed()
+            stuck += 1  # the next call is warmer: the same prompt at the same temperature gives the same invalid reply
             reason = tracker.check()
             if reason:
                 return escalate(reason)
