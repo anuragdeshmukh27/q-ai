@@ -34,6 +34,23 @@ _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
 _SECTION = re.compile(r"^_{3,} (.+?) _{3,}$", re.MULTILINE)
 _FINAL_LINE = re.compile(r"^=+ .*\b(?:passed|failed|errors?|no tests ran)\b.* in [\d.]+s.*=+$|^\d+ (?:passed|failed).* in [\d.]+s", re.MULTILINE)
 _LOCATION = re.compile(r"^(\S+\.py):(\d+): (\w+)", re.MULTILINE)
+_LIBRARY_FRAME = re.compile(r"^\S*site-packages\S*:\d+: in \S+$")
+
+
+def compact_pytest_output(output: str) -> str:
+    """Windows pytest output ends its lines with CR LF, which broke every `$` pattern here (no failure digest ever appeared), and a request that fails inside the app puts
+    25 frames of FastAPI, Starlette and anyio between the engineer's own line and the error. Normalise the endings and drop the library frames (and the source lines under them)."""
+    out: list[str] = []
+    skipping = False
+    for line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _LIBRARY_FRAME.match(line):
+            skipping = True
+            continue
+        if skipping and line[:1] in (" ", "\t"):
+            continue
+        skipping = False
+        out.append(line)
+    return "\n".join(out)
 
 
 def failure_digest(output: str, limit: int = 6) -> str:
@@ -421,9 +438,11 @@ class ToolBox:
         )
 
     def _run_tests(self, a: Action) -> ToolResult:
-        r = self._run_command(self.test_cmd)
+        cmd = self.test_cmd + " --tb=short" if "pytest" in self.test_cmd and "--tb" not in self.test_cmd else self.test_cmd  # a long traceback through FastAPI and Starlette pushes the real error out of the 20 000 captured characters
+        r = self._run_command(cmd)
         if r.data.get("decision") in ("deny", "denied_by_human"):
             return r
+        r.output = compact_pytest_output(r.output)
         failed = _FAILED.findall(r.output)
         passed = r.data.get("exit_code") == 0
         if failed:

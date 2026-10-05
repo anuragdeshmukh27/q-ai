@@ -32,6 +32,22 @@ def agent_context(agent_id: str):
         _current_agent.reset(token)
 
 
+def _dump_prompt(m: ModelConfig, msgs: list[dict], resp: LLMResponse) -> None:
+    """Q_DUMP_PROMPTS=<folder>: write every model call (prompt and reply) there, to see what a model was actually given."""
+    folder = os.environ.get("Q_DUMP_PROMPTS")
+    if not folder:
+        return
+    try:
+        import json
+        import time
+        os.makedirs(folder, exist_ok=True)
+        n = len(os.listdir(folder))
+        with open(os.path.join(folder, f"{n:04d}.json"), "w", encoding="utf-8") as f:
+            json.dump({"model": m.id, "ts": time.time(), "messages": msgs, "reply": resp.text, "prompt_tokens": resp.prompt_tokens, "completion_tokens": resp.completion_tokens}, f)
+    except OSError:
+        pass
+
+
 class InvalidOutputError(Exception):
     """The model returned invalid output twice (original + one retry)."""
 
@@ -115,11 +131,12 @@ class LLMClient:
         err: Exception | None = None
         for attempt in (1, 2):
             with (self.scheduler.slot(m, _current_agent.get()) if self.scheduler else contextlib.nullcontext()):
-                resp: LLMResponse = provider.chat(m, msgs, schema, temperature)
+                resp: LLMResponse = provider.chat(m, msgs, schema, temperature if attempt == 1 else min(0.9, temperature + 0.4))  # the retry must be free to differ: at a low temperature a 7B repeats the same invalid reply
             if resp.seconds > 0 and resp.completion_tokens > 8:
                 rate = resp.completion_tokens / resp.seconds
                 self.tokens_per_s = rate if self.tokens_per_s == 0 else 0.6 * self.tokens_per_s + 0.4 * rate
             pt, ct, secs = pt + resp.prompt_tokens, ct + resp.completion_tokens, secs + resp.seconds
+            _dump_prompt(m, msgs, resp)
             if self.observer:
                 try:
                     self.observer({"model": m.id, "name": m.name, "attempt": attempt, "text": resp.text, "prompt_tokens": resp.prompt_tokens,

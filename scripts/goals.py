@@ -59,3 +59,15 @@ FAMOUS = [
 # The flagship (four linked modules, exact text) and the clinic goal (a parent with three children): both are read by rules (backend/app/goalspec.py).
 FLAGSHIP = 'Build a college tech fest manager: events have name, category Coding/Robotics/Gaming/Quiz/Workshop, venue, date, start time, capacity and entry fee in rupees. Each event has many registrations: student name, college, email, phone, team name and status Registered/Checked in/Cancelled; actions: check in and cancel. Each event has many volunteers: name, phone, role Coordinator/Helper/Tech support and shift Morning/Afternoon/Evening. Each event has many sponsors: company name, contact person, amount in rupees and status Pledged/Paid; action: mark paid. Show total registrations, total sponsorship received, registrations per event, filter registrations by status and events by category, search events by name, edit and delete everything.'
 CLINIC = 'Build a clinic app: doctors have name, speciality General/Cardiology/Dermatology/Pediatrics/Orthopedics, phone, email, consultation fee in rupees and rating 1-5. Each doctor has many appointments: patient name, patient phone, date, time, reason and status Scheduled/Completed/Cancelled; actions: complete and cancel. Each doctor has many prescriptions: patient name, medicine and dosage. Each doctor has many reviews: author, rating 1-5 and comment.'
+
+HACKATHON = ('Build a hackathon management platform: teams have name, college, city, track AI/Web/Health/Sustainability/Open, project title and stage Registered/Shortlisted/Finalist/Eliminated; actions: shortlist and eliminate. '
+             'Each team has many members: name, email, phone and role Leader/Developer/Designer/Presenter. '
+             'Each team has many mentor sessions: mentor name, topic, date, time and status Scheduled/Completed/Cancelled; actions: complete and cancel. '
+             'Each team has many judge scores: judge name, innovation 1-10, technical depth 1-10, presentation 1-10, impact 1-10 and comments. '
+             'Show total teams, members per team, average judge scores, filter teams by stage and track, search teams by name, edit and delete everything.')
+
+HOSPITAL = ('Build a hospital OPD manager: doctors have name, department General Medicine/Cardiology/Dermatology/Pediatrics/Orthopedics/ENT, phone, email, consultation fee in rupees, room and availability Available/On leave. '
+            'Each doctor has many appointments: patient name, patient phone, date, time, reason and status Booked/Completed/Cancelled; actions: complete and cancel. '
+            'Each doctor has many prescriptions: patient name, medicine, dosage, days 1-90 and instructions. '
+            'Each doctor has many lab tests: patient name, test name Blood test/X-ray/MRI/ECG/Urine test, cost in rupees and status Ordered/Collected/Reported; actions: collect and report. '
+            'Show total doctors, appointments per doctor, lab revenue, filter doctors by department, filter appointments by status, search doctors by name, edit and delete everything.')

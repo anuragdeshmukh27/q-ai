@@ -111,8 +111,11 @@ def _run_agent(
 ) -> AgentResult:
     emit = emit or toolbox.emit
     system = system_prompt or build_system_prompt(agent)
-    first_user = f"## Task\n{task}" + (f"\n\n## Project context\n{context}" if context else "")
     budget = max(4000, (num_ctx - 1536) * CHARS_PER_TOKEN)
+    room = budget - len(system) - len(task) - 1500  # a prompt that does not fit num_ctx loses its START (the system prompt and the task): the project context gives way, never the task
+    if context and len(context) > max(room, 1500):
+        context = context[:max(room, 1500)] + "\n[... project context shortened ...]"
+    first_user = f"## Task\n{task}" + (f"\n\n## Project context\n{context}" if context else "")
     tracker = TerminationTracker(agent.max_iterations)
     steps: list[Step] = []
     res = AgentResult("running")
@@ -151,6 +154,7 @@ def _run_agent(
             invalid += 1  # the retry says why the reply was refused and is a little warmer, so it can differ
             invalid_note = str(e)[:400]
             tracker.record_failed()
+            stuck += 1  # the next call is warmer: the same prompt at the same temperature gives the same invalid reply
             reason = tracker.check()
             if reason:
                 return escalate(reason)
@@ -211,7 +215,7 @@ def _execute(action: Action, toolbox: ToolBox, emit, agent: AgentConfig, last_te
 def _step(n: int, action: Action, tr: ToolResult, repeat_warning: bool, stalled: bool = False) -> Step:
     text = trim_observation(tr.output)
     if action.action == "run_tests" and tr.data.get("passed"):
-        text = f"All tests passed. {tr.data.get('summary', '')}\n" + text[-600:]
+        text = f"All tests passed. {tr.data.get('summary', '')}\nA warning in the output is harmless: do not ask anyone about it. Call finish now with a one-line summary."
     elif action.action == "run_tests" and tr.data.get("digest"):
         # the exception of each failing test comes first: in a long traceback it would be cut away by the trimming below
         text = "What failed (read this first):\n" + tr.data["digest"][:1500] + "\n\nFull output (trimmed):\n" + text

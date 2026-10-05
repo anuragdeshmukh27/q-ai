@@ -1,0 +1,46 @@
+name: hackathon
+title: Hackathon management
+summary: "Run a hackathon: teams, their members, mentor sessions and the judges' scores."
+keywords: [hackathon, hackathons, hack, hacks, team, teams, judge, judges, judging, mentor, mentors, mentoring, submission, submissions, shortlist, finalist, finalists, participant, participants, devpost, buildathon, codeathon]
+icon: "🏆"
+icons: {teams: "👥", members: "🧑‍💻", mentor_sessions: "🧭", judge_scores: "⚖️", submissions: "📤"}
+skin: transit
+currency: INR
+modules:
+  - {name: teams, fields: "name, college, city, track AI/Web/Health/Sustainability/Open, project_title, stage Registered/Shortlisted/Finalist/Eliminated"}
+  - {name: members, parent: teams, fields: "name, email, phone, role Leader/Developer/Designer/Presenter"}
+  - {name: mentor_sessions, parent: teams, fields: "mentor_name, topic, date, time, status Scheduled/Completed/Cancelled"}
+  - {name: judge_scores, parent: teams, fields: "judge_name, innovation integer, technical_depth integer, presentation integer, impact integer, comments"}
+rules:
+  - {field: "phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+  - {resource: "teams", field: "name", rule: unique}
+  - {resource: "members", field: "email", rule: unique}
+  - {resource: "judge_scores", field: "innovation|technical_depth|presentation|impact", rule: bounds, args: [1, 10]}
+  - {resource: "teams", rule: flow, field: stage, flow: {Registered: [Shortlisted, Eliminated], Shortlisted: [Finalist, Eliminated], Finalist: [], Eliminated: []}}
+  - {resource: "mentor_sessions", rule: flow, field: status, flow: {Scheduled: [Completed, Cancelled], Completed: [], Cancelled: []}}
+kpis:
+  - {label: "Teams", resource: teams, agg: count}
+  - {label: "Participants", resource: members, agg: count}
+  - {label: "Finalists", resource: teams, agg: count, where: {stage: Finalist}}
+  - {label: "Mentor sessions done", resource: mentor_sessions, agg: count, where: {status: Completed}}
+  - {label: "Average innovation", resource: judge_scores, agg: avg, field: innovation}
+charts:
+  - {title: "Members per team", resource: members, per: parent}
+  - {title: "Teams by track", resource: teams, by: track}
+  - {title: "Teams by stage", resource: teams, by: stage}
+  - {title: "Mentor sessions by status", resource: mentor_sessions, by: status}
+empty:
+  default: "Nothing here yet. Add the first one with the button above."
+  members: "No members yet. Add the people on this team."
+  mentor_sessions: "No mentor sessions yet. Book a slot so the team gets unstuck."
+  judge_scores: "No scores yet. Judges add theirs after the demo."
+pools:
+  college: [IIT Bombay, NIT Trichy, BITS Pilani, VIT Vellore, PES University, COEP Pune, IIIT Hyderabad]
+  city: [Mumbai, Pune, Bengaluru, Hyderabad, Chennai, Delhi, Ahmedabad]
+  project_title: [Crop doctor, Queue-free clinic, Campus carpool, Waste-to-wealth map, Voice notes for farmers, Bus tracker for small towns]
+  mentor_name: [Neha Kulkarni, Rohit Bansal, Anita Desai, Karthik Rao, Farah Sheikh]
+  topic: [Pitch practice, API design review, Demo script, Database schema, Deployment help, Slide deck review]
+  judge_name: [Dr. Meera Iyer, Sanjay Gupta, Pooja Nair, Imran Qureshi, Vikram Shah]
+  comments: [Clear problem and a working demo, Strong idea, rough edges in the UI, Great pitch, needs a business model, Solid engineering]
+  teams.name: [Byte Bandits, Neural Ninjas, Stack Smashers, Circuit Breakers, Pixel Pirates, Code Crusaders]

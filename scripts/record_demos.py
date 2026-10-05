@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from goals import CHIPS, FLAGSHIP  # noqa: E402
+from goals import CHIPS, FLAGSHIP, HACKATHON, HOSPITAL  # noqa: E402
 
 GOAL = {label: goal for label, goal in CHIPS}
 ASK_TEXT = "Add a progress bar at the top showing how many todos are done"  # the exact line of the optional live step in docs/DEMO_SCRIPT.md
@@ -35,7 +35,10 @@ DEMOS = {
     "finish-it": dict(goal="", title="Finish a half-built app", app="Fest manager", feature="Finish my project",
                       args=["--import", str(ROOT / "samples" / "half-built" / "fest-app")]),
     "flagship": dict(goal=FLAGSHIP, title="College tech fest manager: 4 modules", app="Tech fest manager", feature="4 linked modules", args=[]),
+    "hackathon-platform": dict(goal=HACKATHON, title="Hackathon management platform: 4 modules", app="Hackathon platform", feature="Teams, mentors and judge scores", args=[]),
+    "hospital-opd": dict(goal=HOSPITAL, title="Hospital OPD manager: 4 modules", app="Hospital OPD", feature="Doctors, appointments, prescriptions, lab tests", args=[]),
 }
+STRICT = ("hackathon-platform", "hospital-opd")  # recorded after the engine fixes of demo-v2: a recording is kept only if no one had to step in and the agents wrote most of the functions
 
 
 def events(name: str) -> list[dict]:
@@ -117,6 +120,16 @@ def judge(name: str) -> list[str]:
             bad.append("not a feed or shell layout")
         if "comments" not in spec.get("text", "").lower():
             bad.append("the spec has no comments")
+    if name in STRICT:
+        stats = meta.get("stats", {})
+        if stats.get("modules") != 4 or stats.get("tables") != 4:
+            bad.append(f"not four modules and tables: {stats}")
+        if stats.get("agent_share_functions", 0) < 0.8:
+            bad.append(f"agents wrote only {stats.get('agent_share_functions')} of the functions")
+        if repaired:
+            bad.append(f"{repaired} functions needed the contract repair")
+        if not any(e["type"] == "look_chosen" and e.get("layout") == "shell" for e in ev):
+            bad.append("not the shell layout")
     if name == "flagship":
         design = {}
         try:

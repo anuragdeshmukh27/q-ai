@@ -94,7 +94,7 @@ def _endpoints(ri: ResourceInfo, parent: ResourceInfo | None, children: list[Res
     sort = [FieldSpec(name="sort", type="string", description="newest first (new) or highest score first (top)", options=["new", "top"])] if ri.sorts else []
     listing = FieldSpec(name="items", type="array", description="objects with " + ", ".join(f.name for f in item_fields(ri)))
     out: list[Endpoint] = []
-    says = lambda items: (" Answers 409 when: " + "; ".join(items) + ".") if items else ""  # noqa: E731  (a 409 has no example in the contract: the generated rule tests cover it)
+    says = lambda items: (" Answers 409 when: " + "; ".join(items) + " (the database refuses it by itself and the app turns that into the 409: never check it in the route function).") if items else ""  # noqa: E731  (a 409 has no example in the contract: the generated rule tests cover it)
     if parent is None:
         base = f"/api/{p}"
         out.append(Endpoint(method="GET", path=base, summary=f"List all {p}" + (", newest first or by score" if sort else ""), request_fields=sort,

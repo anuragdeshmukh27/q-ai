@@ -105,8 +105,8 @@ backend\.venv\Scripts\python.exe scripts\judge.py --goal "Build Notion"   # what
 
 ## Proof, measured and shown in the Leaderboard tab
 
-- **Team vs single agent** (`scripts/baseline.py`, results in `backend/benchmarks/baseline_results.json`): same 7B model, same 9 goals, same generated stubs, page and tests. The team passed 17 of 18 builds; one agent doing the whole job in one loop passed 2 of 18. Small samples, one attempt for the single agent; the Reviewer and QA asked for no change in these builds, so the gain is from narrow tasks, branches and retries.
-- **Who wrote the code** (`backend/app/authorship.py`, `.q/authorship.json` in every build): in the team's builds agents wrote 62% of the functions and 16% of the lines of the app code; rules generate the stubs, the page and the tests.
+- **Team vs single agent** (`scripts/baseline.py`, results in `backend/benchmarks/baseline_results.json`): same 7B model, same 9 goals, same generated stubs, page and tests. The team passed 17 of 18 builds; one agent doing the whole job in one loop passed 1 of 18 (re-run on 2026-10-05 with the multi-page engine; the first run was 17 of 18 vs 2 of 18, kept in `backend/benchmarks/baseline_results_before_2026-10-05.json`). Small samples, one attempt for the single agent; the Reviewer and QA asked for no change in these builds, so the gain is from narrow tasks, branches and retries.
+- **Who wrote the code** (`backend/app/authorship.py`, `.q/authorship.json` in every build): in the team's builds agents wrote 94% of the functions and 24% of the lines of the app code (every database function, 87 of 93 route functions; the pages are drawn by a locked, hand-written shell, so the agents' share of lines is small); rules generate the stubs, the pages and the tests.
 - **Ask employee** edits a finished app with small `replace` edits at hooks the generated page already has (`<!-- request-hook:top -->`, `// request-hook:loaded`); a request that needs a new endpoint is not supported.
 
 ## Tests
