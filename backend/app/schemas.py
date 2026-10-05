@@ -638,6 +638,10 @@ def action_option(name: str, options: list[str]) -> str:
 _GOAL_ACTIONS = re.compile(r"\bactions?(?:\s+(?:on|for)\s+(?:an?|each|every|the)?\s*([a-z_ ]+?))?\s*:\s*([^.;]+)", re.I)
 
 
+def _loose(name: str) -> str:
+    return re.escape(name).replace("_", "[ _]")
+
+
 def goal_actions(goal: str, res: list["SpecResource"]) -> dict[str, list[str]]:
     """'Actions on a ride: mark completed and cancel' / '... status A/B; actions: check in and cancel' -> {resource name: ['mark_completed', 'cancel']}.
     A sentence without a named resource belongs to the resource its own field list names (the resource mentioned most recently before it)."""
@@ -648,8 +652,9 @@ def goal_actions(goal: str, res: list["SpecResource"]) -> dict[str, list[str]]:
             continue
         r = _named(res, m.group(1).strip()) if m.group(1) else None
         if r is None:  # '... has many registrations: ...; actions: check in and cancel': the resource named in the sentence
-            hits = [x for x in res if re.search(r"\b(?:" + re.escape(x.name) + "|" + re.escape(singular(x.name)) + r")\b", sentence[:m.start()], re.I)]
-            r = hits[-1] if hits else None
+            where = {x.name: [h.end() for h in re.finditer(r"\b(?:" + _loose(x.name) + "|" + _loose(singular(x.name)) + r")\b", sentence[:m.start()], re.I)] for x in res}  # a goal writes 'mentor sessions' for mentor_sessions
+            hits = [x for x in res if where[x.name]]
+            r = max(hits, key=lambda x: where[x.name][-1]) if hits else None
         if r is not None:
             for phrase in re.split(r"\s*(?:,|\band\b)\s*", m.group(2).strip()):
                 phrase = phrase.strip().lower()
