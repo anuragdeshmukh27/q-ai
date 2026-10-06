@@ -200,3 +200,27 @@ def test_the_numbers_of_a_build_are_read_from_the_project(tmp_path):
     assert stats["modules"] == 4 and stats["tables"] == 4 and stats["pages"] == 10 and stats["endpoints"] == len(design.endpoints) and stats["functions"] == 62
     assert stats_line(stats).startswith("4 modules, 4 tables,") and "62 functions (71% written by agents), 1,240 lines" in stats_line(stats)
     assert project_stats(tmp_path / "nowhere") == {}
+
+
+def _showcase_goals():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from goals import HACKATHON, HOSPITAL
+
+    return {"hackathon": HACKATHON, "hospital": HOSPITAL}
+
+
+def test_the_hackathon_and_the_hospital_apps_get_different_layout_accents_and_both_draw_boards(tmp_path):
+    from app.shell import app_config
+
+    goals = _showcase_goals()
+    cfgs = {}
+    for name, goal in goals.items():
+        spec, design = designed(goal)
+        cfgs[name] = app_config(design, spec.title)
+        r = run_smoke(tmp_path / name, design, spec.title)
+        assert r.returncode == 0, (r.stdout + r.stderr)[-1500:]
+        assert any(f.get("options") for res in cfgs[name]["resources"] for f in res["fields"] if f["name"] in ("stage", "status")), "a status field to build a board from"
+    assert cfgs["hackathon"]["ui"] == {"nav": "top", "density": "cards", "charts": "columns"}
+    assert cfgs["hospital"]["ui"] == {"nav": "side", "density": "table", "charts": "bars"}
+    assert cfgs["hackathon"]["skin"] != cfgs["hospital"]["skin"]
+    assert app_config(designed(CAB)[1], "Cab")["ui"] == {"nav": "side", "density": "cozy", "charts": "bars"}, "a pack without a ui: key keeps the plain layout"

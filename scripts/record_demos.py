@@ -35,8 +35,10 @@ DEMOS = {
     "flagship": dict(goal=FLAGSHIP, title="College tech fest manager: 4 modules", app="Tech fest manager", feature="4 linked modules", args=[]),
     "hackathon-platform": dict(goal=HACKATHON, title="Hackathon management platform: 4 modules", app="Hackathon platform", feature="Teams, mentors and judge scores", args=[]),
     "hospital-opd": dict(goal=HOSPITAL, title="Hospital OPD manager: 4 modules", app="Hospital OPD", feature="Doctors, appointments, prescriptions, lab tests", args=[]),
+    "hackathon-platform-v2": dict(goal=HACKATHON, title="Hackathon platform v2: top navigation, boards, column charts", app="Hackathon platform", feature="Kanban board, stat cards, top navigation", args=[]),
+    "hospital-opd-v2": dict(goal=HOSPITAL, title="Hospital OPD v2: sidebar, boards, dense tables", app="Hospital OPD", feature="Kanban board, vitals strip, dense tables", args=[]),
 }
-STRICT = ("hackathon-platform", "hospital-opd")  # recorded after the engine fixes of demo-v2: a recording is kept only if no one had to step in and the agents wrote most of the functions
+STRICT = ("hackathon-platform", "hospital-opd", "hackathon-platform-v2", "hospital-opd-v2")  # recorded after the engine fixes of demo-v2: a recording is kept only if no one had to step in and the agents wrote most of the functions
 
 
 def events(name: str) -> list[dict]:

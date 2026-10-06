@@ -174,6 +174,13 @@ def _defaults(resources: list[dict]) -> tuple[list[dict], list[dict]]:
     return kpis, charts[:4]
 
 
+def _ui(p: dict) -> dict:
+    """The layout accent of a skill pack (its ui: key): where the navigation is, how dense the lists are, how the dashboard charts are drawn."""
+    ui = p.get("ui") or {}
+    pick = lambda key, allowed, default: ui.get(key) if ui.get(key) in allowed else default  # noqa: E731
+    return {"nav": pick("nav", ("side", "top"), "side"), "density": pick("density", ("cozy", "cards", "table"), "cozy"), "charts": pick("charts", ("bars", "columns"), "bars")}
+
+
 def app_config(design: ArchitectOutput, title: str = "") -> dict:
     look: Look = design.look or Look()
     p = _pack(look.skill) or {}
@@ -209,7 +216,7 @@ def app_config(design: ArchitectOutput, title: str = "") -> dict:
         r["icon"] = r["icon"] or look.icon or "•"
     currency = look.currency or "USD"
     return {
-        "title": title or resources[0]["label"], "subtitle": look.subtitle, "icon": look.icon or "✨", "skin": look.skin or "studio", "currency": currency,
+        "title": title or resources[0]["label"], "subtitle": look.subtitle, "icon": look.icon or "✨", "skin": look.skin or "studio", "ui": _ui(p), "currency": currency,
         "locale": LOCALES.get(currency, "en-US"), "notIncluded": list(look.not_included), "empty": empty, "dashboard": {"kpis": kpis[:5], "charts": charts[:4]},
         "resources": resources,
     }

@@ -4,6 +4,7 @@ summary: "Run a hackathon: teams, their members, mentor sessions and the judges'
 keywords: [hackathon, hackathons, hack, hacks, team, teams, judge, judges, judging, mentor, mentors, mentoring, submission, submissions, shortlist, finalist, finalists, participant, participants, devpost, buildathon, codeathon]
 icon: "🏆"
 icons: {teams: "👥", members: "🧑‍💻", mentor_sessions: "🧭", judge_scores: "⚖️", submissions: "📤"}
+ui: {nav: top, density: cards, charts: columns}
 skin: transit
 currency: INR
 modules:

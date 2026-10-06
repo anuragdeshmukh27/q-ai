@@ -4,6 +4,7 @@ summary: "A hospital outpatient department: doctors, their appointments, prescri
 keywords: [hospital, hospitals, opd, outpatient, outpatients, ward, wards, department, departments, doctor, doctors, patient, patients, appointment, appointments, prescription, prescriptions, lab, laboratory, diagnostic, diagnostics, pharmacy, consultation, medical, healthcare]
 icon: "🏥"
 icons: {doctors: "🩺", appointments: "📅", prescriptions: "💊", lab_tests: "🧪", patients: "🧑"}
+ui: {nav: side, density: table, charts: bars}
 skin: clinic
 currency: INR
 modules:
