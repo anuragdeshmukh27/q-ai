@@ -35,6 +35,7 @@
   const clear = (n) => { n.textContent = ""; return n; };
   const by = (name) => cfg.resources.find((r) => r.name === name);
   const fill = (url, vars) => url.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k]));
+  const one = (r) => r.singular.replace(/_/g, " ");  // "mentor session", for the words on the page
   const pretty = (s) => String(s).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   const tone = (text) => {
     const key = String(text).toLowerCase();
@@ -141,7 +142,7 @@
   async function run(r, a, item) {
     try {
       await call("POST", fill(a.url, { id: item.id }));
-      toast(a.kind === "set" ? `${item[r.title] ?? r.singular}: ${a.value}` : "Done", "success");
+      toast(a.kind === "set" ? `${item[r.title] ?? one(r)}: ${a.value}` : "Done", "success");
     } catch (e) {
       toast(e.detail || "Could not do that", "error");
     }
@@ -277,9 +278,9 @@
     const parentRes = r.parent ? by(r.parent) : null;
     const open = async () => {
       const parents = parentRes ? await rows(parentRes.name) : null;
-      if (parentRes && !parents.length) { toast(`Add a ${parentRes.singular} first`, "info"); return; }
+      if (parentRes && !parents.length) { toast(`Add a ${one(parentRes)} first`, "info"); return; }
       openForm({
-        title: `New ${r.singular}`, fields: r.fields, submit: `Add ${r.singular}`,
+        title: `New ${one(r)}`, fields: r.fields, submit: `Add ${one(r)}`,
         parents: parentRes && !parentId ? { resource: parentRes, rows: parents, selected: parents[0].id } : null,
         onSave: async (values, chosen) => {
           const pid = parentId ?? chosen;
@@ -294,7 +295,7 @@
   }
   function editForm(r, item) {
     return () => openForm({
-      title: `Edit ${r.singular}`, fields: r.fields, values: valuesOf(r, item),
+      title: `Edit ${one(r)}`, fields: r.fields, values: valuesOf(r, item),
       onSave: async (values) => {
         await call("PUT", fill(r.item, { id: item.id }), values);
         toast("Saved", "success");
@@ -304,7 +305,7 @@
     });
   }
   function removeItem(r, item, then) {
-    return () => confirmBox(`Delete this ${r.singular}${(r.children || []).length ? ` and its ${r.children.map((c) => c).join(", ")}` : ""}? This cannot be undone.`, async () => {
+    return () => confirmBox(`Delete this ${one(r)}${(r.children || []).length ? ` and its ${r.children.map((c) => c).join(", ")}` : ""}? This cannot be undone.`, async () => {
       try {
         await call("DELETE", fill(r.item, { id: item.id }));
         toast("Removed", "success");
@@ -485,7 +486,7 @@
     const box = el("div", "q-card q-empty");
     box.appendChild(el("div", "q-empty-icon", r.icon || cfg.icon));
     box.appendChild(el("div", "", text || (cfg.empty[r.name] || cfg.empty.default)));
-    if (onAdd) { const b = el("button", "", label || `Add ${r.singular}`); b.type = "button"; b.addEventListener("click", onAdd); box.appendChild(b); }
+    if (onAdd) { const b = el("button", "", label || `Add ${one(r)}`); b.type = "button"; b.addEventListener("click", onAdd); box.appendChild(b); }
     return box;
   }
   function matches(r, item, q) {
@@ -684,8 +685,8 @@
     const box = el("div", "q-panel");
     box.style.paddingTop = "0";
     listBlock(r, items, r.name, box, { showParent: !!r.parent });
-    const addBtn = button(`+ New ${r.singular}`, createForm(r, null));
-    const clearBtn = r.clear ? button("Clear all", () => confirmBox(`Remove every ${r.singular}?`, async () => { await call("DELETE", r.clear); invalidate(); await render(); }), "btn-secondary") : null;
+    const addBtn = button(`+ New ${one(r)}`, createForm(r, null));
+    const clearBtn = r.clear ? button("Clear all", () => confirmBox(`Remove every ${one(r)}?`, async () => { await call("DELETE", r.clear); invalidate(); await render(); }), "btn-secondary") : null;
     if (hooks.loaded && r.name === primary().name) hooks.loaded({ resource: r.name, items, data: { items } });
     return [head(r.label, count(items.length, r.singular.replace(/_/g, " "), r.label.toLowerCase()), clearBtn, addBtn), box];
   }
@@ -695,7 +696,7 @@
     const crumbs0 = [{ text: "Dashboard", href: "#/" }];
     if (!item) {
       setCrumbs([...crumbs0, { text: r.label, href: `#/${r.name}` }, { text: "Not found" }]);
-      return [head("Not found", `There is no ${r.singular} with that number.`, button(`Back to ${r.label.toLowerCase()}`, () => { location.hash = `#/${r.name}`; })), empty(r, `This ${r.singular} was deleted or never existed.`)];
+      return [head("Not found", `There is no ${one(r)} with that number.`, button(`Back to ${r.label.toLowerCase()}`, () => { location.hash = `#/${r.name}`; })), empty(r, `This ${one(r)} was deleted or never existed.`)];
     }
     const p = r.parent ? by(r.parent) : null;
     setCrumbs([...crumbs0, ...(p ? [{ text: p.label, href: `#/${p.name}` }, { text: titleOf(p, item._parent), href: `#/${p.name}/${item._parent.id}` }] : [{ text: r.label, href: `#/${r.name}` }]), { text: titleOf(r, item) }]);
@@ -750,10 +751,10 @@
         }
         const spacer = el("span", "q-count");
         bar.appendChild(spacer);
-        bar.appendChild(button(`+ New ${k.singular}`, createForm(k, item.id)));
+        bar.appendChild(button(`+ New ${one(k)}`, createForm(k, item.id)));
         const list = el("div");
         panel.appendChild(bar);
-        listBlock(k, mine, `${k.name}@${item.id}`, list, { addLabel: `Add ${k.singular}` });
+        listBlock(k, mine, `${k.name}@${item.id}`, list, { addLabel: `Add ${one(k)}` });
         panel.appendChild(list);
       };
       out.push(tabs, panel);
