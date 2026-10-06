@@ -1,3 +1,34 @@
+# DEMO V2 ROUND 2 (2026-10-06, morning): richer generated apps, two new recordings
+
+Only demo-v2 was edited. main (`q`, 667c8d9) was not edited, committed to or run; a temporary detached worktree of main (`q-verify`, a real copy of node_modules, no junctions) was used and removed. Ports 8200/5373 only, stopped. Models unloaded.
+
+**What changed in generated apps (no frontend/Q-UI/event-schema change):** `shell.js`/`shell.css`/`shell.py`, two pack files, one smoke test.
+- Kanban board: any resource with a status field gets a Table / Board switch on its list page (also in the tabs of a detail page); cards move by drag and drop or a "Move to" list, respecting the status flow. `?view=board` opens boards first.
+- Dashboard: stat cards with a share bar ("17% of 6") or a source line, chart cards with totals, CSS-only bars.
+- Layout accent per pack (`ui:` key in the pack yaml): hackathon = top navigation, card density (each row a rounded card), upright column charts; hospital = sidebar, table density (square panels, vitals strip, striped tight tables), horizontal bars. Packs without `ui:` keep the old layout.
+- Visible fixes found in screenshots: `mentor_session` shown with an underscore, orphan 4th chart, empty space in KPI cards, low-contrast amber/teal in light mode, long boards (scroll inside the column).
+- All ids, routes and hooks unchanged; the shell smoke test now also checks the nav/density, chart totals, a board per status field, a drag move, a Move-to change and the way back to the table. Targeted tests: `test_shell.py` + `test_p12.py` 40 passed. **The full backend suite was NOT completed** (you asked to skip it; it was 62 % through with no failure when stopped).
+
+| recording | build time | tests in the app | functions (written by agents) | verified with main's code | UI replay 4x on 8200/5373 |
+|---|---|---|---|---|---|
+| `hackathon-platform-v2` | 154 s | 94 passed | 44 of 44 (100 %), 0 by contract repair | yes: 646 events match, `project_done` ok | 45 s to 100 %, Open app |
+| `hospital-opd-v2` | 176 s | 97 passed | 44 of 44 (100 %), 0 by contract repair | yes: 668 events match, `project_done` ok | 51 s to 100 %, Open app |
+
+Screenshots (not committed, in `C:\CODING\Hackathon\q-demo\workspace\_shots\`): `hack-final-0.png` (dashboard), `hack-final-1.png` (board), `ui-hackathon-v2.png` (main's UI, 4x replay done); `hosp-final-0.png` (dashboard), `hosp-final-1.png` (board), `ui-hospital-v2.png`. Old recordings are kept.
+
+Note: `q` shows ` M backend/benchmarks/results.json` (modified 08:29, not by me: I never ran anything with `q` as the working folder). Check it yourself.
+
+## Copy ONLY the v2 recordings into main (PowerShell)
+```powershell
+$dst = "C:\CODING\Hackathon\q\recordings"
+robocopy "C:\CODING\Hackathon\q-demo\recordings\hackathon-platform-v2" "$dst\hackathon-platform-v2" /E
+robocopy "C:\CODING\Hackathon\q-demo\recordings\hospital-opd-v2" "$dst\hospital-opd-v2" /E
+Get-ChildItem $dst\hackathon-platform-v2, $dst\hospital-opd-v2 | Select-Object Directory, Name, Length
+```
+(robocopy exit codes 1 to 3 mean success.) Each folder must show events.jsonl, llm.jsonl, meta.json, snapshot.bundle. In demo mode the cards are "Hackathon platform v2: ..." and "Hospital OPD v2: ...".
+
+---
+
 # MORNING SUMMARY (written 2026-10-06 about 03:20 IST, the work was finished long before the 07:00 stop)
 
 main was never edited, committed to, merged into or run. The only things done from `q` are `git worktree add ..\q-demo -b demo-v2 main`, **one mistake I made and repaired (read "What went wrong" first)**, and temporary detached worktrees of main (667c8d9) that I created and deleted to replay the recordings with main's code.
