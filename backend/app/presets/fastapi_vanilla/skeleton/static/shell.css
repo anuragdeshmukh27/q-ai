@@ -56,6 +56,9 @@
   --alert-error-text: hsl(0 90% 88%); --alert-success-text: hsl(150 70% 86%); --glow: var(--bg); --shadow: 0 8px 24px hsl(0 0% 0% / 0.35);
   --sb-bg: hsl(var(--tint) var(--tint-s) 10%); --sb-text: hsl(var(--tint) 12% 68%); --sb-strong: hsl(var(--tint) 18% 96%); --sb-active-bg: var(--primary-soft); --sb-active-text: var(--primary); --sb-line: var(--border);
 }
+/* two skins whose light primary was too pale for white text and for links on white: darker, so buttons, active tabs and KPI numbers keep a readable contrast */
+:root[data-skin="transit"][data-mode="light"] { --primary: hsl(36 92% 35%); --primary-hover: hsl(36 92% 27%); --primary-soft: hsl(40 90% 93%); }
+:root[data-skin="clinic"][data-mode="light"] { --primary: hsl(174 80% 26%); --primary-hover: hsl(174 80% 20%); }
 /* skins with a dark sidebar in both modes */
 :root[data-skin][data-sb="dark"], :root[data-skin][data-mode="light"][data-sb="dark"] {
   --sb-bg: hsl(var(--tint) calc(var(--tint-s) + 8%) 13%); --sb-text: hsl(var(--tint) 18% 72%); --sb-strong: #fff; --sb-active-bg: hsl(var(--h) 80% 60% / 0.2); --sb-active-text: hsl(var(--h) 95% 80%); --sb-line: hsl(var(--tint) 20% 24%);
@@ -187,7 +190,7 @@ body.q-body h1, body.q-body h2, body.q-body h3 { font-family: var(--font-head); 
 .q-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
 .q-seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 0.4rem 0.85rem; font-size: var(--fs-sm); font-weight: 650; }
 .q-seg button:hover { background: var(--hover); color: var(--text); }
-.q-seg button[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary); }
+.q-seg button[aria-pressed="true"] { background: var(--primary-soft); color: var(--text); box-shadow: inset 0 -2px 0 var(--primary); }
 .q-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: var(--sp-4); overflow-x: auto; padding-bottom: var(--sp-2); align-items: start; }
 .q-col { display: flex; flex-direction: column; min-height: 150px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--radius); transition: background var(--t-fast), outline-color var(--t-fast); outline: 2px solid transparent; }
 .q-col.q-over { outline: 2px dashed var(--primary); background: var(--primary-soft); }
