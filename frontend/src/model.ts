@@ -37,6 +37,9 @@ export interface TaskView {
   owner: string
   depends_on: string[]
   status: string
+  assignee?: string // 'human': a person works on it (simulation mode)
+  worktree?: string // the folder the person edits (set when the task is handed over)
+  doc?: string // the task document, relative to the project
 }
 
 export type Tone = 'info' | 'good' | 'bad' | 'warn'
@@ -95,7 +98,9 @@ export interface BoardArea {
   state: 'waiting' | 'working' | 'done' | 'problem'
 }
 
-export const MODES = ['assisted', 'supervised', 'autonomous'] as const
+export const MODES = ['assisted', 'supervised', 'autonomous', 'simulation'] as const
+export const HUMAN_ROLES = ['backend', 'frontend', 'database'] as const // the engineers a person can play in simulation mode
+export const YOU = 'You'
 
 const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d = 0) => (typeof v === 'number' ? v : d)
@@ -153,6 +158,8 @@ export class OfficeModel {
   qa: boolean | null = null // last QA verdict
   version = 0 // bumped on every change; React re-renders on it
 
+  humanRoles = new Set<string>() // simulation: the employees the person plays; their desks read "You"
+  private realNames = new Map<string, string>() // their names from the roster, kept to restore them
   private owners = new Map<string, string>()
   private sinks = new Set<() => void>()
   private visualSinks = new Set<(v: Visual) => void>()
@@ -184,11 +191,33 @@ export class OfficeModel {
       this.agents.set(a.id, prev ? { ...prev, ...a } : { ...a, state: 'idle', model: null, iteration: 0, maxIterations: 0, task: null, thought: '', files: [], tests: null, log: [] })
       this.order.push(a.id)
     }
+    this.applyHumanNames()
+    this.touch()
+  }
+
+  /** Simulation: the employees the person plays are labelled "You" (in the roster of this page only; the server's roster is unchanged). */
+  private applyHumanNames() {
+    for (const a of this.agents.values()) {
+      if (this.humanRoles.has(a.id)) {
+        if (a.name !== YOU) this.realNames.set(a.id, a.name)
+        a.name = YOU
+      } else if (this.realNames.has(a.id)) {
+        a.name = this.realNames.get(a.id)!
+        this.realNames.delete(a.id)
+      }
+    }
+  }
+
+  setHumanRoles(roles: readonly string[]) {
+    this.humanRoles = new Set(roles)
+    this.applyHumanNames()
     this.touch()
   }
 
   /** Forget the project but keep the team. */
   reset() {
+    this.humanRoles = new Set()
+    this.applyHumanNames()
     this.setRoster(this.order.map((id) => this.agents.get(id)!).map(({ id, name, role, desk, sprite }) => ({ id, name, role, desk, sprite })), false)
     this.tasks = []
     this.progress = { done: 0, total: 0, percent: 0 }
@@ -394,8 +423,11 @@ export class OfficeModel {
         break
       case 'plan_created': {
         const tasks = (e.tasks as TaskView[]) ?? []
-        const old = new Map(this.tasks.map((t) => [t.id, t.status]))
-        this.tasks = tasks.map((t) => ({ ...t, status: old.get(t.id) ?? 'pending' }))
+        const old = new Map(this.tasks.map((t) => [t.id, t]))
+        this.tasks = tasks.map((t) => {
+          const prev = old.get(t.id)
+          return { ...t, status: prev?.status ?? 'pending', ...(prev?.worktree ? { worktree: prev.worktree, doc: prev.doc } : {}) } // a re-plan keeps where the person works
+        })
         this.owners = new Map(tasks.map((t) => [t.id, t.owner]))
         this.show({ kind: 'say', agent: 'planner', text: `Plan: ${tasks.length} tasks`, tone: 'info' }, visuals)
         this.say(`${this.name('planner')} planned ${tasks.length} tasks`)
@@ -426,6 +458,43 @@ export class OfficeModel {
         const text = ok ? `${str(e.task)} approved ✓` : `${str(e.task)}: ${clip(items[0]?.problem ?? str(e.summary), 52)}`
         if (owner) this.show({ kind: 'message', from: 'reviewer', to: owner, text, tone: ok ? 'good' : 'warn' }, visuals)
         this.say(`${this.name('reviewer')} reviewed ${str(e.task)}: ${ok ? 'PASS' : 'REQUEST CHANGES'}`)
+        break
+      }
+      case 'simulation_started':
+        this.humanRoles = new Set(Array.isArray(e.human_roles) ? (e.human_roles as string[]) : [])
+        this.applyHumanNames()
+        this.say(this.humanRoles.size ? `Simulation: you play ${[...this.humanRoles].map((r) => (this.realNames.get(r) ?? r)).join(', ')}` : 'Simulation: the team is waiting for a task for you')
+        break
+      case 'human_task_assigned': {
+        const id = str(e.task)
+        this.tasks = this.tasks.map((t) => (t.id === id ? { ...t, assignee: 'human', worktree: str(e.worktree), doc: str(e.doc) } : t))
+        if (a && !this.humanRoles.has(a.id)) {
+          this.humanRoles.add(a.id) // a replay of a recording that has no simulation_started, or a task the scenario created on another desk
+          this.applyHumanNames()
+        }
+        this.show({ kind: 'toast', level: 'info', title: `Your task: ${clip(str(e.title), 40)}`, text: `Read the task document, edit the files in your folder, then press Submit in the task list (${id}).` }, visuals)
+        if (a) this.show({ kind: 'say', agent: a.id, text: `${id}: your turn`, tone: 'info' }, visuals)
+        this.say(`${id} is yours: ${str(e.title)}`)
+        break
+      }
+      case 'human_submit_result': {
+        const id = str(e.task)
+        const failed = Array.isArray(e.failed) ? (e.failed as string[]) : []
+        if (e.ok === true) {
+          this.show({ kind: 'toast', level: 'good', title: `${id} accepted`, text: `${clip(str(e.summary), 80)}. The Integrator merges it now.` }, visuals)
+        } else {
+          const names = failed.map((f) => f.split('::').pop() ?? f).slice(0, 3).join(', ')
+          this.show({ kind: 'toast', level: 'bad', title: `${id}: tests failed`, text: clip(`${str(e.summary)}${names ? `: ${names}` : ''}. The task stays open: fix it and submit again.`, 160) }, visuals)
+        }
+        this.say(`${id}: ${e.ok === true ? 'accepted' : 'tests failed'} ${str(e.summary)}`)
+        break
+      }
+      case 'review_feedback': {
+        const id = str(e.task)
+        const items = Array.isArray(e.items) ? (e.items as { file?: string; problem?: string }[]) : []
+        const lines = items.slice(0, 2).map((i) => `${i.file ?? ''}: ${i.problem ?? ''}`).join(' · ')
+        this.show({ kind: 'toast', level: 'warn', title: `${id}: the Reviewer asks for changes (${num(e.round)})`, text: clip(lines || str(e.summary), 200) }, visuals)
+        this.say(`${this.name('reviewer')} asked for changes on ${id}`)
         break
       }
       case 'merge_result': {

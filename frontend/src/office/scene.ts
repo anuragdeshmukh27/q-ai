@@ -525,9 +525,10 @@ export class OfficeScene {
       const state = this.forced.get(id) ?? view.state
       const away = !actor.seated
       const shown = away && state === 'idle' ? 'walking' : state
-      const key = `${shown}|${this.selected === id}|${view.task?.id ?? ''}|${u.toFixed(2)}`
+      const key = `${shown}|${this.selected === id}|${view.task?.id ?? ''}|${u.toFixed(2)}|${view.name}`
       if (key !== tag.key) {
         tag.key = key
+        tag.name.text = view.name // a desk the person plays is labelled "You" (simulation mode)
         const col = STATE_COLOR[shown] ?? '#7c8499'
         tag.name.style.fontSize = 14 * u
         tag.status.style.fontSize = 11 * u

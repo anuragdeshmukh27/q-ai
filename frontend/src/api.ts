@@ -216,6 +216,15 @@ export interface BaselineReport {
   notes?: string
 }
 
+/** What Submit answers (simulation mode); the same facts also arrive as events. */
+export interface SubmitResult {
+  ok: boolean
+  stage: 'tests' | 'review' | 'accepted' | 'stopped'
+  summary: string
+  failed: string[]
+  items: { file: string; problem: string }[]
+}
+
 const post = (path: string, body: unknown) => call<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })
 
 export const api = {
@@ -229,6 +238,7 @@ export const api = {
   commits: (id: string) => call<Commit[]>(`/api/projects/${id}/commits`),
   commit: (id: string, sha: string) => call<{ sha: string; merge: boolean; diff: string; truncated: boolean }>(`/api/projects/${id}/commits/${sha}`),
   decide: (id: string, aid: string, approve: boolean) => post(`/api/projects/${id}/approvals/${aid}`, { approve }),
+  submitTask: (id: string, task: string) => call<SubmitResult>(`/api/projects/${id}/tasks/${task}/submit`, { method: 'POST', body: '{}' }),
   escalate: (id: string, action: 'retry' | 'replan' | 'stop', agent: string) => post(`/api/projects/${id}/escalation`, { action, agent }),
   override: (id: string, agent: string, model: string | null) => post(`/api/projects/${id}/agents/${agent}/model`, { model }),
   ask: (id: string, agent: string, text: string, asTask: boolean) => post(`/api/projects/${id}/agents/${agent}/ask`, { text, as_task: asTask }),
@@ -237,7 +247,7 @@ export const api = {
   recordings: () => call<RecordingMeta[]>('/api/recordings'),
   metrics: () => call<Metrics>('/api/metrics'),
   projects: () => call<ProjectStatus[]>('/api/projects'),
-  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string; fast_live?: boolean; import_from?: string; auto_fix?: boolean }) =>
+  create: (body: { goal: string; mode: string; demo: boolean; recording?: string; speed?: number; preset?: string; fast_live?: boolean; import_from?: string; auto_fix?: boolean; human_roles?: string[] }) =>
     call<ProjectStatus>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
   finishPick: (id: string, gaps: string[]) => call<{ selected: string[] }>(`/api/projects/${id}/finish`, { method: 'POST', body: JSON.stringify({ gaps }) }),
   setMode: (id: string, mode: string) => call<unknown>(`/api/projects/${id}/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),

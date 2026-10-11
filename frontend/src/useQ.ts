@@ -24,6 +24,7 @@ export function useQ() {
   const [demo, setDemo] = useState(true)
   const [speed, setSpeedState] = useState(1)
   const [mode, setModeState] = useState('supervised')
+  const [humanRoles, setHumanRolesState] = useState<string[]>(['backend']) // simulation: the engineers the person plays
   const [recordings, setRecordings] = useState<RecordingMeta[]>([])
   const [recording, setRecording] = useState('')
   const [config, setConfig] = useState<ConfigInfo | null>(null)
@@ -115,10 +116,12 @@ export function useQ() {
     async (goal: string) => {
       setBusy(true)
       try {
-        const s = await api.create({ goal, mode, demo, recording: demo ? recording || undefined : undefined, speed, preset: demo ? undefined : preset, fast_live: demo ? undefined : fast })
+        const sim = !demo && mode === 'simulation' // a replay is a recording: it plays as it was made
+        const s = await api.create({ goal, mode: demo && mode === 'simulation' ? 'supervised' : mode, demo, recording: demo ? recording || undefined : undefined, speed, preset: demo ? undefined : preset, fast_live: demo ? undefined : fast, human_roles: sim ? humanRoles : undefined })
         model.reset()
         model.setGoal(goal)
         model.setMode(s.mode)
+        if (sim) model.setHumanRoles(humanRoles)
         setProjectId(s.id)
         setReplay(demo)
         setBuilds((await api.projects().catch(() => [])).length || builds + 1)
@@ -128,14 +131,14 @@ export function useQ() {
         setBusy(false)
       }
     },
-    [mode, demo, recording, speed, preset, fast, model, fail, builds],
+    [mode, humanRoles, demo, recording, speed, preset, fast, model, fail, builds],
   )
 
   const startImport = useCallback(
     async (source: string, autoFix: boolean) => {
       setBusy(true)
       try {
-        const s = await api.create({ goal: '', mode, demo: false, import_from: source, auto_fix: autoFix, fast_live: fast })
+        const s = await api.create({ goal: '', mode: mode === 'simulation' ? 'supervised' : mode, demo: false, import_from: source, auto_fix: autoFix, fast_live: fast })
         model.reset()
         model.setGoal(s.goal)
         model.setMode(s.mode)
@@ -153,11 +156,46 @@ export function useQ() {
 
   const setMode = useCallback(
     async (m: string) => {
+      const crossing = (m === 'simulation') !== (mode === 'simulation') // who plays which role is fixed when a build starts
+      if (crossing && projectId && !replay && !model.finished) {
+        toast('warn', 'Simulation is chosen before the build starts', 'Start a new build to switch into or out of it.')
+        return
+      }
       setModeState(m)
       model.setMode(m)
-      if (projectId) await api.setMode(projectId, m).catch(fail)
+      if (crossing) model.setHumanRoles(m === 'simulation' ? humanRoles : [])
+      if (projectId && !crossing) await api.setMode(projectId, m).catch(fail)
     },
-    [projectId, model, fail],
+    [mode, humanRoles, projectId, replay, model, fail, toast],
+  )
+
+  /** The role picker: which engineers the person plays in the next simulation build. */
+  const setHumanRoles = useCallback(
+    (roles: string[]) => {
+      setHumanRolesState(roles)
+      if (mode === 'simulation' && (!projectId || replay || model.finished)) model.setHumanRoles(roles)
+    },
+    [mode, projectId, replay, model],
+  )
+
+  /** Submit: the answer also arrives as events (a toast for a red test run, for the Reviewer's items, for an accepted task). */
+  const submitTask = useCallback(
+    async (task: string) => {
+      if (projectId) await api.submitTask(projectId, task).catch(fail)
+    },
+    [projectId, fail],
+  )
+
+  const copyPath = useCallback(
+    async (path: string) => {
+      try {
+        await navigator.clipboard.writeText(path)
+        toast('good', 'Folder path copied', path)
+      } catch {
+        toast('info', 'Your folder', path) // the clipboard is not available here: the path is in the message
+      }
+    },
+    [toast],
   )
 
   const setSpeed = useCallback(
@@ -184,7 +222,7 @@ export function useQ() {
   )
 
   return {
-    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail,
+    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail, humanRoles, setHumanRoles, submitTask, copyPath,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
     metrics, builds, busy, start, startImport, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }

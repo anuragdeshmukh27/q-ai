@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ConfigInfo, RecordingMeta } from '../api'
-import type { BoardArea, OfficeModel } from '../model'
+import { HUMAN_ROLES, type BoardArea, type OfficeModel } from '../model'
 
 import { card, orderDemos } from '../demos'
 import { EXAMPLES, FAMOUS } from '../examples'
@@ -26,7 +26,16 @@ interface Props {
   onFast: (v: boolean) => void
   onStart: (goal: string) => void
   onImport: (source: string, autoFix: boolean) => void
+  mode: string
+  replay: boolean
+  projectId: string | null
+  humanRoles: string[]
+  onHumanRoles: (roles: string[]) => void
+  onSubmit: (task: string) => Promise<void>
+  onCopyPath: (path: string) => void
 }
+
+const ROLE_LABEL: Record<string, string> = { backend: 'Backend', frontend: 'Frontend', database: 'Database' }
 
 const STATE_COLOR: Record<BoardArea['state'], string> = { waiting: '#3a4466', working: '#6ea8ff', done: '#4ade80', problem: '#f87171' }
 
@@ -69,7 +78,17 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath }: Props) {
+  const [submitting, setSubmitting] = useState<string | null>(null)
+  const rolesLocked = hasProject && !replay && !model.finished // the roles of a running simulation are fixed
+  const submit1 = async (task: string) => {
+    setSubmitting(task)
+    try {
+      await onSubmit(task)
+    } finally {
+      setSubmitting(null)
+    }
+  }
   const [goal, setGoal] = useState(EXAMPLES[0].goal)
   const [source, setSource] = useState('')
   const [autoFix, setAutoFix] = useState(false)
@@ -153,6 +172,26 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
         </label>
       )}
 
+      {!demo && mode === 'simulation' && (
+        <div>
+          <Heading>YOU PLAY</Heading>
+          <div role="group" aria-label="Roles you play" className="rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[13px]">
+            {HUMAN_ROLES.map((r) => (
+              <label key={r} className={`flex items-center gap-2 py-0.5 ${rolesLocked ? 'opacity-60' : 'cursor-pointer'}`}>
+                <input
+                  type="checkbox"
+                  checked={humanRoles.includes(r)}
+                  disabled={rolesLocked}
+                  onChange={(e) => onHumanRoles(e.target.checked ? HUMAN_ROLES.filter((x) => x === r || humanRoles.includes(x)) : humanRoles.filter((x) => x !== r))}
+                />
+                <span className="font-bold">{ROLE_LABEL[r]}</span>
+              </label>
+            ))}
+            <span className="mt-1 block text-[11.5px] leading-tight text-[var(--muted)]">The AI team builds the rest. Your tasks wait for you: edit the files in your folder, then press Submit.</span>
+          </div>
+        </div>
+      )}
+
       {demo && (
         <div>
           <Heading>CHOOSE A RECORDED BUILD</Heading>
@@ -220,21 +259,57 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
           <div className="text-[13px] text-[var(--muted)]">The Planner's task graph appears here.</div>
         ) : (
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {model.tasks.map((t) => (
-              <li key={t.id} className="rounded-md border border-[var(--line)] bg-[#0b0e17] px-2.5 py-1.5 text-[13px]">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-[var(--accent)]">{t.id}</span>
-                  <span className="truncate">{t.title}</span>
-                  <span className="ml-auto shrink-0 text-[11px] font-bold" style={{ color: { done: '#4ade80', running: '#6ea8ff', failed: '#f87171' }[t.status] ?? '#8a93aa' }}>
-                    {t.status.toUpperCase()}
-                  </span>
-                </div>
-                <div className="text-[12px] text-[var(--muted)]">
-                  {model.name(t.owner)}
-                  {t.depends_on.length > 0 && ` · after ${t.depends_on.map((d) => byId.get(d)?.id ?? d).join(', ')}`}
-                </div>
-              </li>
-            ))}
+            {model.tasks.map((t) => {
+              const mine = t.assignee === 'human'
+              const yourTurn = mine && t.status === 'running' && !replay
+              return (
+                <li key={t.id} className="rounded-md border border-[var(--line)] bg-[#0b0e17] px-2.5 py-1.5 text-[13px]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[var(--accent)]">{t.id}</span>
+                    {mine && <span className="shrink-0 rounded bg-[#243055] px-1.5 py-[1px] text-[10.5px] font-bold tracking-wide text-[#a9c1ff]">YOU</span>}
+                    <span className="truncate">{t.title}</span>
+                    <span className="ml-auto shrink-0 text-[11px] font-bold" style={{ color: yourTurn ? '#fbbf24' : ({ done: '#4ade80', running: '#6ea8ff', failed: '#f87171' }[t.status] ?? '#8a93aa') }}>
+                      {yourTurn ? 'YOUR TURN' : t.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-[var(--muted)]">
+                    {model.name(t.owner)}
+                    {t.depends_on.length > 0 && ` · after ${t.depends_on.map((d) => byId.get(d)?.id ?? d).join(', ')}`}
+                  </div>
+                  {yourTurn && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <button
+                        onClick={() => submit1(t.id)}
+                        disabled={submitting !== null}
+                        title="Run the tests in your folder; when they pass the Reviewer reads your change and the Integrator merges it"
+                        className="rounded-md border border-[var(--accent)] px-2.5 py-0.5 text-[12px] font-bold text-[var(--text)] disabled:opacity-40"
+                      >
+                        {submitting === t.id ? 'Checking…' : 'Submit'}
+                      </button>
+                      {t.worktree && (
+                        <button
+                          onClick={() => onCopyPath(t.worktree!)}
+                          title={t.worktree}
+                          className="rounded-md border border-[var(--line)] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                        >
+                          Copy folder path
+                        </button>
+                      )}
+                      {t.doc && projectId && (
+                        <a
+                          href={`/api/projects/${projectId}/tasks/${t.id}/doc`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-md border border-[var(--line)] px-2.5 py-0.5 text-[12px] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                        >
+                          Task document
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
