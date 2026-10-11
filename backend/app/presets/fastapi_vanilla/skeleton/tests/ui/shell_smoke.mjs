@@ -116,6 +116,14 @@ for (const r of cfg.resources) assert.ok(links.some((a) => a.dataset.route === r
 assert.ok(!text().includes('Something went wrong'), failed('the dashboard'))
 assert.ok(view().querySelectorAll('.q-kpi').length >= 1, 'the dashboard shows KPI cards')
 if (cfg.dashboard.charts.length) assert.ok(view().querySelectorAll('.q-bar').length >= 1, 'the dashboard draws a chart')
+const ui = cfg.ui ?? {}
+assert.equal(html.dataset.nav, ui.nav ?? 'side', 'the navigation placement of the pack is applied')
+assert.equal(html.dataset.density, ui.density ?? 'cozy', 'the density of the pack is applied')
+if (cfg.dashboard.charts.length) {
+  assert.ok(view().querySelectorAll('.q-chart-total').length >= 1, 'every chart card shows its total')
+  if (ui.charts === 'columns') assert.ok(view().querySelectorAll('.q-cols .q-bar').length >= 1, 'column charts are drawn upright')
+}
+if (cfg.notIncluded.length) assert.ok(html.querySelector('#scope-note'), 'the note on what is left out is on every page, also with the navigation on top')
 
 for (const r of cfg.resources) {
   await go('#/' + r.name)
@@ -128,6 +136,47 @@ for (const r of cfg.resources) {
   assert.ok(!text().includes('Something went wrong') && !text().includes('Not found'), failed(`the ${r.singular} detail page`))
   if (r.children.length) assert.equal(view().querySelectorAll('.q-tab').length, r.children.length, `a tab for every related resource of ${r.name}`)
   for (const a of r.actions) assert.ok(view().querySelectorAll(`button[data-action="${a.name}"]`).length >= 1, `the detail page of ${r.singular} has ${a.name}`)
+}
+// the board (kanban): a resource with a status field can be switched from its table to columns; cards move by drag and drop or by their Move to list
+const statusOf = (r) => {
+  const n = r.flow && Object.keys(r.flow)[0]
+  const f = r.fields.find((x) => x.name === n && x.options) || r.fields.find((x) => x.options && x.options.length >= 2 && x.options.length <= 8 && /status|stage|state|phase/i.test(x.name))
+  return f && f.options.length >= 2 ? f : null
+}
+let dragged = false
+for (const r of cfg.resources) {
+  const sf = statusOf(r)
+  await go('#/' + r.name)
+  const toggle = view().querySelector('#view-board')
+  if (!sf) { assert.ok(!toggle, `no board switch on ${r.name}: it has no status field`); continue }
+  assert.ok(toggle, `${r.name} can be shown as a board by ${sf.name}`)
+  const total = view().querySelectorAll('tbody tr').length
+  await toggle.click(); await flush()
+  assert.ok(!text().includes('Something went wrong'), failed(`the ${r.name} board`))
+  assert.equal(view().querySelectorAll('.q-col').length, sf.options.length, `a column for every label of ${sf.name}`)
+  assert.equal(view().querySelectorAll('.q-kcard').length, total, `a card for every ${r.singular} of the table`)
+  assert.equal(view().querySelectorAll('tbody tr').length, 0, 'the board replaces the table')
+  const movable = view().querySelectorAll('.q-kcard').find((c) => c.querySelector('select'))
+  if (movable) {
+    const before = calls.length
+    const sel = movable.querySelector('select')
+    const to = sel.childNodes[1].value
+    if (!dragged) {
+      dragged = true
+      await movable.fire('dragstart', { dataTransfer: { setData() {} } })
+      const col = view().querySelectorAll('.q-col').find((c) => c.dataset.value === to)
+      await col.fire('dragover', { dataTransfer: {} })
+      await col.fire('drop', { dataTransfer: {} })
+    } else {
+      sel.value = to
+      await sel.fire('change')
+    }
+    await flush(); await flush()
+    assert.ok(calls.slice(before).some((c) => (c.method === 'POST' || c.method === 'PUT') && c.url.startsWith('/api')), `moving a ${r.singular} to ${to} writes to the API`)
+  }
+  await go('#/' + r.name)
+  await view().querySelector('#view-table').click(); await flush()
+  assert.equal(view().querySelectorAll('tbody tr').length, total, 'the table view comes back')
 }
 await go('#/about')
 assert.ok(text().includes('Not in this version'), 'the About page lists what is left out')

@@ -17,7 +17,9 @@
   let view = null;
   let sideNav = null;
   let crumbs = null;
-  const state = { rows: {}, token: 0, sort: {}, filters: {}, search: {}, tab: {} };
+  const state = { rows: {}, token: 0, sort: {}, filters: {}, search: {}, tab: {}, view: {} };
+  let dragging = null;
+  const asksBoard = () => typeof location.search === "string" && /[?&]view=board/.test(location.search);  // ?view=board opens the boards first (for a screenshot or a link)
 
   // ---- small helpers -----------------------------------------------------------------------------------------------------------------------------------
   const el = (tag, cls, text) => {
@@ -33,6 +35,7 @@
   const clear = (n) => { n.textContent = ""; return n; };
   const by = (name) => cfg.resources.find((r) => r.name === name);
   const fill = (url, vars) => url.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k]));
+  const one = (r) => r.singular.replace(/_/g, " ");  // "mentor session", for the words on the page
   const pretty = (s) => String(s).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   const tone = (text) => {
     const key = String(text).toLowerCase();
@@ -120,6 +123,13 @@
   }
   const isNum = (f) => ["money", "number", "integer", "counter", "rating"].includes(f.kind);
   const fieldOf = (r, name) => r.fields.find((f) => f.name === name) || (r.extra || []).find((f) => f.name === name);
+  // the field a board is made of: the one the status flow is about, else a labelled field called status, stage, state or phase
+  const statusField = (r) => {
+    const named = r.flow && Object.keys(r.flow)[0];
+    const f = named && fieldOf(r, named);
+    if (f && f.options && f.options.length >= 2) return f;
+    return r.fields.find((x) => x.options && x.options.length >= 2 && x.options.length <= 8 && /status|stage|state|phase/i.test(x.name)) || null;
+  };
 
   // ---- actions ------------------------------------------------------------------------------------------------------------------------------------------
   function allowed(r, a, item) {
@@ -132,7 +142,7 @@
   async function run(r, a, item) {
     try {
       await call("POST", fill(a.url, { id: item.id }));
-      toast(a.kind === "set" ? `${item[r.title] ?? r.singular}: ${a.value}` : "Done", "success");
+      toast(a.kind === "set" ? `${item[r.title] ?? one(r)}: ${a.value}` : "Done", "success");
     } catch (e) {
       toast(e.detail || "Could not do that", "error");
     }
@@ -268,9 +278,9 @@
     const parentRes = r.parent ? by(r.parent) : null;
     const open = async () => {
       const parents = parentRes ? await rows(parentRes.name) : null;
-      if (parentRes && !parents.length) { toast(`Add a ${parentRes.singular} first`, "info"); return; }
+      if (parentRes && !parents.length) { toast(`Add a ${one(parentRes)} first`, "info"); return; }
       openForm({
-        title: `New ${r.singular}`, fields: r.fields, submit: `Add ${r.singular}`,
+        title: `New ${one(r)}`, fields: r.fields, submit: `Add ${one(r)}`,
         parents: parentRes && !parentId ? { resource: parentRes, rows: parents, selected: parents[0].id } : null,
         onSave: async (values, chosen) => {
           const pid = parentId ?? chosen;
@@ -285,7 +295,7 @@
   }
   function editForm(r, item) {
     return () => openForm({
-      title: `Edit ${r.singular}`, fields: r.fields, values: valuesOf(r, item),
+      title: `Edit ${one(r)}`, fields: r.fields, values: valuesOf(r, item),
       onSave: async (values) => {
         await call("PUT", fill(r.item, { id: item.id }), values);
         toast("Saved", "success");
@@ -295,7 +305,7 @@
     });
   }
   function removeItem(r, item, then) {
-    return () => confirmBox(`Delete this ${r.singular}${(r.children || []).length ? ` and its ${r.children.map((c) => c).join(", ")}` : ""}? This cannot be undone.`, async () => {
+    return () => confirmBox(`Delete this ${one(r)}${(r.children || []).length ? ` and its ${r.children.map((c) => c).join(", ")}` : ""}? This cannot be undone.`, async () => {
       try {
         await call("DELETE", fill(r.item, { id: item.id }));
         toast("Removed", "success");
@@ -398,11 +408,85 @@
     wrap.appendChild(scroll);
     return wrap;
   }
+  // ---- board (kanban): one column per label of the status field; a card moves by drag and drop or by its "Move to" list ---------------------------------------
+  function board(r, items, sf, { showParent = false } = {}) {
+    const wrap = el("div", "q-board");
+    wrap.setAttribute("aria-label", `${r.label} by ${sf.label.toLowerCase()}`);
+    const flow = r.flow && r.flow[sf.name];
+    const targets = (item) => sf.options.filter((o) => o !== item[sf.name] && (!flow || (flow[item[sf.name]] || []).includes(o)));
+    const move = async (item, value) => {
+      if (item[sf.name] === value) return;
+      if (!targets(item).includes(value)) { toast(`${titleOf(r, item)} cannot go from ${item[sf.name]} to ${value}`, "error"); return; }
+      const act = r.actions.find((a) => a.kind === "set" && a.field === sf.name && a.value === value);
+      if (act) { await run(r, act, item); return; }
+      if (r.noEdit) { toast(`${pretty(r.singular)} cannot be changed`, "error"); return; }
+      try {
+        await call("PUT", fill(r.item, { id: item.id }), { ...valuesOf(r, item), [sf.name]: value });
+        toast(`${titleOf(r, item)}: ${value}`, "success");
+      } catch (e) {
+        toast(e.detail || "Could not move that", "error");
+      }
+      invalidate();
+      await render();
+    };
+    const known = new Set(sf.options);
+    const columns = [...sf.options.map((o) => [o, o]), ...(items.some((i) => !known.has(i[sf.name])) ? [["", "No " + sf.label.toLowerCase()]] : [])];
+    const extra = r.columns.filter((n) => n !== r.title && n !== sf.name).map((n) => fieldOf(r, n)).filter(Boolean).slice(0, 2);
+    for (const [value, label] of columns) {
+      const mine = items.filter((i) => (value ? i[sf.name] === value : !known.has(i[sf.name])));
+      const col = el("section", "q-col");
+      col.dataset.value = value;
+      const hd = el("header", "q-col-head");
+      add(hd, el("span", `badge badge-${tone(label)}`, label), el("span", "q-pill", String(mine.length)));
+      col.appendChild(hd);
+      const body = el("div", "q-col-body");
+      for (const item of mine) {
+        const card = el("article", "q-kcard");
+        card.draggable = true;
+        card.dataset.id = String(item.id);
+        card.addEventListener("dragstart", (ev) => {
+          dragging = item;
+          if (ev.dataTransfer) { try { ev.dataTransfer.setData("text/plain", String(item.id)); ev.dataTransfer.effectAllowed = "move"; } catch { /* a browser without data transfer */ } }
+        });
+        card.addEventListener("dragend", () => { dragging = null; });
+        const a = el("a", "q-kcard-title", titleOf(r, item));
+        a.href = `#/${r.name}/${item.id}`;
+        card.appendChild(a);
+        if (showParent && item._parent) card.appendChild(el("div", "q-kcard-parent", titleOf(by(r.parent), item._parent)));
+        for (const f of extra) {
+          if (item[f.name] === undefined || item[f.name] === null || item[f.name] === "") continue;
+          const line = el("div", "q-kcard-line");
+          add(line, el("span", "q-kcard-key", f.label), cell(r, f, item));
+          card.appendChild(line);
+        }
+        const options = targets(item);
+        if (options.length && !r.noEdit) {
+          const sel = el("select", "q-kcard-move");
+          sel.setAttribute("aria-label", `Move ${titleOf(r, item)} to`);
+          const keep = el("option", "", "Move to…");
+          keep.value = "";
+          sel.appendChild(keep);
+          for (const o of options) { const op = el("option", "", o); op.value = o; sel.appendChild(op); }
+          sel.value = "";
+          sel.addEventListener("change", () => { if (sel.value) move(item, sel.value); });
+          card.appendChild(sel);
+        }
+        body.appendChild(card);
+      }
+      if (!mine.length) body.appendChild(el("div", "q-col-empty", "Nothing here"));
+      col.appendChild(body);
+      col.addEventListener("dragover", (ev) => { if (dragging && value) { ev.preventDefault(); col.classList.add("q-over"); } });
+      col.addEventListener("dragleave", () => col.classList.remove("q-over"));
+      col.addEventListener("drop", (ev) => { ev.preventDefault(); col.classList.remove("q-over"); const item = dragging; dragging = null; if (item && value) move(item, value); });
+      wrap.appendChild(col);
+    }
+    return wrap;
+  }
   function empty(r, text, onAdd, label) {
     const box = el("div", "q-card q-empty");
     box.appendChild(el("div", "q-empty-icon", r.icon || cfg.icon));
     box.appendChild(el("div", "", text || (cfg.empty[r.name] || cfg.empty.default)));
-    if (onAdd) { const b = el("button", "", label || `Add ${r.singular}`); b.type = "button"; b.addEventListener("click", onAdd); box.appendChild(b); }
+    if (onAdd) { const b = el("button", "", label || `Add ${one(r)}`); b.type = "button"; b.addEventListener("click", onAdd); box.appendChild(b); }
     return box;
   }
   function matches(r, item, q) {
@@ -451,9 +535,26 @@
         sel.addEventListener("change", async () => { state.sort[r.name + ":server"] = sel.value; invalidate(); await render(); });
         bar.appendChild(sel);
       }
+      const sf = statusField(r);
+      const mode = sf && (state.view[key] || (asksBoard() ? "board" : "")) === "board" ? "board" : "table";
+      if (sf) {
+        const seg = el("div", "q-seg");
+        seg.setAttribute("role", "group");
+        seg.setAttribute("aria-label", "View");
+        for (const [v, label] of [["table", "☰ Table"], ["board", "▥ Board"]]) {
+          const b = el("button", "", label);
+          b.type = "button";
+          b.id = "view-" + v;
+          b.dataset.view = v;
+          b.setAttribute("aria-pressed", String(v === mode));
+          b.addEventListener("click", () => { state.view[key] = v; draw(); });
+          seg.appendChild(b);
+        }
+        bar.appendChild(seg);
+      }
       bar.appendChild(el("span", "q-count", count(shown.length, r.singular.replace(/_/g, " "), r.label.toLowerCase())));
       container.appendChild(bar);
-      container.appendChild(shown.length ? table(r, shown, key, { showParent, onChange: draw }) : empty(r, items.length ? "Nothing matches. Try another search or filter." : undefined, items.length ? null : createForm(r, null), addLabel));
+      container.appendChild(shown.length && mode === "board" ? board(r, shown, sf, { showParent }) : shown.length ? table(r, shown, key, { showParent, onChange: draw }) : empty(r, items.length ? "Nothing matches. Try another search or filter." : undefined, items.length ? null : createForm(r, null), addLabel));
     };
     draw();
   }
@@ -511,14 +612,18 @@
     }
     if (!data.length) return null;
     const top = Math.max(1, ...data.map((d) => d.value));
-    const box = el("section", "q-card");
-    box.appendChild(el("h2", "", c.title));
-    const bars = el("div", "q-bars");
+    const columns = (cfg.ui || {}).charts === "columns";
+    const total = data.reduce((t, d) => t + d.value, 0);
+    const box = el("section", "q-card q-chart");
+    const hd = el("div", "q-card-head");
+    add(hd, el("h2", "", c.title), el("span", "q-chart-total", (c.sum && c.format === "money" ? money(total) : num(total, 0)) + " total"));
+    box.appendChild(hd);
+    const bars = el("div", columns ? "q-bars q-cols" : "q-bars");
     for (const d of data) {
       const row = el("div", "q-bar");
       const track = el("div", "q-bar-track");
       const fillEl = el("div", "q-bar-fill");
-      fillEl.style.width = Math.round((100 * d.value) / top) + "%";
+      fillEl.style[columns ? "height" : "width"] = Math.round((100 * d.value) / top) + "%";
       track.appendChild(fillEl);
       add(row, el("span", "q-bar-label", d.label), track, el("span", "q-bar-value", c.sum && c.format === "money" ? money(d.value) : num(d.value, 0)));
       bars.appendChild(row);
@@ -536,6 +641,18 @@
       if (value === null) continue;
       const card = el("div", "q-kpi");
       add(card, el("div", "q-kpi-label", k.label), el("div", "q-kpi-value", value));
+      const every = await rows((k.resource === "*" ? primary() : by(k.resource)).name);
+      if (k.agg === "count" && k.where && every.length) {  // a filtered count shows its share of everything in the module
+        const part = every.filter((i) => where(i, k.where)).length;
+        const track = el("div", "q-kpi-bar");
+        const fillEl = el("div", "q-kpi-bar-fill");
+        fillEl.style.width = Math.round((100 * part) / every.length) + "%";
+        track.appendChild(fillEl);
+        add(card, track, el("div", "q-kpi-note", `${Math.round((100 * part) / every.length)}% of ${every.length}`));
+      } else {
+        const r = k.resource === "*" ? primary() : by(k.resource);
+        add(card, el("div", "q-kpi-note", `from ${count(every.length, r.singular.replace(/_/g, " "), r.label.toLowerCase())}`));
+      }
       kpis.appendChild(card);
     }
     const charts = el("div", "q-grid-2");
@@ -568,8 +685,8 @@
     const box = el("div", "q-panel");
     box.style.paddingTop = "0";
     listBlock(r, items, r.name, box, { showParent: !!r.parent });
-    const addBtn = button(`+ New ${r.singular}`, createForm(r, null));
-    const clearBtn = r.clear ? button("Clear all", () => confirmBox(`Remove every ${r.singular}?`, async () => { await call("DELETE", r.clear); invalidate(); await render(); }), "btn-secondary") : null;
+    const addBtn = button(`+ New ${one(r)}`, createForm(r, null));
+    const clearBtn = r.clear ? button("Clear all", () => confirmBox(`Remove every ${one(r)}?`, async () => { await call("DELETE", r.clear); invalidate(); await render(); }), "btn-secondary") : null;
     if (hooks.loaded && r.name === primary().name) hooks.loaded({ resource: r.name, items, data: { items } });
     return [head(r.label, count(items.length, r.singular.replace(/_/g, " "), r.label.toLowerCase()), clearBtn, addBtn), box];
   }
@@ -579,7 +696,7 @@
     const crumbs0 = [{ text: "Dashboard", href: "#/" }];
     if (!item) {
       setCrumbs([...crumbs0, { text: r.label, href: `#/${r.name}` }, { text: "Not found" }]);
-      return [head("Not found", `There is no ${r.singular} with that number.`, button(`Back to ${r.label.toLowerCase()}`, () => { location.hash = `#/${r.name}`; })), empty(r, `This ${r.singular} was deleted or never existed.`)];
+      return [head("Not found", `There is no ${one(r)} with that number.`, button(`Back to ${r.label.toLowerCase()}`, () => { location.hash = `#/${r.name}`; })), empty(r, `This ${one(r)} was deleted or never existed.`)];
     }
     const p = r.parent ? by(r.parent) : null;
     setCrumbs([...crumbs0, ...(p ? [{ text: p.label, href: `#/${p.name}` }, { text: titleOf(p, item._parent), href: `#/${p.name}/${item._parent.id}` }] : [{ text: r.label, href: `#/${r.name}` }]), { text: titleOf(r, item) }]);
@@ -634,10 +751,10 @@
         }
         const spacer = el("span", "q-count");
         bar.appendChild(spacer);
-        bar.appendChild(button(`+ New ${k.singular}`, createForm(k, item.id)));
+        bar.appendChild(button(`+ New ${one(k)}`, createForm(k, item.id)));
         const list = el("div");
         panel.appendChild(bar);
-        listBlock(k, mine, `${k.name}@${item.id}`, list, { addLabel: `Add ${k.singular}` });
+        listBlock(k, mine, `${k.name}@${item.id}`, list, { addLabel: `Add ${one(k)}` });
         panel.appendChild(list);
       };
       out.push(tabs, panel);
@@ -714,7 +831,8 @@
       add(note, el("strong", "", "Not in this version:"), " ", cfg.notIncluded.join(", ") + ".");
       foot.appendChild(note);
     }
-    add(side, brand, sideNav, foot);
+    const topNav = (cfg.ui || {}).nav === "top";
+    add(side, brand, sideNav, topNav ? null : foot);
     const main = el("div", "q-main");
     const top = el("header", "q-top");
     crumbs = el("nav", "q-crumbs");
@@ -735,6 +853,7 @@
     add(main, top);
     if (hook && hook.parentNode === root) main.appendChild(hook);
     main.appendChild(view);
+    if (topNav) main.appendChild(foot);
     add(app, side, main);
     clear(root);
     root.appendChild(app);
@@ -744,6 +863,9 @@
     hooks = h;
     const html = document.documentElement;
     html.dataset.skin = cfg.skin || "studio";
+    const ui = cfg.ui || {};
+    html.dataset.nav = ui.nav || "side";  // the layout accent of the skill pack: where the navigation is, how dense the lists are, how charts are drawn
+    html.dataset.density = ui.density || "cozy";
     if (DARK_SIDEBAR.includes(html.dataset.skin)) html.dataset.sb = "dark";
     let mode = "";
     try { mode = localStorage.getItem("q-mode") || ""; } catch { /* private mode */ }
