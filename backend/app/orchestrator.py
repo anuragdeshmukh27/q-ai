@@ -16,6 +16,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterable
 
 from .agent.actions import Action
 from .agent.loop import AgentResult, run_agent
@@ -99,8 +100,10 @@ class Orchestrator:
         polish: bool = False,
         fast_live: bool = False,
         router=None,
+        human_roles: Iterable[str] = (),
     ):
         self.goal, self.registry, self.llm = goal, registry, llm
+        self.human_roles = tuple(human_roles)  # simulation mode: the engineers a human plays (their planned tasks get assignee "human")
         self.bus = bus or EventBus()
         self.mode, self.approver, self.forced_preset, self.base = mode, approver, preset, base
         self.overrides, self.local_only = overrides if overrides is not None else {}, local_only  # the UI keeps a handle on this dict

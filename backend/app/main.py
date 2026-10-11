@@ -99,7 +99,7 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     @app.get("/api/config")
     def config():
         return {"q_mode": settings.q_mode, "presets": {n: load_preset(n).description for n in list_presets()},
-                "modes": ["assisted", "supervised", "autonomous"], "recordings": list_recordings(settings.recordings)}
+                "modes": ["assisted", "supervised", "autonomous", "simulation"], "recordings": list_recordings(settings.recordings)}
 
     @app.get("/api/recordings")
     def recordings():

@@ -29,7 +29,7 @@ from .router import Router
 from .scheduler import MetricsSampler, ModelScheduler
 from .scope import classify_goal
 
-MODES = ("assisted", "supervised", "autonomous")
+MODES = ("assisted", "supervised", "autonomous", "simulation")  # simulation: the AI employees work as in supervised, and the human takes the roles in `human_roles`
 
 
 class SessionError(Exception):
@@ -84,6 +84,7 @@ class CreateRequest(BaseModel):
     then_ask: list[dict[str, str]] | None = None  # recorded builds only: Ask-employee tasks sent after the build ({agent, text}), part of the recording
     import_from: str | None = None  # Finish my project: a folder or a GitHub URL of a half-built project (the goal is then derived from it)
     auto_fix: bool = False  # Finish my project: fix every gap found without waiting for the human to choose
+    human_roles: list[str] | None = None  # simulation mode: the engineers a human plays ("database" | "backend" | "frontend"); default ["backend"]
     overrides: dict[str, str] | None = None  # live builds: a model for some employees from the first call on ({employee id: model id}), the same as the Employee inspector's override but set at the start
 
 
@@ -214,7 +215,7 @@ class Session:
             self.orch = Orchestrator(req.goal, mgr.registry, llm, self.bus, mode=self.mode, approver=self.approvals, preset=req.preset,
                                      base=mgr.settings.workspace, overrides=self.overrides, local_only=True, ports=mgr.ports,
                                      max_parallel=req.parallel, inject_fault=req.inject_fault, polish=mgr.settings.polish,
-                                     fast_live=fast, router=mgr.router)
+                                     fast_live=fast, router=mgr.router, human_roles=req.human_roles or ())
         self.fast_live = fast
         if mgr.scheduler is not None:
             mgr.scheduler.emit = self.bus.emit
@@ -359,6 +360,8 @@ class Session:
     def set_mode(self, mode: str) -> None:
         if mode not in MODES:
             raise SessionError(f"mode must be one of: {', '.join(MODES)}")
+        if self.orch and (mode == "simulation") != (self.mode == "simulation"):  # who plays which role is fixed when the build is created
+            raise SessionError("Simulation mode is chosen before the build starts; start a new build to switch into or out of it.", 409)
         self.mode = mode
         if self.orch:
             self.orch.mode = mode
@@ -552,6 +555,15 @@ class SessionManager:
         req.goal = goal
         if req.mode not in MODES:
             raise SessionError(f"mode must be one of: {', '.join(MODES)}")
+        if req.mode == "simulation":
+            if req.import_from:
+                raise SessionError("Simulation mode builds a new app; it cannot be combined with Finish my project.")
+            roles = ["backend"] if req.human_roles is None else list(dict.fromkeys(req.human_roles))
+            if any(r not in ENGINEERS for r in roles):
+                raise SessionError(f"human_roles can only contain: {', '.join(ENGINEERS)}")
+            req.human_roles = roles
+        elif req.human_roles:
+            raise SessionError("human_roles only applies to Simulation mode.")
         if req.preset and req.preset not in list_presets():
             raise SessionError(f"unknown preset; choose one of: {', '.join(list_presets())}")
         if req.record_as:

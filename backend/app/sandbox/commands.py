@@ -212,6 +212,8 @@ class CommandPolicy:
 
 def apply_mode(verdict: Verdict, mode: str) -> str:
     """Turn a policy verdict into the final decision for an autonomy mode."""
+    if mode == "simulation":  # the AI employees of a simulation behave as in Supervised
+        mode = "supervised"
     if mode not in MODES:
         raise ValueError(f"unknown autonomy mode: {mode}")
     if verdict.kind == DENY:
