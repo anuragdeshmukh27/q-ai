@@ -1,5 +1,6 @@
 // Read-only Monaco viewers. This file (and Monaco with it) is loaded lazily, the first time a code tab is opened.
 import { DiffEditor, Editor } from '@monaco-editor/react'
+import { useRef } from 'react'
 import { languageFor } from '../diff'
 import { MONACO_THEME } from './monaco'
 
@@ -27,4 +28,23 @@ export function DiffView({ path, original, modified }: { path: string; original:
 
 function Loading() {
   return <div className="p-4 text-[13px] text-[var(--muted)]">Loading the code viewer…</div>
+}
+
+/** The IDE's editor: the same Monaco and theme, editable when the file is the person's. `onSave` is Ctrl+S inside the editor. */
+export function EditView({ path, value, readOnly, onChange, onSave }: { path: string; value: string; readOnly: boolean; onChange: (text: string) => void; onSave: () => void }) {
+  const save = useRef(onSave)
+  save.current = onSave
+  return (
+    <Editor
+      height="100%"
+      theme={MONACO_THEME}
+      path={path}
+      language={languageFor(path)}
+      value={value}
+      onChange={(v) => onChange(v ?? '')}
+      onMount={(editor, monaco) => editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save.current())}
+      options={{ ...BASE, readOnly, renderLineHighlight: 'line', domReadOnly: readOnly }}
+      loading={<Loading />}
+    />
+  )
 }

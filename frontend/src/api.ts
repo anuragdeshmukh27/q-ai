@@ -219,10 +219,40 @@ export interface BaselineReport {
 /** What Submit answers (simulation mode); the same facts also arrive as events. */
 export interface SubmitResult {
   ok: boolean
-  stage: 'tests' | 'review' | 'accepted' | 'stopped'
+  stage: 'scope' | 'tests' | 'review' | 'accepted' | 'stopped'
   summary: string
   failed: string[]
   items: { file: string; problem: string }[]
+  files?: string[] // stage scope: the files outside the role's folders
+}
+
+/** The in-app IDE (simulation mode): the files of the worktree of a role the person plays, with who owns each and whether it may be edited right now. */
+export interface IdeFile {
+  path: string
+  size: number
+  owner: string // employee id, '' when nobody owns the path
+  writable: boolean
+}
+export interface IdeTree {
+  role: string
+  ready: boolean // false until the role's task has started (its folder exists)
+  task: string | null // the open task of the person for this role
+  running: boolean // a test run is going
+  files: IdeFile[]
+  names: Record<string, string> // employee id to name, for the lock labels
+  editable: string[] // the role's owned path patterns
+}
+
+/** The task document is plain text (markdown source), not JSON. */
+async function callText(path: string): Promise<string> {
+  let r: Response
+  try {
+    r = await fetch(path)
+  } catch {
+    throw new ApiError('Cannot reach the Q backend. Is it running?')
+  }
+  if (!r.ok) throw new ApiError(`Request failed (${r.status})`)
+  return r.text()
 }
 
 const post = (path: string, body: unknown) => call<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })
@@ -239,6 +269,11 @@ export const api = {
   commit: (id: string, sha: string) => call<{ sha: string; merge: boolean; diff: string; truncated: boolean }>(`/api/projects/${id}/commits/${sha}`),
   decide: (id: string, aid: string, approve: boolean) => post(`/api/projects/${id}/approvals/${aid}`, { approve }),
   submitTask: (id: string, task: string) => call<SubmitResult>(`/api/projects/${id}/tasks/${task}/submit`, { method: 'POST', body: '{}' }),
+  taskDoc: (id: string, task: string) => callText(`/api/projects/${id}/tasks/${task}/doc`),
+  ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),
+  ideRead: (id: string, role: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}`),
+  ideWrite: (id: string, role: string, path: string, content: string) => call<{ path: string; size: number; task: string }>(`/api/projects/${id}/ide/${role}/file`, { method: 'PUT', body: JSON.stringify({ path, content }) }),
+  ideTests: (id: string, role: string) => call<{ started: boolean; task: string }>(`/api/projects/${id}/ide/${role}/tests`, { method: 'POST', body: '{}' }),
   escalate: (id: string, action: 'retry' | 'replan' | 'stop', agent: string) => post(`/api/projects/${id}/escalation`, { action, agent }),
   override: (id: string, agent: string, model: string | null) => post(`/api/projects/${id}/agents/${agent}/model`, { model }),
   ask: (id: string, agent: string, text: string, asTask: boolean) => post(`/api/projects/${id}/agents/${agent}/ask`, { text, as_task: asTask }),

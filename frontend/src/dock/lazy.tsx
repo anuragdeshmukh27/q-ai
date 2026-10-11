@@ -16,3 +16,11 @@ export const LazyDiff = (p: { path: string; original: string; modified: string }
     <Diff {...p} />
   </Suspense>
 )
+
+const Edit = lazy(() => import('./CodeView').then((m) => ({ default: m.EditView })))
+
+export const LazyEdit = (p: { path: string; value: string; readOnly: boolean; onChange: (text: string) => void; onSave: () => void }) => (
+  <Suspense fallback={fallback}>
+    <Edit {...p} />
+  </Suspense>
+)

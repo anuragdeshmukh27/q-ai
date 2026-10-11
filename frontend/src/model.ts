@@ -40,7 +40,27 @@ export interface TaskView {
   assignee?: string // 'human': a person works on it (simulation mode)
   worktree?: string // the folder the person edits (set when the task is handed over)
   doc?: string // the task document, relative to the project
+  tests?: string[] // the acceptance tests of a human's task (files or test ids)
 }
+
+/** One test of the last run of a person's suite (the IDE's test panel). */
+export interface IdeTestRun {
+  task: string
+  ok: boolean
+  passed: number
+  failed: number
+  tests: { id: string; outcome: string }[]
+  summary: string
+}
+/** The test panel of the in-app IDE: the output of the current or last run (Run tests and Submit both fill it) and the verdict of the last finished one. */
+export interface IdeOutput {
+  task: string
+  running: boolean
+  lines: string[]
+  cut: boolean // older lines were dropped
+  result: IdeTestRun | null
+}
+export const IDE_MAX_LINES = 4000
 
 export type Tone = 'info' | 'good' | 'bad' | 'warn'
 
@@ -158,6 +178,7 @@ export class OfficeModel {
   qa: boolean | null = null // last QA verdict
   version = 0 // bumped on every change; React re-renders on it
 
+  ide: IdeOutput = { task: '', running: false, lines: [], cut: false, result: null }
   humanRoles = new Set<string>() // simulation: the employees the person plays; their desks read "You"
   private realNames = new Map<string, string>() // their names from the roster, kept to restore them
   private owners = new Map<string, string>()
@@ -217,6 +238,7 @@ export class OfficeModel {
   /** Forget the project but keep the team. */
   reset() {
     this.humanRoles = new Set()
+    this.ide = { task: '', running: false, lines: [], cut: false, result: null }
     this.applyHumanNames()
     this.setRoster(this.order.map((id) => this.agents.get(id)!).map(({ id, name, role, desk, sprite }) => ({ id, name, role, desk, sprite })), false)
     this.tasks = []
@@ -426,7 +448,7 @@ export class OfficeModel {
         const old = new Map(this.tasks.map((t) => [t.id, t]))
         this.tasks = tasks.map((t) => {
           const prev = old.get(t.id)
-          return { ...t, status: prev?.status ?? 'pending', ...(prev?.worktree ? { worktree: prev.worktree, doc: prev.doc } : {}) } // a re-plan keeps where the person works
+          return { ...t, status: prev?.status ?? 'pending', ...(prev?.worktree ? { worktree: prev.worktree, doc: prev.doc, tests: prev.tests } : {}) } // a re-plan keeps where the person works
         })
         this.owners = new Map(tasks.map((t) => [t.id, t.owner]))
         this.show({ kind: 'say', agent: 'planner', text: `Plan: ${tasks.length} tasks`, tone: 'info' }, visuals)
@@ -467,7 +489,7 @@ export class OfficeModel {
         break
       case 'human_task_assigned': {
         const id = str(e.task)
-        this.tasks = this.tasks.map((t) => (t.id === id ? { ...t, assignee: 'human', worktree: str(e.worktree), doc: str(e.doc) } : t))
+        this.tasks = this.tasks.map((t) => (t.id === id ? { ...t, assignee: 'human', worktree: str(e.worktree), doc: str(e.doc), tests: Array.isArray(e.tests) ? (e.tests as string[]) : [] } : t))
         if (a && !this.humanRoles.has(a.id)) {
           this.humanRoles.add(a.id) // a replay of a recording that has no simulation_started, or a task the scenario created on another desk
           this.applyHumanNames()
@@ -480,13 +502,37 @@ export class OfficeModel {
       case 'human_submit_result': {
         const id = str(e.task)
         const failed = Array.isArray(e.failed) ? (e.failed as string[]) : []
-        if (e.ok === true) {
+        if (e.stage === 'scope') {
+          const files = Array.isArray(e.files) ? (e.files as string[]) : []
+          this.show({ kind: 'toast', level: 'bad', title: `${id}: files outside your role`, text: clip(`${files.slice(0, 4).join(', ')}${files.length > 4 ? ` and ${files.length - 4} more` : ''}. Revert them: only your own folders can be submitted.`, 200) }, visuals)
+        } else if (e.ok === true) {
           this.show({ kind: 'toast', level: 'good', title: `${id} accepted`, text: `${clip(str(e.summary), 80)}. The Integrator merges it now.` }, visuals)
         } else {
           const names = failed.map((f) => f.split('::').pop() ?? f).slice(0, 3).join(', ')
           this.show({ kind: 'toast', level: 'bad', title: `${id}: tests failed`, text: clip(`${str(e.summary)}${names ? `: ${names}` : ''}. The task stays open: fix it and submit again.`, 160) }, visuals)
         }
         this.say(`${id}: ${e.ok === true ? 'accepted' : 'tests failed'} ${str(e.summary)}`)
+        break
+      }
+      case 'human_test_started':
+        this.ide = { ...this.ide, task: str(e.task), running: true, lines: [], cut: false }
+        break
+      case 'human_test_output': {
+        const ide = this.ide
+        ide.lines.push(str(e.line)) // in place: a run is thousands of lines and the panel reads them on every render
+        if (ide.lines.length > IDE_MAX_LINES) {
+          ide.lines.shift()
+          ide.cut = true
+        }
+        ide.task = str(e.task, ide.task)
+        ide.running = true
+        break
+      }
+      case 'human_test_result': {
+        const tests = Array.isArray(e.tests) ? (e.tests as { id: string; outcome: string }[]) : []
+        const result = { task: str(e.task), ok: e.ok === true, passed: num(e.passed), failed: num(e.failed), tests, summary: str(e.summary) }
+        this.ide = { ...this.ide, task: result.task, running: false, result }
+        this.say(`${result.task}: tests ${result.ok ? 'passed' : 'failed'}: ${result.summary}`)
         break
       }
       case 'review_feedback': {

@@ -5,14 +5,14 @@ import type { OfficeModel } from '../model'
 import { useRefetch } from './hooks'
 import { LazyCode, LazyDiff } from './lazy'
 
-interface Node {
+export interface Node {
   name: string
   path: string
   children: Node[]
   file: boolean
 }
 
-function buildTree(files: TreeFile[]): Node {
+export function buildTree(files: TreeFile[]): Node {
   const root: Node = { name: '', path: '', children: [], file: false }
   for (const f of files) {
     let cur = root
@@ -35,24 +35,34 @@ function buildTree(files: TreeFile[]): Node {
   return root
 }
 
-function Branch({ node, depth, open, toggle, selected, onPick, changed }: { node: Node; depth: number; open: Set<string>; toggle: (p: string) => void; selected: string; onPick: (p: string) => void; changed: Set<string> }) {
+/** How a node looks in a tree that has read-only parts (the IDE): dimmed, with a lock and the owner's name on a folder, and a dot for an edit that is not saved. */
+export interface Decor {
+  dim?: boolean
+  lock?: string // the owner's name next to a lock
+  dot?: string // a marker at the end of the row and what it means
+}
+
+export function Branch({ node, depth, open, toggle, selected, onPick, changed, decor }: { node: Node; depth: number; open: Set<string>; toggle: (p: string) => void; selected: string; onPick: (p: string) => void; changed: Set<string>; decor?: (n: Node) => Decor }) {
   return (
     <>
-      {node.children.map((c) =>
-        c.file ? (
-          <button key={c.path} onClick={() => onPick(c.path)} className="flex w-full items-center gap-1 truncate rounded px-1 py-[2px] text-left font-mono text-[12.5px] hover:bg-[#1a2033]" style={{ paddingLeft: 6 + depth * 12, background: selected === c.path ? '#243055' : undefined, color: selected === c.path ? '#fff' : '#b9c4e0' }}>
+      {node.children.map((c) => {
+        const d = decor?.(c) ?? {}
+        return c.file ? (
+          <button key={c.path} onClick={() => onPick(c.path)} className="flex w-full items-center gap-1 truncate rounded px-1 py-[2px] text-left font-mono text-[12.5px] hover:bg-[#1a2033]" style={{ paddingLeft: 6 + depth * 12, background: selected === c.path ? '#243055' : undefined, color: selected === c.path ? '#fff' : '#b9c4e0', opacity: d.dim && selected !== c.path ? 0.55 : 1 }}>
             <span className="truncate">{c.name}</span>
-            {changed.has(c.path) && <span className="ml-auto text-[10px] text-[var(--accent)]" title="Changed in this build">●</span>}
+            {d.dot && <span className="ml-auto text-[10px] text-[var(--warn)]" title={d.dot}>●</span>}
+            {!d.dot && changed.has(c.path) && <span className="ml-auto text-[10px] text-[var(--accent)]" title="Changed in this build">●</span>}
           </button>
         ) : (
           <div key={c.path}>
-            <button onClick={() => toggle(c.path)} className="flex w-full items-center gap-1 rounded px-1 py-[2px] text-left font-mono text-[12.5px] text-[var(--muted)] hover:bg-[#1a2033]" style={{ paddingLeft: 6 + depth * 12 }}>
+            <button onClick={() => toggle(c.path)} className="flex w-full items-center gap-1 rounded px-1 py-[2px] text-left font-mono text-[12.5px] text-[var(--muted)] hover:bg-[#1a2033]" style={{ paddingLeft: 6 + depth * 12, opacity: d.dim ? 0.55 : 1 }}>
               {open.has(c.path) ? '▾' : '▸'} {c.name}
+              {d.lock && <span className="ml-auto shrink-0 pl-2 font-sans text-[11px]" title={`Read-only here (${d.lock})`}>🔒 {d.lock}</span>}
             </button>
-            {open.has(c.path) && <Branch node={c} depth={depth + 1} open={open} toggle={toggle} selected={selected} onPick={onPick} changed={changed} />}
+            {open.has(c.path) && <Branch node={c} depth={depth + 1} open={open} toggle={toggle} selected={selected} onPick={onPick} changed={changed} decor={decor} />}
           </div>
-        ),
-      )}
+        )
+      })}
     </>
   )
 }

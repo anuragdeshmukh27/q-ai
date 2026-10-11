@@ -5,11 +5,12 @@ import { ContractTab } from '../dock/ContractTab'
 import { Explorer } from '../dock/Explorer'
 import { GapReport } from '../dock/GapReport'
 import { GitGraph } from '../dock/GitGraph'
+import { IdeTab } from '../dock/IdeTab'
 import { LeaderboardTab } from '../dock/LeaderboardTab'
 import { Terminal } from '../dock/Terminal'
 import type { OfficeModel } from '../model'
 
-const TABS = ['Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
+const TABS = ['IDE', 'Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
 type Tab = (typeof TABS)[number]
 
 // the Gap report tab only exists for a project that was imported (Finish my project)
@@ -20,10 +21,13 @@ interface Props {
   replay: boolean
   onDecide: (id: string, approve: boolean) => void
   ticker: string
+  onSubmit: (task: string) => Promise<void>
+  onError: (e: unknown) => void
 }
 
-export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
+export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError }: Props) {
   const [tab, setTab] = useState<Tab>('Explorer')
+  const ide = model.humanRoles.size > 0 && !replay // the IDE tab exists while the person plays a role in a live Simulation build
   const [open, setOpen] = useState(true)
   const pending = model.approvals.filter((a) => a.state === 'pending').length
 
@@ -51,12 +55,24 @@ export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
     }
   }, [choosing])
 
+  // a task that is yours brings the IDE forward, once
+  const mine = model.tasks.find((t) => t.assignee === 'human' && t.worktree && t.status === 'running')?.id ?? ''
+  useEffect(() => {
+    if (mine && ide) {
+      setTab('IDE')
+      setOpen(true)
+    }
+  }, [mine, ide])
+  useEffect(() => {
+    if (!ide && tab === 'IDE') setTab('Explorer')
+  }, [ide, tab])
+
   const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' && model.messages.length ? model.messages.length : 0)
 
   return (
-    <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? 'min(300px, 36vh)' : 44 }}>
+    <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? (tab === 'IDE' ? 'min(560px, 62vh)' : 'min(300px, 36vh)') : 44 }}>
       <div className="flex h-[44px] shrink-0 items-center gap-1 px-3">
-        {TABS.filter((t) => t !== 'Gap report' || model.finish).map((t) => (
+        {TABS.filter((t) => (t !== 'Gap report' || model.finish) && (t !== 'IDE' || ide)).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -84,6 +100,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
       </div>
       {open && (
         <div className="min-h-0 flex-1 border-t border-[var(--line)]">
+          {tab === 'IDE' && <IdeTab projectId={projectId} model={model} replay={replay} onSubmit={onSubmit} onError={onError} />}
           {tab === 'Explorer' && <Explorer projectId={projectId} model={model} />}
           {tab === 'Terminal' && <Terminal model={model} />}
           {tab === 'Agent Chat' && <AgentChat model={model} />}
