@@ -46,6 +46,11 @@ class EscalationBody(BaseModel):
     agent: str = ""
 
 
+class FileBody(BaseModel):
+    path: str
+    content: str
+
+
 class AskBody(BaseModel):
     text: str
     as_task: bool = False
@@ -226,6 +231,26 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     def task_doc(pid: str, tid: str):
         """The task document as markdown source (served as plain text so a browser tab shows it instead of downloading it)."""
         return PlainTextResponse(session(pid).task_doc(tid), media_type="text/plain; charset=utf-8")
+
+    # -- simulation: the in-app IDE for the role the human plays -------------------------------
+    @app.get("/api/projects/{pid}/ide/{role}/tree")
+    def ide_tree(pid: str, role: str):
+        """The files of the role's worktree: {task, ready, running, files: [{path, size, owner, writable}], names}."""
+        return session(pid).ide_tree(role)
+
+    @app.get("/api/projects/{pid}/ide/{role}/file")
+    def ide_read(pid: str, role: str, path: str):
+        return session(pid).ide_read(role, path)
+
+    @app.put("/api/projects/{pid}/ide/{role}/file")
+    def ide_write(pid: str, role: str, body: FileBody):
+        """Save a file inside the role's owned paths while the role has an open human task (403 elsewhere, 409 without a task)."""
+        return session(pid).ide_write(role, body.path, body.content)
+
+    @app.post("/api/projects/{pid}/ide/{role}/tests")
+    def ide_tests(pid: str, role: str):
+        """Run the suite in the background: `human_test_output` lines, then one `human_test_result {task, ok, passed, failed, tests, summary}`."""
+        return session(pid).ide_run_tests(role)
 
     # -- the built app ----------------------------------------------------------------
     @app.get("/api/projects/{pid}/app")

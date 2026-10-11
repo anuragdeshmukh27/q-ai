@@ -81,6 +81,14 @@ class PathPolicy:
                 raise SandboxError(f"write denied: {joined} is outside this agent's owned paths")
         return path
 
+    def can_write(self, rel: str) -> bool:
+        """True when `resolve_write` would accept this path (a path that does not exist yet is judged by name)."""
+        try:
+            self.resolve_write(rel)
+        except SandboxError:
+            return False
+        return True
+
     def rel(self, path: Path) -> str:
         return "/".join(self._parts_of_real(path))
 

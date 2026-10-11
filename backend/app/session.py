@@ -19,6 +19,7 @@ from .approvals import ApprovalQueue
 from .config import PROMPTS_DIR, WORKSPACE, ROOT, AgentConfig, load_agents
 from .events import EventBus
 from .llm import LLMClient, agent_context
+from .humanide import IDEError
 from .orchestrator import ENGINEERS, Orchestrator
 from .ports import PortError, PortManager
 from .presets import list_presets, load_preset
@@ -429,6 +430,27 @@ class Session:
             return self.orch.submit_human_task(tid)
         except ValueError as e:
             raise SessionError(str(e), 409) from None
+
+    def _ide(self, method: str, *args):
+        """The in-app IDE: the orchestrator's answer, or a SessionError carrying its user-safe message and status."""
+        if self.kind == "replay" or self.orch is None:
+            raise SessionError("Demo mode replays a recording; the IDE only works in a live Simulation build.", 409)
+        try:
+            return getattr(self.orch, method)(*args)
+        except IDEError as e:
+            raise SessionError(str(e), e.status) from None
+
+    def ide_tree(self, role: str) -> dict:
+        return self._ide("ide_tree", role)
+
+    def ide_read(self, role: str, path: str) -> dict:
+        return self._ide("ide_read", role, path)
+
+    def ide_write(self, role: str, path: str, content: str) -> dict:
+        return self._ide("ide_write", role, path, content)
+
+    def ide_run_tests(self, role: str) -> dict:
+        return self._ide("ide_run_tests", role)
 
     def task_doc(self, tid: str) -> str:
         """The markdown the human reads for one of their tasks (written when the task was handed over)."""

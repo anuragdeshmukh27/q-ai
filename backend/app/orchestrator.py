@@ -26,7 +26,10 @@ from .agent.qa import Failure, bug_markdown, parse_failures, triage_or_fallback
 from .agent.review import ReviewOutput, drop_unfounded, missing_tests, review_markdown, run_review, static_findings
 from .approvals import request_approval
 from .faults import inject_fault
-from .repo import GitError, Repo
+from .repo import GitError, Repo, run_git
+from .humanide import IDEError, SuiteRun, owner_of
+from .projectfiles import MAX_FILE_BYTES, ProjectFileError, file_tree, read_project_file
+from .sandbox.paths import PathPolicy, SandboxError
 from .integrator import Integrator, run_suite
 from .config import AgentConfig, load_agents
 from .events import EventBus
@@ -87,6 +90,8 @@ class HumanTask:
     tests: list[str] = field(default_factory=list)
     rounds: int = 0  # green submits so far (each one is reviewed)
     submitting: bool = False
+    base: str = ""  # the commit the person starts from (main plus the generated starting point): what they change is measured against it
+    run: SuiteRun | None = None  # the test run the IDE started, while it is going
 
 
 class Orchestrator:
@@ -263,6 +268,8 @@ class Orchestrator:
             for ht in released:
                 ht.future.set_result(AgentResult("error", "stopped", summary="stopped by you"))
         for ht in released:
+            if ht.run is not None:
+                ht.run.kill()
             self.emit("agent_state", agent=ht.task["owner"], state="idle")
 
     def prepare_recovery(self, agent_id: str = "") -> tuple[str, dict | None]:
@@ -706,9 +713,11 @@ class Orchestrator:
         stub = self._scaffold(t, agent, wt)
         after = self._test_files(t["owner"], wt)
         tests = list(t.get("acceptance_tests") or sorted(after - before or after))  # the tests written for this task, else every test of the area
+        self.repo.commit(wt, f"[{agent.id}] generated starting point")  # the stub and the generated tests are not the person's change
+        base = run_git(wt, "rev-parse", "HEAD").stdout.strip()
         doc = f".q/tasks/{t['id']}.md"
         self.memory.write(f"tasks/{t['id']}.md", self._human_doc(t, wt, stub, tests))
-        ht = HumanTask(t, fut, wt, tests)
+        ht = HumanTask(t, fut, wt, tests, base=base)
         with self._human_lock:
             self._humans[t["id"]] = ht
             if self.stopped.is_set() and not fut.done():  # Stop was pressed while this task was being prepared
@@ -758,9 +767,16 @@ class Orchestrator:
                 raise ValueError("That task is not waiting for you." if not self.stopped.is_set() else "The build was stopped.")
             if ht.submitting:
                 raise ValueError("That task is already being checked.")
+            if ht.run is not None:
+                raise ValueError("The tests are running; submit when they have finished.")
             ht.submitting = True
         t, owner, wt = ht.task, ht.task["owner"], ht.worktree
         try:
+            outside = self._outside_scope(ht)
+            if outside:  # a file the role may not change (edited where the IDE cannot see: the person's own editor, a git command) is never merged
+                summary = f"You changed {len(outside)} file{'s' if len(outside) != 1 else ''} that this role may not edit: {', '.join(outside)}. Revert {'them' if len(outside) != 1 else 'it'} and submit again."
+                self.emit("human_submit_result", agent=owner, task=tid, ok=False, stage="scope", failed=[], files=outside, summary=summary)
+                return {"ok": False, "stage": "scope", "summary": summary, "failed": [], "items": [], "files": outside}
             self.emit("agent_state", agent=owner, state="testing")
             passed, summary, output = run_suite(wt)
             failed = [f.test_id for f in parse_failures(output)]
@@ -795,6 +811,97 @@ class Orchestrator:
             raise
         finally:
             ht.submitting = False
+
+    def _human_policy(self, owner: str, wt: Path) -> PathPolicy:
+        """The paths a person playing `owner` may write: exactly what the AI engineer in that role may write."""
+        a = self._engineer(owner)
+        return PathPolicy(wt, a.owned_paths, a.forbidden_paths)
+
+    def _outside_scope(self, ht: HumanTask) -> list[str]:
+        """Files the person's work changed since the starting point that the role may not write (committed or not, made in the IDE or anywhere else)."""
+        run_git(ht.worktree, "add", "-A")
+        out = run_git(ht.worktree, "diff", "--cached", "--name-only", "-z", ht.base).stdout
+        policy = self._human_policy(ht.task["owner"], ht.worktree)
+        return sorted(p for p in out.split("\0") if p and not policy.can_write(p))
+
+    # -- the in-app IDE: files and tests of a role the person plays ----------------------------------
+    def _human_open(self, role: str) -> HumanTask | None:
+        with self._human_lock:
+            return next((ht for ht in self._humans.values() if ht.task["owner"] == role and not ht.future.done()), None)
+
+    def _ide_worktree(self, role: str) -> Path:
+        if role not in ENGINEERS or not (role in self.human_roles or any(x.get("assignee") == "human" and x["owner"] == role for x in self.tasks)):
+            raise IDEError("You do not play that role in this build.", 404)
+        wt = self.root / ".worktrees" / role if self.root else None
+        if wt is None or not wt.is_dir():
+            raise IDEError("Your folder is not ready yet: it is created when your task starts.")
+        return wt
+
+    def ide_tree(self, role: str) -> dict:
+        """The files of the role's worktree with who owns each one and whether the person may edit it right now."""
+        try:
+            wt = self._ide_worktree(role)
+        except IDEError as e:
+            if e.status == 404:
+                raise
+            return {"role": role, "ready": False, "task": None, "running": False, "files": [], "names": {}, "editable": []}
+        ht = self._human_open(role)
+        policy = self._human_policy(role, wt)
+        order = [self._engineer(r) for r in ENGINEERS] + [a for a in self.agents.values() if a.id not in ENGINEERS]
+        files = [{**f, "owner": owner_of(order, f["path"]), "writable": ht is not None and policy.can_write(f["path"])} for f in file_tree(wt)]
+        return {"role": role, "ready": True, "task": ht.task["id"] if ht else None, "running": bool(ht and ht.run), "files": files,
+                "names": {a.id: a.name for a in self.agents.values()}, "editable": self._engineer(role).owned_paths}
+
+    def ide_read(self, role: str, rel: str) -> dict:
+        wt = self._ide_worktree(role)
+        try:
+            return read_project_file(wt, rel)
+        except ProjectFileError as e:
+            raise IDEError(str(e), e.status) from None
+
+    def ide_write(self, role: str, rel: str, content: str) -> dict:
+        wt = self._ide_worktree(role)
+        ht = self._human_open(role)
+        if ht is None:
+            raise IDEError("You have no open task for this role: nothing can be edited now.")
+        if ht.submitting:
+            raise IDEError("Your task is being checked; edit again when the result is in.")
+        if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+            raise IDEError("That file is too large to save here.", 413)
+        try:
+            path = self._human_policy(role, wt).resolve_write(rel)
+        except SandboxError as e:
+            raise IDEError(str(e), 403) from None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode("utf-8"))
+        return {"path": path.relative_to(wt.resolve()).as_posix(), "size": len(content), "task": ht.task["id"]}
+
+    def ide_run_tests(self, role: str) -> dict:
+        """Start the suite of the role's worktree in the background (one run at a time); the output arrives as `human_test_output` events and the outcome as `human_test_result`."""
+        wt = self._ide_worktree(role)
+        with self._human_lock:
+            ht = next((h for h in self._humans.values() if h.task["owner"] == role and not h.future.done()), None)
+            if ht is None:
+                raise IDEError("You have no open task for this role: there is nothing to test.")
+            if ht.run is not None:
+                raise IDEError("The tests are already running.")
+            if ht.submitting:
+                raise IDEError("Your task is being checked; run the tests when the result is in.")
+            tid = ht.task["id"]
+            run = ht.run = SuiteRun(wt, lambda line: self.emit("human_test_output", agent=role, task=tid, line=line))
+        self.emit("human_test_started", agent=role, task=tid)
+
+        def work() -> None:
+            try:
+                res = run.run()
+            except Exception as e:  # never leave the run flagged as going
+                res = {"ok": False, "passed": 0, "failed": 0, "tests": [], "summary": f"the test run failed: {e}"}
+            with self._human_lock:
+                ht.run = None
+            self.emit("human_test_result", agent=role, task=tid, **res)
+
+        threading.Thread(target=work, name=f"ide-tests-{role}", daemon=True).start()
+        return {"started": True, "task": tid}
 
     def _human_review(self, t: dict, wt: Path, rnd: int) -> ReviewOutput:
         """One Reviewer round on a person's branch: the same checks as for an agent's (static findings, the model's review, the unfounded claims dropped)."""
