@@ -22,7 +22,9 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const [pickRole, setPickRole] = useState('')
   const role = pickRole && model.humanRoles.has(pickRole) ? pickRole : ideRole(model.tasks, model.humanRoles)
   const fail = useRef(onError)
-  fail.current = onError
+  useEffect(() => {
+    fail.current = onError
+  }, [onError])
   const ctl = useMemo(
     () =>
       new IdeController(
@@ -93,7 +95,8 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const doc = useRefetch(projectId && taskId && !replay ? () => api.taskDoc(projectId, taskId) : null, `${projectId}:${taskId}`, 0, 50)
   const blocks = useMemo(() => (doc.data ? parseMarkdown(doc.data) : []), [doc.data])
 
-  if (!projectId || replay) return <Empty text="The IDE is for a live Simulation build: choose Simulation mode, turn Demo mode off and start a build." />
+  if (replay) return <Empty text="The IDE is for a live Simulation build. Turn Demo mode off to play a role yourself." />
+  if (!projectId) return <Empty text="Start the build: your task and your folder appear here when it is your turn." />
   if (!role) return <Empty text="In Simulation mode you play one or more engineers. Pick the roles in the left panel before the build starts." />
   if (!tree) return <Empty text="Loading your folder…" />
   if (!tree.ready) return <Empty text="Your task has not started yet. Your folder appears when the tasks it waits for have been merged." />
