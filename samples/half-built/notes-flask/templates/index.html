@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Notes</title>
+  <style>
+    body { font-family: Georgia, serif; max-width: 640px; margin: 2rem auto; background: #fbf6ea; color: #3b2f1e; }
+    li { padding: .4rem 0; border-bottom: 1px dotted #c9b88f; }
+    .pinned { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Notes</h1>
+  <form id="add">
+    <input id="title" placeholder="Title" required>
+    <input id="body" placeholder="Body">
+    <button>Add</button>
+  </form>
+  <input id="q" placeholder="Search">
+  <ul id="notes"></ul>
+  <script src="{{ url_for('static', filename='notes.js') }}"></script>
+</body>
+</html>

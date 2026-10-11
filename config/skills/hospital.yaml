@@ -1,0 +1,45 @@
+name: hospital
+title: Hospital OPD
+summary: "A hospital outpatient department: doctors, their appointments, prescriptions and lab tests."
+keywords: [hospital, hospitals, opd, outpatient, outpatients, ward, wards, department, departments, doctor, doctors, patient, patients, appointment, appointments, prescription, prescriptions, lab, laboratory, diagnostic, diagnostics, pharmacy, consultation, medical, healthcare]
+icon: "🏥"
+icons: {doctors: "🩺", appointments: "📅", prescriptions: "💊", lab_tests: "🧪", patients: "🧑"}
+skin: clinic
+currency: INR
+modules:
+  - {name: doctors, fields: "name, department General Medicine/Cardiology/Dermatology/Pediatrics/Orthopedics/ENT, phone, email, consultation_fee number, room, availability Available/On leave"}
+  - {name: appointments, parent: doctors, fields: "patient_name, patient_phone, date, time, reason, status Booked/Completed/Cancelled"}
+  - {name: prescriptions, parent: doctors, fields: "patient_name, medicine, dosage, days integer, instructions"}
+  - {name: lab_tests, parent: doctors, fields: "patient_name, test_name Blood test/X-ray/MRI/ECG/Urine test, cost number, status Ordered/Collected/Reported"}
+rules:
+  - {field: "phone|patient_phone|mobile", rule: phone}
+  - {field: "email", rule: email}
+  - {resource: "doctors", field: "email", rule: unique}
+  - {field: "consultation_fee|fee|cost", rule: positive}
+  - {resource: "prescriptions", field: "days", rule: bounds, args: [1, 90]}
+  - {resource: "appointments", rule: flow, field: status, flow: {Booked: [Completed, Cancelled], Completed: [], Cancelled: []}}
+  - {resource: "lab_tests", rule: flow, field: status, flow: {Ordered: [Collected], Collected: [Reported], Reported: []}}
+kpis:
+  - {label: "Doctors", resource: doctors, agg: count}
+  - {label: "Appointments", resource: appointments, agg: count}
+  - {label: "Booked", resource: appointments, agg: count, where: {status: Booked}}
+  - {label: "Lab revenue", resource: lab_tests, agg: sum, field: cost, format: money}
+  - {label: "Average consultation fee", resource: doctors, agg: avg, field: consultation_fee, format: money}
+charts:
+  - {title: "Appointments per doctor", resource: appointments, per: parent}
+  - {title: "Doctors by department", resource: doctors, by: department}
+  - {title: "Appointments by status", resource: appointments, by: status}
+  - {title: "Lab tests by status", resource: lab_tests, by: status}
+empty:
+  default: "Nothing here yet. Add the first record."
+  appointments: "No appointments yet. Book the first slot for this doctor."
+  prescriptions: "No prescriptions yet. They appear here after a consultation."
+  lab_tests: "No lab tests ordered yet."
+pools:
+  patient_name: [Anjali Verma, Rahul Deshmukh, Priya Menon, Imran Qureshi, Sunita Patil, Arjun Reddy]
+  reason: [Fever and cough, Annual check-up, Skin rash, Knee pain, Child vaccination, Follow-up visit]
+  medicine: [Paracetamol 500 mg, Azithromycin 250 mg, Cetirizine 10 mg, Vitamin D3, ORS sachets, Pantoprazole 40 mg]
+  dosage: [One tablet twice a day, One tablet at night, Two teaspoons thrice a day, One sachet in a litre of water]
+  instructions: [Take after food, Drink plenty of water, Avoid cold drinks, Rest for three days, Review after a week]
+  room: [OPD 101, OPD 102, OPD 204, OPD 305, Block B 12]
+  doctors.name: [Dr. Ananya Rao, Dr. Vikram Shah, Dr. Neha Kulkarni, Dr. Farhan Ali, Dr. Lakshmi Iyer]

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from .registry import ModelConfig, ModelRegistry
 
-BENCHMARKED_ROLES = ("architect", "planner", "backend", "frontend", "database", "reviewer", "qa")
+BENCHMARKED_ROLES = ("architect", "planner", "backend", "frontend", "database", "reviewer", "qa", "analyst", "finish")  # analyst and finish: Task C (finish an imported project)
 DEFAULT_MARGIN = 0.1
 DEFAULT_MIN_RUNS = 2
 

@@ -34,8 +34,9 @@ def run_git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedPr
 class Repo:
     """Thread-safe wrapper around the project's repository. Merges into `main` are serialised by a lock."""
 
-    def __init__(self, root: Path | str):
+    def __init__(self, root: Path | str, main: str = "main"):
         self.root = Path(root)
+        self.main = main  # the integration branch: `main` for a generated project, `q/finish` for an imported one (the user's code stays on `q/base`)
         self.lock = threading.RLock()
         self._worktrees: dict[str, Path] = {}
 
@@ -49,7 +50,7 @@ class Repo:
             if agent_id not in self._worktrees:
                 path = self.root / ".worktrees" / agent_id
                 if not path.exists():
-                    run_git(self.root, "worktree", "add", "-b", self.branch(agent_id), str(path), "main")
+                    run_git(self.root, "worktree", "add", "-b", self.branch(agent_id), str(path), self.main)
                 self._worktrees[agent_id] = path
             return self._worktrees[agent_id]
 
@@ -57,7 +58,7 @@ class Repo:
         """Bring the agent's branch up to date with main (a fast-forward unless the agent has unmerged work)."""
         wt = self.worktree(agent_id)
         with self.lock:
-            r = run_git(wt, "merge", "main", "--no-edit", "-m", f"[sync] main into {self.branch(agent_id)}", check=False)
+            r = run_git(wt, "merge", self.main, "--no-edit", "-m", f"[sync] {self.main} into {self.branch(agent_id)}", check=False)
             if r.returncode != 0:
                 run_git(wt, "merge", "--abort", check=False)
                 raise GitError(f"could not sync {self.branch(agent_id)} with main: {(r.stdout or r.stderr).strip()[:200]}")
@@ -74,7 +75,7 @@ class Repo:
         """Throw away everything on the agent's branch and in its worktree that is not in main (an abandoned optional task)."""
         wt = self.worktree(agent_id)
         with self.lock:
-            run_git(wt, "reset", "--hard", "main")
+            run_git(wt, "reset", "--hard", self.main)
             run_git(wt, "clean", "-fd")
 
     # -- inspection -----------------------------------------------------------------
@@ -84,14 +85,14 @@ class Repo:
         `skip_generated_tests` leaves out tests/api, tests/ui and tests/qa (written from the contract on QA's behalf, never by the engineer),
         so the Reviewer does not ask the engineer to change files the engineer may not edit."""
         spec = ["--", ".", *(f":(exclude){d}" for d in GENERATED_TEST_DIRS)] if skip_generated_tests else []
-        return run_git(self.root, "diff", f"main...{self.branch(agent_id)}", *spec).stdout
+        return run_git(self.root, "diff", f"{self.main}...{self.branch(agent_id)}", *spec).stdout
 
     def on_main(self) -> set[str]:
         """Every file that is tracked on main."""
-        return {l.strip() for l in run_git(self.root, "ls-tree", "-r", "--name-only", "main").stdout.splitlines() if l.strip()}
+        return {l.strip() for l in run_git(self.root, "ls-tree", "-r", "--name-only", self.main).stdout.splitlines() if l.strip()}
 
     def changed_files(self, agent_id: str) -> list[str]:
-        out = run_git(self.root, "diff", "--name-only", f"main...{self.branch(agent_id)}").stdout
+        out = run_git(self.root, "diff", "--name-only", f"{self.main}...{self.branch(agent_id)}").stdout
         return [l.strip() for l in out.splitlines() if l.strip()]
 
     def graph(self) -> list[dict]:
@@ -109,7 +110,7 @@ class Repo:
     def merge_into_main(self, agent_id: str, message: str) -> MergeOutcome:
         """`git merge --no-ff agent/<id>` on main. On conflict the merge is left open so the Integrator can resolve it."""
         with self.lock:
-            run_git(self.root, "checkout", "main", check=False)
+            run_git(self.root, "checkout", self.main, check=False)
             r = run_git(self.root, "merge", "--no-ff", "-m", message, self.branch(agent_id), check=False)
             if r.returncode == 0:
                 return MergeOutcome(True)

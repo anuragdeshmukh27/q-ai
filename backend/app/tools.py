@@ -34,6 +34,23 @@ _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
 _SECTION = re.compile(r"^_{3,} (.+?) _{3,}$", re.MULTILINE)
 _FINAL_LINE = re.compile(r"^=+ .*\b(?:passed|failed|errors?|no tests ran)\b.* in [\d.]+s.*=+$|^\d+ (?:passed|failed).* in [\d.]+s", re.MULTILINE)
 _LOCATION = re.compile(r"^(\S+\.py):(\d+): (\w+)", re.MULTILINE)
+_LIBRARY_FRAME = re.compile(r"^\S*site-packages\S*:\d+: in \S+$")
+
+
+def compact_pytest_output(output: str) -> str:
+    """Windows pytest output ends its lines with CR LF, which broke every `$` pattern here (no failure digest ever appeared), and a request that fails inside the app puts
+    25 frames of FastAPI, Starlette and anyio between the engineer's own line and the error. Normalise the endings and drop the library frames (and the source lines under them)."""
+    out: list[str] = []
+    skipping = False
+    for line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _LIBRARY_FRAME.match(line):
+            skipping = True
+            continue
+        if skipping and line[:1] in (" ", "\t"):
+            continue
+        skipping = False
+        out.append(line)
+    return "\n".join(out)
 
 
 def failure_digest(output: str, limit: int = 6) -> str:
@@ -137,6 +154,9 @@ class ToolBox:
         self.emit = emit or (lambda *a, **k: None)
         self.log: list[dict] = []
         self.files_touched: list[str] = []
+        self.name_hints: dict[str, str] = {}  # Finish my project: what to do instead, per name a 7B keeps inventing (`HTTPException` in a Flask app, `db` where the file has get_db())
+        self.auto_imports: dict[str, str] = {}  # Finish my project: a well-known name the body uses but the file lacks is imported for the engineer (name -> import line)
+        self.allow_new_functions = False  # Finish my project: `implement` may create a function when `function` is written as a signature, `get_stats()`
 
     @property
     def mode(self) -> str:
@@ -222,34 +242,114 @@ class ToolBox:
             return _fail(f"not applied: the text in `pattern` occurs {n} times in {a.path}. Make it longer (add the line before or after it) so it occurs exactly once.")
         return self._store(p, old.replace(find, a.content or "", 1), "replaced text in")
 
+    def _unknown_module_calls(self, tree: ast.AST) -> list[tuple[str, str, str, list[str]]]:
+        """Calls like `db.get_registration(...)` on a module of the project (`from app import db`) where the module has no such name: (alias, name, module file, what it has)."""
+        aliases: dict[str, str] = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom) and n.module and not n.level:
+                for x in n.names:
+                    aliases[x.asname or x.name] = f"{n.module}.{x.name}"
+            elif isinstance(n, ast.Import):
+                for x in n.names:
+                    aliases[x.asname or x.name.split(".")[0]] = x.name
+        found: list[tuple[str, str, str, list[str]]] = []
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id in aliases):
+                continue
+            rel = aliases[n.func.value.id].replace(".", "/") + ".py"
+            f = self.root / rel
+            if not f.is_file():
+                continue
+            try:
+                body = ast.parse(f.read_text(encoding="utf-8", errors="replace")).body
+            except SyntaxError:
+                continue
+            have = {x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+            have |= {t.id for x in body if isinstance(x, ast.Assign) for t in x.targets if isinstance(t, ast.Name)}
+            have |= {(y.asname or y.name) for x in body if isinstance(x, (ast.Import, ast.ImportFrom)) for y in x.names}
+            if n.func.attr not in have:
+                found.append((n.func.value.id, n.func.attr, rel, sorted(x.name for x in body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) and not x.name.startswith("_"))))
+        return found
+
+    @staticmethod
+    def _add_imports(source: str, lines: list[str]) -> str:
+        """Put the import lines after the file's last top-level import (or at the very top when it has none)."""
+        have = source.split(chr(10))
+        end = max((n.end_lineno or 0 for n in ast.parse(source).body if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
+        new = [l for l in lines if l not in have]
+        return chr(10).join(have[:end] + new + have[end:])
+
+    def _name_hint(self, names: list[str]) -> str:
+        return next((" " + self.name_hints[n] for n in names if n in self.name_hints), "")
+
+    def _inferred_params(self, fname: str) -> str:
+        """The parameters of a function that does not exist yet, read from the first call of it anywhere in the project: `db.add_x(name, qty=3)` gives `name, qty`."""
+        for f in sorted(self.root.rglob("*.py")):
+            if any(part in (".git", ".venv", "node_modules", ".worktrees", "__pycache__") for part in f.relative_to(self.root).parts):
+                continue
+            m = re.search(rf"\b{fname}\(([^()]*)\)", f.read_text(encoding="utf-8", errors="replace"))
+            if not m or not m.group(1).strip():
+                continue
+            names: list[str] = []
+            for i, arg in enumerate(x.strip() for x in m.group(1).split(",")):
+                key = arg.split("=")[0].strip() if re.match(r"\w+\s*=[^=]", arg) else (arg if re.fullmatch(r"[A-Za-z_]\w*", arg) else f"arg{i + 1}")
+                names.append(key if key not in names else f"{key}{i + 1}")
+            return ", ".join(names)
+        return ""
+
     def _implement(self, a: Action) -> ToolResult:
         """Replace the body of one function in a Python file; the rest of the file is untouched."""
         p = self.paths.resolve_write(a.path or "")
         if not p.is_file():
             return _fail(f"{a.path} does not exist; create it with write_file first")
-        new_source, problem = replace_function_body(p.read_text(encoding="utf-8", errors="replace"), a.function or "", a.content or "")
+        source, name = p.read_text(encoding="utf-8", errors="replace"), a.function or ""
+        sig = re.match(r"^\s*(?:def\s+)?(\w+)\s*\((.*)\)\s*:?\s*$", name)
+        if self.allow_new_functions:  # Finish my project: a function that does not exist yet is created (a signature, or just its name: the parameters come from how the project calls it)
+            fname, params = (sig.group(1), sig.group(2)) if sig else (name.strip(), None)
+            if re.fullmatch(r"\w+", fname):
+                if not re.search(rf"^(?:async\s+)?def\s+{fname}\(", source, re.M):
+                    params = self._inferred_params(fname) if params is None else params
+                    source = source.rstrip("\n") + f"\n\n\ndef {fname}({params}):\n    raise NotImplementedError\n"
+                name = fname
+                a = a.model_copy(update={"function": name})
+        new_source, problem = replace_function_body(source, name, a.content or "")
         if problem:
-            return _fail(problem)
+            return _fail(problem + (" To ADD a new function, write its signature in `function`, for example \"get_stats()\" or \"add_sponsor(company, amount)\"." if self.allow_new_functions else ""))
         try:
             tree = ast.parse(new_source)
         except SyntaxError as e:  # never leave a half-broken file behind: later `implement` calls could not even parse it
-            return _fail(f"not applied: your body makes the file invalid Python (line {e.lineno}: {e.msg}). Send only valid Python lines for the inside of "
+            bad = ((e.text or "").strip()[:90])
+            return _fail(f"not applied: your body makes the file invalid Python (line {e.lineno}: {e.msg}" + (f", at `{bad}`" if bad else "") + f"). Send only valid Python lines for the inside of "
                          f"{a.function}; SQL goes in a string passed to conn.execute(...).")
         fn = next((n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == a.function), None)
         if fn is not None and _must_return(fn) and not any(isinstance(n, ast.Return) and n.value is not None for n in ast.walk(fn)):
             return _fail(f"not applied: {a.function} must return its result (a route returns the response, a database function returns the row, list or flag) "
                          "but your body has no `return <value>`. Add it.")
+        if self.auto_imports:  # a 7B cannot edit the top of the file with `implement` and keeps asking for it: Q adds the import line, like an IDE would
+            wanted = [n for n in [*undefined_calls(tree), *undefined_variables(tree, a.function or "")[0]] if n in self.auto_imports]
+            if wanted:
+                new_source = self._add_imports(new_source, [self.auto_imports[n] for n in dict.fromkeys(wanted)])
+                try:
+                    tree = ast.parse(new_source)
+                except SyntaxError:
+                    return _fail("not applied: the import could not be added; write the import inside the function body.")
+        if self.allow_new_functions:
+            ghost = self._unknown_module_calls(tree)
+            if ghost:
+                alias, attr, rel, names = ghost[0]
+                return _fail(f"not applied: `{alias}.{attr}(...)` does not exist: {rel} has only {', '.join(names) or 'no functions'}. Either add it first (implement it in {rel} with its signature as `function`, "
+                             f"for example \"{attr}(...)\"), or write the SQL right in this function with `with {alias}.connect() as conn:` (if {rel} has a connect()).")
         missing = undefined_calls(tree)
         if missing:
             alias = next((x.asname for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "database" for x in n.names if x.asname), None)
             hint = (f" The database functions are called through the module alias: write `{alias}.{missing[0]}(...)`, not `{missing[0]}(...)`." if alias else
                     " Define or import it first, or call the function that exists.")
-            return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}")
+            return _fail(f"not applied: {', '.join(f'`{m}(...)`' for m in missing)} is called but not defined or imported in this file (it would raise NameError).{hint}{self._name_hint(missing)}")
         unknown, params = undefined_variables(tree, a.function or "")
         if unknown:
             return _fail(f"not applied: {', '.join(f'`{u}`' for u in unknown)} is not defined inside {a.function} (it would raise NameError). "
                          f"Use only its parameters ({', '.join(params) or 'none'}), names you assign yourself and what the file imports. "
-                         f"For example the path parameter of a route is named in its signature and in the `body:` hints, nothing else.")
+                         f"For example the path parameter of a route is named in its signature and in the `body:` hints, nothing else.{self._name_hint(unknown)}")
         return self._store(p, new_source, f"implemented {a.function} in")
 
     def _store(self, p: Path, content: str, verb: str = "wrote") -> ToolResult:
@@ -262,7 +362,7 @@ class ToolBox:
         old = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
         if p.exists() and old == content:
             return _fail(f"no change: {rel} already has exactly this content, so nothing was fixed. Look at the failure again "
-                         "and change the specific lines it points to.", decision="allow", unchanged=True)
+                         "and change the specific lines it points to. If you have already changed every function the failure points to, do not send the others again: call run_tests now.", decision="allow", unchanged=True)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8", newline="\n")
         diff = "".join(
@@ -338,9 +438,11 @@ class ToolBox:
         )
 
     def _run_tests(self, a: Action) -> ToolResult:
-        r = self._run_command(self.test_cmd)
+        cmd = self.test_cmd + " --tb=short" if "pytest" in self.test_cmd and "--tb" not in self.test_cmd else self.test_cmd  # a long traceback through FastAPI and Starlette pushes the real error out of the 20 000 captured characters
+        r = self._run_command(cmd)
         if r.data.get("decision") in ("deny", "denied_by_human"):
             return r
+        r.output = compact_pytest_output(r.output)
         failed = _FAILED.findall(r.output)
         passed = r.data.get("exit_code") == 0
         if failed:

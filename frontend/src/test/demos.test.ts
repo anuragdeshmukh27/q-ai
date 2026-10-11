@@ -33,3 +33,10 @@ describe('the build numbers on a demo card', () => {
     expect(orderDemos([rec('flagship'), rec('instagram'), rec('inventory')]).map((r) => r.name)).toEqual(['inventory', 'instagram', 'flagship'])
   })
 })
+
+describe('finish-it card', () => {
+  it('says what was found and closed, not the tables of a generated app', () => {
+    const c = card(rec('finish-it', { title: 'Finish a half-built app', stats: { modules: 0, tables: 0, endpoints: 0, pages: 0, finish: true, gaps: 6, fixed: 6, files: 2, insertions: 40, deletions: 4 } }))
+    expect(c.stats).toBe('6 gaps found, 6 closed in 2 files, +40 −4 on its own branch')
+  })
+})

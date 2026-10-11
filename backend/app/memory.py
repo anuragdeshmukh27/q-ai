@@ -44,10 +44,12 @@ def _fields(fields: list[dict]) -> str:
     return "{" + ", ".join(one(f) for f in fields) + "}" if fields else "none"
 
 
-def contract_brief(contract: dict) -> str:
-    """The contract as short human-readable lines (7B models follow this better than raw JSON)."""
+def contract_brief(contract: dict, only_paths: set[str] | None = None) -> str:
+    """The contract as short human-readable lines (7B models follow this better than raw JSON). `only_paths`: just the endpoints of one router (a four-module contract is 17 000 characters)."""
     lines = [f"API contract v{contract['version']} (errors are always JSON {{\"detail\": string}}):"]
     for e in contract["endpoints"]:
+        if only_paths is not None and e["path"] not in only_paths:
+            continue
         where = "query/body" if e["method"] in ("GET", "DELETE") else "JSON body"
         lines.append(f"- {e['method']} {e['path']} - {e['summary']}")
         lines.append(f"    {where}: {_fields(e['request']['fields'])}")
@@ -118,12 +120,12 @@ class ProjectMemory:
         raw = self.read("tasks.json")
         return json.loads(raw).get("tasks", []) if raw else []
 
-    def context_for(self, agent_id: str) -> str:
+    def context_for(self, agent_id: str, only_paths: set[str] | None = None) -> str:
         """Only the parts of the shared memory this role needs."""
         parts: list[str] = []
         contract = self.contract()
         if agent_id in ("backend", "frontend", "qa") and contract:
-            parts.append(contract_brief(contract))
+            parts.append(contract_brief(contract, only_paths))
         if agent_id in ("backend", "database"):
             schema = self.read("database_schema.md")
             if schema:

@@ -29,6 +29,8 @@ Your task starts from a STUB file generated from the contract: request/response 
 - Categorical fields (priority, status, category) are label strings such as "High"; store and return them exactly as received, never convert them to numbers.
 - A `number` field arrives as a float and an `integer` as an int: they have no string methods (`req.a.strip()` crashes with a 500). Only string fields can be checked for emptiness. 0 is a valid number: never write `if not req.a` or `if not req.b` (it rejects 0, and 0 is the divisor of the division-by-zero case); compare with `== 0` where a business rule needs it.
 - When run_tests fails, the section "What failed" names the exception and the line of your code that raised it: fix that line.
+- A 409 (a duplicate name or email, a status change that is not allowed, a full event) is answered by the app itself when the database refuses the write. Never check for duplicates or call a function such as `get_x_by_email`: only the database functions listed in your task exist, and you cannot add one. If the stub's comment says "Answers 409 when ...", write nothing for it.
+- The `# body:` comment lines in each stub are the intended body. Copy them into `implement` as they are, one function per call, then run_tests.
 - Keep functions short. Put all logic inline in the function body.
 
 ## Worked example (the body of a route function; the stub already has the decorator, models and imports)

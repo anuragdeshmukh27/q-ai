@@ -3,13 +3,16 @@ import { AgentChat } from '../dock/AgentChat'
 import { Approvals } from '../dock/Approvals'
 import { ContractTab } from '../dock/ContractTab'
 import { Explorer } from '../dock/Explorer'
+import { GapReport } from '../dock/GapReport'
 import { GitGraph } from '../dock/GitGraph'
 import { LeaderboardTab } from '../dock/LeaderboardTab'
 import { Terminal } from '../dock/Terminal'
 import type { OfficeModel } from '../model'
 
-const TABS = ['Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract'] as const
+const TABS = ['Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
 type Tab = (typeof TABS)[number]
+
+// the Gap report tab only exists for a project that was imported (Finish my project)
 
 interface Props {
   model: OfficeModel
@@ -39,12 +42,21 @@ export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
     return () => window.clearTimeout(t)
   }, [pending, replay])
 
+  // Finish my project: the gap report brings itself forward when the build waits for the human's choice
+  const choosing = !!model.finish?.selecting
+  useEffect(() => {
+    if (choosing) {
+      setTab('Gap report')
+      setOpen(true)
+    }
+  }, [choosing])
+
   const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' && model.messages.length ? model.messages.length : 0)
 
   return (
     <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? 'min(300px, 36vh)' : 44 }}>
       <div className="flex h-[44px] shrink-0 items-center gap-1 px-3">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t !== 'Gap report' || model.finish).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -79,6 +91,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker }: Props) {
           {tab === 'Git' && <GitGraph projectId={projectId} model={model} />}
           {tab === 'Leaderboard' && <LeaderboardTab />}
           {tab === 'Contract' && <ContractTab projectId={projectId} model={model} />}
+          {tab === 'Gap report' && <GapReport projectId={projectId} model={model} />}
         </div>
       )}
     </section>

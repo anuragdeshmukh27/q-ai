@@ -60,8 +60,8 @@ class PortManager:
                 return p
         raise PortError("no free port in the 9100-9199 range")
 
-    def start(self, project: str, root: Path, run_cmd: str, health_path: str = "/health", timeout: float = 25) -> RunningApp:
-        """Start the app (restarting it if already running) and wait until it answers its health check."""
+    def start(self, project: str, root: Path, run_cmd: str, health_path: str = "/health", timeout: float = 25, ok_below: int = 0) -> RunningApp:
+        """Start the app (restarting it if already running) and wait until it answers its health check (200, or, for an imported app, any status below `ok_below`)."""
         self.stop(project)
         with self._lock:
             port = self._allocate()
@@ -80,7 +80,8 @@ class PortManager:
                 self.stop(project)
                 raise PortError(f"the app exited immediately (exit code {proc.returncode}); see .q/app.log")
             try:
-                if httpx.get(app.url + health_path, timeout=2).status_code == 200:
+                code = httpx.get(app.url + health_path, timeout=2).status_code
+                if code == 200 or (ok_below and code < ok_below):
                     return app
             except httpx.HTTPError:
                 pass

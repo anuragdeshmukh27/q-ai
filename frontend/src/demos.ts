@@ -2,7 +2,7 @@
 import type { RecordingMeta } from './api'
 
 export const DEFAULT_DEMO = 'calculator-fault'
-const ORDER = ['calculator-fault', 'todo-approvals', 'ask-employee', 'notes-search', 'contact-book', 'inventory', 'reddit-replica', 'instagram', 'flagship']
+const ORDER = ['calculator-fault', 'todo-approvals', 'ask-employee', 'notes-search', 'contact-book', 'inventory', 'reddit-replica', 'instagram', 'flagship', 'finish-it']
 
 export interface DemoCard {
   name: string
@@ -18,6 +18,7 @@ export interface DemoCard {
 /** What the build is made of, as one line. */
 export function statsLine(s: RecordingMeta['stats']): string {
   if (!s) return ''
+  if (s.finish) return `${s.gaps ?? 0} gaps found, ${s.fixed ?? 0} closed in ${s.files ?? 0} file${s.files === 1 ? '' : 's'}, +${s.insertions ?? 0} −${s.deletions ?? 0} on its own branch`
   const parts = [s.modules > 1 ? `${s.modules} modules` : '1 module', `${s.tables} tables`, `${s.endpoints} endpoints`, `${s.pages} pages`]
   if (s.functions !== undefined) parts.push(`${s.functions} functions (${Math.round(100 * (s.agent_share_functions ?? 0))}% written by agents${s.functions_repair ? `, ${s.functions_repair} repaired from the contract` : ''})`, `${(s.lines ?? 0).toLocaleString('en-US')} lines`)
   return parts.join(', ')

@@ -9,6 +9,8 @@
 | frontend  | page + script for two fixtures          | the real agent loop finishes, merges, generated UI tests (incl. every list field is shown) + `node --check` pass |
 | reviewer  | seven seeded diffs (4 defects, 3 clean) | the verdict is right and a defect is named in the right file (static checks switched off)                 |
 | qa        | four failing-test reports               | the model routes the bug to the right owner and calls it an app bug (traceback hint switched off)         |
+| analyst   | two prose READMEs (Task C)              | every unfinished feature is listed with its endpoint and none that already exists (same filter as the build) |
+| finish    | one gap in two half-built projects      | the real FinishBuild closes the gap: the generated test of that gap passes and the project's own tests still do |
 """
 from __future__ import annotations
 
@@ -20,12 +22,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from app.agent.planning import AgentFailed, run_architect, run_planner
+from app.agent.planning import AgentFailed, run_architect, run_planner, structured_step
 from app.agent.qa import Failure, run_triage
 from app.agent.review import run_review
-from app.config import load_agents
+from app.config import PROMPTS_DIR, ROOT, load_agents
 from app.contract_tests import api_test_source, edge_test_source
 from app.events import EventBus
+from app.finish.analyze import Route, matches
+from app.finish.build import FinishBuild, ReadmeFeatures
 from app.integrator import run_suite
 from app.llm import LLMClient
 from app.memory import contract_brief, contract_dict, schema_md
@@ -57,6 +61,7 @@ class Ctx:
     llm: LLMClient
     workdir: Path
     agents: dict = field(default_factory=load_agents)
+    stoppers: list = field(default_factory=list)  # callables the runner uses to stop a task that ran into the time limit (a build's `stopped.set`)
 
     def quiet(self) -> Callable[..., object]:
         return EventBus().emit
@@ -222,6 +227,70 @@ def _triage(case_id: str, owner: str, failure: Failure) -> Callable[[Ctx], Outco
     return run
 
 
+# -- analyst (Task C): which features does a prose README say are not done? ----------------------------------------------------
+
+def _routes(*pairs: tuple[str, str]) -> list[Route]:
+    return [Route(m, p, "main.py", "f", 1) for m, p in pairs]
+
+
+ANALYST_CASES = {
+    "library": (
+        "# Library\n\nA small library app (FastAPI + sqlite). You can already add a book (POST /books with title and author) and list the books (GET /books).\n\n"
+        "Still planned: borrowing a book with POST /books/{id}/borrow and a `member` name (a book that is already borrowed answers 409), giving it back with "
+        "POST /books/{id}/return, and an overdue report, GET /books/overdue, for the books that were borrowed more than 14 days ago. Not finished yet.\n",
+        _routes(("GET", "/books"), ("POST", "/books")),
+        {("POST", "/books/{id}/borrow"), ("POST", "/books/{id}/return"), ("GET", "/books/overdue")}),
+    "stockroom": (
+        "# Stockroom\n\nA stock-keeping API. Done: GET /items lists the items and POST /items adds one (name, quantity).\n\n"
+        "Roadmap: we still need to change the quantity of an item with PATCH /items/{id}/quantity and a `delta` field (negative removes stock; 404 for an unknown item, "
+        "400 if the stock would go below zero), and a low-stock report, GET /items/low, listing the items with fewer than 5 pieces. Coming soon.\n",
+        _routes(("GET", "/items"), ("POST", "/items")),
+        {("PATCH", "/items/{id}/quantity"), ("GET", "/items/low")}),
+}
+
+
+def _norm(path: str) -> str:
+    import re
+    return re.sub(r"[{<]\w+[}>]", "{}", path.split("?")[0].rstrip("/") or "/")
+
+
+def _analyst(case: str) -> Callable[[Ctx], Outcome]:
+    def run(c: Ctx) -> Outcome:
+        readme, routes, expected = ANALYST_CASES[case]
+        agent = c.agents["architect"]
+        system = (PROMPTS_DIR / "analyst.md").read_text(encoding="utf-8").replace("{name}", agent.name).replace("{role}", "Analyst")
+        listing = "\n".join(f"- {r.method} {r.path}" for r in routes)
+        try:
+            found, st = structured_step(agent, c.llm, c.model.id, system, f"README:\n{readme}\n\nRoutes that exist:\n{listing}", ReadmeFeatures, lambda f: [], c.quiet())
+        except AgentFailed as e:
+            return Outcome(False, 2, 0, e.reason[:200])
+        kept = [(f.method.upper(), _norm(f.path)) for f in found.features[:6]  # the same filter as FinishBuild._readme_with_the_model
+                if f.method.upper() in ("GET", "POST", "PUT", "PATCH", "DELETE") and f.path.startswith("/") and not matches(routes, f.method.upper(), f.path)]
+        want = {(m, _norm(p)) for m, p in expected}
+        missing, extra = want - set(kept), set(kept) - want
+        return Outcome(not missing and not extra, st["iterations"], st["prompt_tokens"] + st["completion_tokens"],
+                       f"{case}: found {sorted(kept)}" + (f", missing {sorted(missing)}" if missing else "") + (f", unexpected {sorted(extra)}" if extra else ""))
+    return run
+
+
+# -- finish engineer (Task C): close one gap of a half-built project with the real finishing pipeline ---------------------------
+
+def _finish(fixture: str, gap: str) -> Callable[[Ctx], Outcome]:
+    def run(c: Ctx) -> Outcome:
+        everyone = {a: c.model.id for a in c.agents}
+        b = FinishBuild(str(ROOT / "samples" / "half-built" / fixture), c.registry, c.llm, EventBus(), auto_fix=True, only=[gap], mode="autonomous",
+                        overrides=everyone, base=c.workdir, start_app=False, fast_live=True)
+        c.stoppers.append(b.stopped.set)
+        status: dict = {}
+        b.bus.subscribe(lambda e: status.update(e) if e["type"] == "gap_status" else None)
+        res = b.run()
+        tokens = sum(s["prompt_tokens"] + s["completion_tokens"] for s in b.stats.values())
+        iterations = sum(s["iterations"] for s in b.stats.values())
+        fixed = gap in status.get("fixed", [])
+        return Outcome(fixed and res.ok, iterations, tokens, f"{fixture} {gap}: {'fixed' if fixed else 'still open'}; tests: {res.test_summary}" + (f"; {res.problems[0][:90]}" if res.problems else ""))
+    return run
+
+
 def all_tasks() -> list[Task]:
     tasks = [
         Task("design-todo", "architect", "Design a todo app", _architect("Build a todo app with priorities"), reps=2),
@@ -237,4 +306,7 @@ def all_tasks() -> list[Task]:
     ]
     tasks += [Task(f"review-{c['id']}", "reviewer", f"Review: {c['id']}", _review(c), reps=2) for c in CASES]
     tasks += [Task(f"triage-{cid}", "qa", f"Triage: {cid}", _triage(cid, owner, f), reps=2) for cid, owner, f in TRIAGE_CASES]
+    tasks += [Task(f"analyst-{k}", "analyst", f"README features: {k}", _analyst(k), reps=2) for k in ANALYST_CASES]
+    tasks += [Task("finish-library-overdue", "finish", "Finish: library overdue", _finish("library-readme", "g3"), reps=2),
+              Task("finish-notes-delete", "finish", "Finish: notes delete", _finish("notes-flask", "g2"), reps=2)]
     return tasks
