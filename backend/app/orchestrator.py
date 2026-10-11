@@ -58,6 +58,8 @@ LOCKED = ["backend/main.py", "backend/__init__.py", "backend/api/__init__.py", "
 ENGINEER_ITERATIONS = 12
 MAX_REPLANS = 1
 MAX_REVIEW_ROUNDS = 3  # the first review plus two revisions
+MAX_HUMAN_REVIEWS = 2  # simulation: the Reviewer may send a human's green submit back this often; the next green submit is accepted (open items logged)
+HUMAN_TEST_GLOBS = {"database": ("tests/db/*.py", "tests/test_db*.py"), "backend": ("tests/api/*.py",), "frontend": ("tests/ui/*.py",)}
 MAX_QA_ROUNDS = 3
 MAX_BUGS_PER_ROUND = 4
 POLISH_FILES = ["static/index.html", "static/app.js", "static/style.css"]
@@ -74,6 +76,17 @@ class BuildResult:
     app_url: str = ""
     problems: list[str] = field(default_factory=list)
     agent_stats: dict = field(default_factory=dict)
+
+
+@dataclass
+class HumanTask:
+    """A task a person works on in the owner's worktree. `future` resolves when the work is accepted (or the build is stopped)."""
+    task: dict
+    future: Future
+    worktree: Path
+    tests: list[str] = field(default_factory=list)
+    rounds: int = 0  # green submits so far (each one is reviewed)
+    submitting: bool = False
 
 
 class Orchestrator:
@@ -104,6 +117,8 @@ class Orchestrator:
     ):
         self.goal, self.registry, self.llm = goal, registry, llm
         self.human_roles = tuple(human_roles)  # simulation mode: the engineers a human plays (their planned tasks get assignee "human")
+        self._humans: dict[str, HumanTask] = {}  # open human tasks by task id
+        self._human_lock = threading.Lock()
         self.bus = bus or EventBus()
         self.mode, self.approver, self.forced_preset, self.base = mode, approver, preset, base
         self.overrides, self.local_only = overrides if overrides is not None else {}, local_only  # the UI keeps a handle on this dict
@@ -215,6 +230,8 @@ class Orchestrator:
             scope = classify_goal(self.goal)
             if scope.level == "impossible":  # before any model work: say what Q cannot build, and what it can
                 raise AgentFailed("architect", scope.message)
+            if self.mode == "simulation":
+                self.emit("simulation_started", human_roles=list(self.human_roles))
             self._pipeline()
         except AgentFailed as e:
             self.problems.append(str(e))
@@ -241,6 +258,12 @@ class Orchestrator:
     # -- the human steps in after an escalation ("Retry this step", "Re-plan", "Stop build") -------
     def stop(self) -> None:
         self.stopped.set()
+        with self._human_lock:  # nobody is going to submit now: release every task a human was working on
+            released = [ht for ht in self._humans.values() if not ht.future.done()]
+            for ht in released:
+                ht.future.set_result(AgentResult("error", "stopped", summary="stopped by you"))
+        for ht in released:
+            self.emit("agent_state", agent=ht.task["owner"], state="idle")
 
     def prepare_recovery(self, agent_id: str = "") -> tuple[str, dict | None]:
         """Where a retry or a re-plan resumes, and which task it is about; ValueError (user-safe text) when nothing has stopped."""
@@ -411,11 +434,24 @@ class Orchestrator:
         self._stat("planner", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
         self._adopt_plan(plan.tasks)
 
+    def _mark_assignees(self, tasks: list[dict]) -> None:
+        """Simulation: the tasks of the roles a human plays are theirs (the owner still decides the paths and the worktree)."""
+        if self.mode != "simulation":
+            return
+        for t in tasks:
+            if t["owner"] in self.human_roles:
+                t["assignee"] = "human"
+
+    def _plan_view(self) -> list[dict]:
+        """The tasks as the `plan_created` event shows them; `assignee` appears only for a human's task, so every other build's events are unchanged."""
+        return [{**{k: t[k] for k in ("id", "title", "owner", "depends_on", "files")}, **({"assignee": "human"} if t.get("assignee") == "human" else {})} for t in self.tasks]
+
     def _adopt_plan(self, specs: list[TaskSpec]) -> None:
         agent = self.agents["planner"]
         self.tasks = [{**t.model_dump(), "status": "pending", "summary": "", "attempts": 0} for t in topo_order(specs)]
+        self._mark_assignees(self.tasks)
         self._write(agent, ".q/tasks.json", json.dumps({"tasks": self.tasks}, indent=2))
-        self.emit("plan_created", tasks=[{k: t[k] for k in ("id", "title", "owner", "depends_on", "files")} for t in self.tasks])
+        self.emit("plan_created", tasks=self._plan_view())
         self._commit("[planner] task plan")
         self._progress()
 
@@ -611,9 +647,10 @@ class Orchestrator:
         return "\n\n".join(p for p in parts if p)
 
     # -- scheduling and execution ---------------------------------------------------
-    def _next_ready(self, busy: set[str]) -> dict | None:
-        """First pending task whose dependencies are done and whose owner (one worktree each) is free."""
-        return next((x for x in self.tasks if x["status"] == "pending" and x["owner"] not in busy
+    def _next_ready(self, busy: set[str], ai_free: bool = True) -> dict | None:
+        """First pending task whose dependencies are done and whose owner (one worktree each) is free. With no AI worker free only a human's task qualifies:
+        it waits for a person, not for a worker."""
+        return next((x for x in self.tasks if x["status"] == "pending" and x["owner"] not in busy and (ai_free or x.get("assignee") == "human")
                      and all(self._status(d) == "done" for d in x["depends_on"])), None)
 
     def _execute_tasks(self) -> None:
@@ -623,13 +660,17 @@ class Orchestrator:
         with ThreadPoolExecutor(max_workers=self.max_parallel, thread_name_prefix="agent") as pool:
             while True:
                 busy = {t["owner"] for t in running.values()}
-                while len(running) < self.max_parallel and not self.stopped.is_set():
-                    t = self._next_ready(busy)
+                while not self.stopped.is_set():
+                    # a task waiting for a human holds no worker: only the AI tasks count against max_parallel
+                    t = self._next_ready(busy, sum(1 for x in running.values() if x.get("assignee") != "human") < self.max_parallel)
                     if t is None:
                         break
-                    model = self._model(self._engineer(t["owner"]))
-                    self._begin(t, model)
-                    running[pool.submit(self._work, t, preset, model, None, self._context(t["owner"], t))] = t
+                    if t.get("assignee") == "human":
+                        running[self._start_human(t)] = t
+                    else:
+                        model = self._model(self._engineer(t["owner"]))
+                        self._begin(t, model)
+                        running[pool.submit(self._work, t, preset, model, None, self._context(t["owner"], t))] = t
                     busy.add(t["owner"])
                 if not running:
                     break
@@ -645,7 +686,145 @@ class Orchestrator:
         self.emit("task_assigned", task=t["id"], title=t["title"], agent=t["owner"], model=model.name, kind=t.get("kind", "feature"))
         self._progress()
 
+    # -- tasks a person works on (simulation mode) ------------------------------------
+    def _start_human(self, t: dict) -> Future:
+        """Prepare the owner's worktree exactly as for an agent (sync, stub, generated tests), write the task document and hand the desk to the human.
+        No model is involved and no worker thread: the returned future resolves when the work is accepted (see `submit_human_task`) or the build is stopped."""
+        assert self.repo and self.memory
+        agent = self._engineer(t["owner"])
+        fut: Future = Future()
+        t["status"], t["attempts"] = "running", t["attempts"] + 1
+        wt = self.repo.worktree(agent.id)
+        self.repo.commit(wt, f"[{agent.id}] work in progress")
+        try:
+            self.repo.sync(agent.id)
+        except GitError as e:
+            fut.set_result(AgentResult("error", "sync_failed", summary=str(e)))
+            return fut
+        self._strip_strays(wt, t)
+        before = self._test_files(t["owner"], wt)
+        stub = self._scaffold(t, agent, wt)
+        after = self._test_files(t["owner"], wt)
+        tests = list(t.get("acceptance_tests") or sorted(after - before or after))  # the tests written for this task, else every test of the area
+        doc = f".q/tasks/{t['id']}.md"
+        self.memory.write(f"tasks/{t['id']}.md", self._human_doc(t, wt, stub, tests))
+        ht = HumanTask(t, fut, wt, tests)
+        with self._human_lock:
+            self._humans[t["id"]] = ht
+            if self.stopped.is_set() and not fut.done():  # Stop was pressed while this task was being prepared
+                fut.set_result(AgentResult("error", "stopped", summary="stopped by you"))
+        self.emit("task_assigned", task=t["id"], title=t["title"], agent=t["owner"], model="you", kind=t.get("kind", "feature"))
+        self.emit("human_task_assigned", agent=t["owner"], task=t["id"], title=t["title"], owner=t["owner"], files=t["files"], tests=tests, worktree=str(wt), doc=doc)
+        self.emit("agent_state", agent=t["owner"], state="idle" if fut.done() else "waiting_human")
+        self._progress()
+        return fut
+
+    @staticmethod
+    def _test_files(owner: str, wt: Path) -> set[str]:
+        return {p.relative_to(wt).as_posix() for pat in HUMAN_TEST_GLOBS.get(owner, ()) for p in wt.glob(pat)}
+
+    def _human_doc(self, t: dict, wt: Path, stub: tuple[str, str] | None, tests: list[str]) -> str:
+        """The task document the person reads: written by rules from what the planner and the scaffold know, never by a model."""
+        agent = self._engineer(t["owner"])
+        role = self.agents[t["owner"]].role
+        lines = [f"# {t['id']}: {t['title']}", "", f"This task is yours: you are the {role} for it, and no AI employee works on it.", "", "## What to do"]
+        if t.get("files"):
+            lines.append("Create or change: " + ", ".join(f"`{f}`" for f in t["files"]))
+        lines += [f"- {c}" for c in t["acceptance"]]
+        if stub and t["owner"] == "frontend":
+            lines += ["", f"Starting point: {stub[0]} were generated from the contract and already work. Change only what the points above need."]
+        elif stub:
+            lines += ["", f"Starting point: `{stub[0]}` already exists. It was generated from the contract and the schema, so its names, paths and models are right. "
+                          "Fill in every function that still raises `NotImplementedError`, and rename nothing."]
+        lines += ["", "## Files you may edit", *[f"- `{p}`" for p in agent.owned_paths]]
+        lines += ["", "Do not edit these (they belong to the preset or to QA): " + ", ".join(f"`{p}`" for p in LOCKED) + ", the generated tests in `tests/api`, `tests/ui` and `tests/qa`, and `.q/`."]
+        lines += ["", "## Acceptance tests", *([f"- `{x}`" for x in tests] or ["- no test exists for this area yet: add one that covers every function you write"]),
+                  "", "The whole test suite in your folder has to pass: `python -m pytest -q`."]
+        deps = [x for x in self.tasks if x["id"] in t["depends_on"]]
+        lines += ["", "## Depends on", *([f"- {x['id']} {x['title']} ({x['status']})" for x in deps] or ["- nothing"])]
+        lines += ["", "## Where to work", f"- Folder: `{wt}`", f"- Branch: `{self.repo.branch(t['owner'])}`", "- Edit the files there with your own editor. Do not commit: Q does it when you submit."]
+        lines += ["", "## How to submit",
+                  "Press **Submit** next to the task in Q's task list. Q runs the tests in your folder. If one fails, the task stays open and you see which. "
+                  f"When they all pass, the Reviewer reads your change; at most {MAX_HUMAN_REVIEWS} reviews can send it back with items to fix, and the next green submit is accepted. "
+                  "Then the Integrator merges it into the project and the tasks that waited for yours start."]
+        return "\n".join(lines) + "\n"
+
+    def submit_human_task(self, tid: str) -> dict:
+        """The person pressed Submit. Red tests: the task stays open. Green: committed as `[human] <title>`, reviewed, and accepted unless the Reviewer sends it back
+        (at most MAX_HUMAN_REVIEWS times). Accepted work is merged by the scheduler like any other. Raises ValueError (user-safe text) when there is nothing to submit."""
+        with self._human_lock:
+            ht = self._humans.get(tid)
+            if ht is None or ht.future.done():
+                raise ValueError("That task is not waiting for you." if not self.stopped.is_set() else "The build was stopped.")
+            if ht.submitting:
+                raise ValueError("That task is already being checked.")
+            ht.submitting = True
+        t, owner, wt = ht.task, ht.task["owner"], ht.worktree
+        try:
+            self.emit("agent_state", agent=owner, state="testing")
+            passed, summary, output = run_suite(wt)
+            failed = [f.test_id for f in parse_failures(output)]
+            self.emit("test_result", agent=owner, passed=passed, failed=failed, summary=summary, signature="")
+            if not passed:
+                self.emit("human_submit_result", agent=owner, task=tid, ok=False, stage="tests", failed=failed, summary=summary)
+                self.emit("agent_state", agent=owner, state="waiting_human")
+                return {"ok": False, "stage": "tests", "summary": summary, "failed": failed, "items": []}
+            self.repo.commit(wt, f"[human] {t['title']}"[:72])  # type: ignore[union-attr]
+            ht.rounds += 1
+            items: list = []
+            if self.review:
+                review = self._human_review(t, wt, ht.rounds)
+                if review.verdict != "PASS":
+                    items = review.items
+                    if ht.rounds <= MAX_HUMAN_REVIEWS:
+                        self.emit("review_feedback", agent=owner, task=tid, round=ht.rounds, summary=review.summary, items=[i.model_dump() for i in items])
+                        self.emit("agent_state", agent=owner, state="waiting_human")
+                        return {"ok": False, "stage": "review", "summary": review.summary, "failed": [], "items": [i.model_dump() for i in items]}
+                    asked = "; ".join(f"{i.file}: {i.problem}" for i in items)[:300]
+                    self.memory.append_decision(f"{tid} accepted from the human with open review items after {MAX_HUMAN_REVIEWS} reviews ({asked})")  # type: ignore[union-attr]
+            with self._human_lock:
+                if ht.future.done():  # Stop was pressed while this was being checked: nothing is merged
+                    return {"ok": False, "stage": "stopped", "summary": "The build was stopped.", "failed": [], "items": []}
+                ht.future.set_result(AgentResult("finished", summary=f"{t['title']}: done by the human; {summary}"))
+            self.emit("human_submit_result", agent=owner, task=tid, ok=True, stage="accepted", failed=[], summary=summary, open_items=len(items))
+            self.emit("agent_state", agent=owner, state="idle")
+            return {"ok": True, "stage": "accepted", "summary": summary, "failed": [], "items": [i.model_dump() for i in items]}
+        except Exception:
+            if not ht.future.done():
+                self.emit("agent_state", agent=owner, state="waiting_human")
+            raise
+        finally:
+            ht.submitting = False
+
+    def _human_review(self, t: dict, wt: Path, rnd: int) -> ReviewOutput:
+        """One Reviewer round on a person's branch: the same checks as for an agent's (static findings, the model's review, the unfounded claims dropped)."""
+        assert self.repo
+        reviewer = self.agents["reviewer"]
+        findings = self._automatic_findings(self._engineer(t["owner"]), wt, t["owner"])
+        self.emit("agent_state", agent=reviewer.id, state="reading")
+        try:
+            rmodel = self._model(reviewer)
+            review, st = run_review(reviewer, self.llm, rmodel.id, t, self.repo.diff_vs_main(t["owner"], skip_generated_tests=True), findings, self.emit)
+            self._stat("reviewer", rmodel, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
+        except AgentFailed:  # no reviewer model: the automatic checks alone decide
+            review = ReviewOutput(verdict="REQUEST_CHANGES" if findings else "PASS", summary="model review unavailable; automatic checks only", items=findings)
+        review = drop_unfounded(review, wt)
+        self._write(reviewer, f".q/reviews/{t['id']}-r{rnd}.md", review_markdown(t, review, rnd))
+        self.emit("review_result", agent=reviewer.id, task=t["id"], round=rnd, verdict=review.verdict, summary=review.summary, items=[i.model_dump() for i in review.items])
+        self.emit("agent_state", agent=reviewer.id, state="idle")
+        return review
+
     def _handle(self, t: dict, res: AgentResult, preset) -> None:
+        if t.get("assignee") == "human":  # a person's task is never retried, re-planned, repaired or escalated: it is accepted, or the build was stopped
+            with self._human_lock:
+                self._humans.pop(t["id"], None)
+            if res.status == "finished":
+                self._complete(t, res)
+                return
+            t["status"] = "failed"
+            self.problems.append(f"task {t['id']} ({t['title']}) stopped by you" if self.stopped.is_set() else f"task {t['id']} ({t['title']}) could not start: {res.reason or res.status}")
+            self._block_dependents(t["id"])
+            return
         if res.status == "finished":
             self._complete(t, res)
             return
@@ -1108,6 +1287,7 @@ class Orchestrator:
         self._stat("planner", model, st["iterations"], st["prompt_tokens"], st["completion_tokens"], st["seconds"])
         new = [{**x.model_dump(), "status": "pending", "summary": "", "attempts": 1, "local_failures": t.get("local_failures", 0), "failure": f"{reason}; the previous attempt did: {res.summary or 'see the files'}"}
                for x in topo_order(plan.tasks)]
+        self._mark_assignees(new)
         ids = [x["id"] for x in new]
         last = ids[-1]
         idx = self.tasks.index(t)
@@ -1115,7 +1295,7 @@ class Orchestrator:
         for x in self.tasks:  # whatever waited for the failed task now waits for the last replacement
             x["depends_on"] = [last if d == t["id"] else d for d in x["depends_on"]]
         self.memory.append_decision(f"Planner re-planned {t['id']} after failure ({reason}) into {', '.join(ids)}")
-        self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True)
+        self.emit("plan_created", tasks=self._plan_view(), replan=True)
         return True
 
     # -- direct requests from the human (Ask employee) -------------------------------
@@ -1130,7 +1310,30 @@ class Orchestrator:
         if self.finished:  # the project was complete: it is in progress again until this request is done
             self.finished = False
             self.emit("project_resumed", agent=owner, task=t["id"], message=f"{self.agents[owner].name} is working on a request; the project is in progress again")
-        self.emit("plan_created", tasks=[{k: x[k] for k in ("id", "title", "owner", "depends_on", "files")} for x in self.tasks], replan=True, reason="request")
+        self.emit("plan_created", tasks=self._plan_view(), replan=True, reason="request")
+        self._save_tasks()
+        self._progress()
+        return t
+
+    def add_human_task(self, owner: str, title: str, files: list[str], acceptance_tests: list[str], depends_on: list[str] | None = None) -> dict:
+        """Give `owner`'s desk to the human for one task, without the planner (a scenario creates these on an existing app).
+        It runs in the scheduler like any task: when its dependencies are done the owner's worktree is prepared, the task document is written and the build waits for Submit."""
+        if owner not in ENGINEERS:
+            raise ValueError("only the engineers' desks can be given to a human")
+        if self.root is None or self.memory is None:
+            raise ValueError("the project has not been designed yet")
+        deps = list(depends_on or [])
+        if unknown := [d for d in deps if not any(x["id"] == d for x in self.tasks)]:
+            raise ValueError(f"unknown task to wait for: {', '.join(unknown)}")
+        n = 1 + max((int(x["id"][1:]) for x in self.tasks if re.fullmatch(r"h\d+", x["id"])), default=0)
+        t = {"id": f"h{n}", "title": title, "owner": owner, "depends_on": deps, "files": list(files), "kind": "human", "assignee": "human",
+             "acceptance": [f"{x} passes" for x in acceptance_tests] or ["the task is done"], "acceptance_tests": list(acceptance_tests),
+             "status": "pending", "summary": "", "attempts": 0}
+        self.tasks.append(t)
+        if self.finished:  # the project was complete: it is in progress again until this task is done
+            self.finished = False
+            self.emit("project_resumed", agent=owner, task=t["id"], message="a task was given to you; the project is in progress again")
+        self.emit("plan_created", tasks=self._plan_view(), replan=True, reason="human_task")
         self._save_tasks()
         self._progress()
         return t
