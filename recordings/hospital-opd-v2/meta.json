@@ -1,0 +1,29 @@
+{
+  "name": "hospital-opd-v2",
+  "goal": "Build a hospital OPD manager: doctors have name, department General Medicine/Cardiology/Dermatology/Pediatrics/Orthopedics/ENT, phone, email, consultation fee in rupees, room and availability Available/On leave. Each doctor has many appointments: patient name, patient phone, date, time, reason and status Booked/Completed/Cancelled; actions: complete and cancel. Each doctor has many prescriptions: patient name, medicine, dosage, days 1-90 and instructions. Each doctor has many lab tests: patient name, test name Blood test/X-ray/MRI/ECG/Urine test, cost in rupees and status Ordered/Collected/Reported; actions: collect and report. Show total doctors, appointments per doctor, lab revenue, filter doctors by department, filter appointments by status, search doctors by name, edit and delete everything.",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-06 09:00:28",
+  "seconds": 176,
+  "events": 668,
+  "llm_calls": 70,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Hospital OPD v2: sidebar, boards, dense tables",
+  "app": "Hospital OPD",
+  "feature": "Kanban board, vitals strip, dense tables",
+  "stats": {
+    "modules": 4,
+    "tables": 4,
+    "endpoints": 20,
+    "pages": 10,
+    "functions": 44,
+    "lines": 600,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.248,
+    "functions_repair": 0
+  }
+}

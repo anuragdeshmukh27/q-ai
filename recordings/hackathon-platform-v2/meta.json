@@ -1,0 +1,29 @@
+{
+  "name": "hackathon-platform-v2",
+  "goal": "Build a hackathon management platform: teams have name, college, city, track AI/Web/Health/Sustainability/Open, project title and stage Registered/Shortlisted/Finalist/Eliminated; actions: shortlist and eliminate. Each team has many members: name, email, phone and role Leader/Developer/Designer/Presenter. Each team has many mentor sessions: mentor name, topic, date, time and status Scheduled/Completed/Cancelled; actions: complete and cancel. Each team has many judge scores: judge name, innovation 1-10, technical depth 1-10, presentation 1-10, impact 1-10 and comments. Show total teams, members per team, average judge scores, filter teams by stage and track, search teams by name, edit and delete everything.",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-06 08:51:43",
+  "seconds": 154,
+  "events": 646,
+  "llm_calls": 68,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Hackathon platform v2: top navigation, boards, column charts",
+  "app": "Hackathon platform",
+  "feature": "Kanban board, stat cards, top navigation",
+  "stats": {
+    "modules": 4,
+    "tables": 4,
+    "endpoints": 20,
+    "pages": 10,
+    "functions": 44,
+    "lines": 596,
+    "agent_share_functions": 1.0,
+    "agent_share_lines": 0.25,
+    "functions_repair": 0
+  }
+}
