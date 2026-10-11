@@ -4,6 +4,7 @@ or a replay of a recording. Both publish the same event stream on their own Even
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 import uuid
@@ -419,6 +420,26 @@ class Session:
         self.chats[agent_id] += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
         self.bus.emit("message_sent", **{"from": agent_id, "to": "human", "text": reply})
         return {"reply": reply}
+
+    # -- simulation: a task the human works on ---------------------------------------------------
+    def submit_task(self, tid: str) -> dict:
+        if self.kind == "replay" or self.orch is None:
+            raise SessionError("Demo mode replays a recording; tasks can only be submitted in a live build.", 409)
+        try:
+            return self.orch.submit_human_task(tid)
+        except ValueError as e:
+            raise SessionError(str(e), 409) from None
+
+    def task_doc(self, tid: str) -> str:
+        """The markdown the human reads for one of their tasks (written when the task was handed over)."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
+            raise SessionError("unknown task", 404)
+        if not self.root:
+            raise SessionError("The project has no files yet.", 409)
+        doc = self.root / ".q" / "tasks" / f"{tid}.md"
+        if not doc.is_file():
+            raise SessionError("There is no task document for that task.", 404)
+        return doc.read_text(encoding="utf-8")
 
     # -- an employee needs the human: Retry this step, Re-plan, Stop build ----------------------
     def escalation(self, action: str, agent_id: str) -> dict:

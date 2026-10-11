@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from .approvals import UnknownApproval
@@ -215,6 +215,16 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     @app.post("/api/projects/{pid}/escalation")
     def escalation(pid: str, body: EscalationBody):
         return session(pid).escalation(body.action, body.agent)
+
+    # -- simulation: tasks the human works on ------------------------------------------------
+    @app.post("/api/projects/{pid}/tasks/{tid}/submit")
+    def submit_task(pid: str, tid: str):
+        """Run the tests in the human's worktree; green work is reviewed and merged. Answers {ok, stage: tests | review | accepted | stopped, summary, failed, items}."""
+        return session(pid).submit_task(tid)
+
+    @app.get("/api/projects/{pid}/tasks/{tid}/doc")
+    def task_doc(pid: str, tid: str):
+        return PlainTextResponse(session(pid).task_doc(tid), media_type="text/markdown; charset=utf-8")
 
     # -- the built app ----------------------------------------------------------------
     @app.get("/api/projects/{pid}/app")
