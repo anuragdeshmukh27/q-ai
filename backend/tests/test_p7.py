@@ -34,6 +34,9 @@ def test_without_benchmark_evidence_every_role_uses_the_safe_default(tmp_path):
     r = Router(REG, board(tmp_path, []))
     for agent, cap in (("architect", "reasoning"), ("reviewer", "review"), ("backend", "coding"), ("database", "sql")):
         route = r.choose(agent, cap)
+        if agent == "backend":  # pinned to the 7b in config/models.yaml: the 14b wins the backend benchmark but is slower and not installed
+            assert route.model.id == "qwen25-coder-7b" and route.source == "pin" and "14b not installed" in route.reason
+            continue
         assert route.model.id == "qwen25-coder-7b" and route.source == "default" and "no benchmark data" in route.reason
 
 

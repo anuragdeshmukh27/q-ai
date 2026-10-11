@@ -26,7 +26,7 @@ import httpx
 
 from .config import ollama_host
 from .metrics import read_metrics
-from .registry import ModelConfig, ModelRegistry
+from .registry import ModelConfig, ModelRegistry, same_name as _same
 
 HEADROOM_GB = 1.0
 RAM_HEADROOM_GB = 6.0  # system RAM kept free for Windows, the browser, the editor and the build's own processes when a model spills into RAM
@@ -59,11 +59,6 @@ class HttpOllamaControl:
 
     def unload(self, name: str) -> None:
         self.client.post(f"{self.host}/api/generate", json={"model": name, "keep_alive": 0}, timeout=30)
-
-
-def _same(a: str, b: str) -> bool:
-    strip = lambda n: n[:-7] if n.endswith(":latest") else n  # noqa: E731
-    return strip(a) == strip(b)
 
 
 class ModelScheduler:

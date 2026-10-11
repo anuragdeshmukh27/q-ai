@@ -24,7 +24,7 @@ from .presets import list_presets, load_preset
 from .providers.base import ProviderError
 from .recording import Recorder, RecordingError, check_name, load_recording, restore_snapshot
 from .leaderboard import SHIPPED_RESULTS, Leaderboard
-from .registry import ModelRegistry
+from .registry import ModelRegistry, ollama_installed_probe
 from .router import Router
 from .scheduler import MetricsSampler, ModelScheduler
 from .scope import classify_goal
@@ -516,6 +516,8 @@ class SessionManager:
     def __init__(self, settings: Settings, registry: ModelRegistry | None = None, llm_factory: Callable[..., LLMClient] | None = None):
         self.settings = settings
         self.registry = registry or ModelRegistry.load()
+        if registry is None and llm_factory is None and settings.q_mode != "replay":
+            self.registry.installed_probe = ollama_installed_probe()  # a model that is not pulled in Ollama is never routed to
         self.roster = load_agents()
         self.ports = PortManager()
         self._llm_factory = llm_factory
