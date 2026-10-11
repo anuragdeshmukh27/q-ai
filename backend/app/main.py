@@ -224,7 +224,8 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
 
     @app.get("/api/projects/{pid}/tasks/{tid}/doc")
     def task_doc(pid: str, tid: str):
-        return PlainTextResponse(session(pid).task_doc(tid), media_type="text/markdown; charset=utf-8")
+        """The task document as markdown source (served as plain text so a browser tab shows it instead of downloading it)."""
+        return PlainTextResponse(session(pid).task_doc(tid), media_type="text/plain; charset=utf-8")
 
     # -- the built app ----------------------------------------------------------------
     @app.get("/api/projects/{pid}/app")

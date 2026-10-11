@@ -265,7 +265,7 @@ def test_the_api_creates_a_simulation_serves_the_doc_takes_a_submit_and_validate
     assert s.orch.human_roles == ("database",)
     ev = assigned(s.bus)
     doc = client.get(f"/api/projects/{pid}/tasks/t1/doc")
-    assert doc.status_code == 200 and doc.headers["content-type"].startswith("text/markdown") and "# t1: DB functions" in doc.text
+    assert doc.status_code == 200 and doc.headers["content-type"].startswith("text/plain") and "# t1: DB functions" in doc.text
     assert client.get(f"/api/projects/{pid}/tasks/t9/doc").status_code == 404
     assert client.get(f"/api/projects/{pid}/tasks/t1.md/doc").status_code == 404
     assert client.post(f"/api/projects/{pid}/mode", json={"mode": "supervised"}).status_code == 409  # who plays which role is fixed at the start
