@@ -778,8 +778,13 @@ class Orchestrator:
                 self.emit("human_submit_result", agent=owner, task=tid, ok=False, stage="scope", failed=[], files=outside, summary=summary)
                 return {"ok": False, "stage": "scope", "summary": summary, "failed": [], "items": [], "files": outside}
             self.emit("agent_state", agent=owner, state="testing")
-            passed, summary, output = run_suite(wt)
-            failed = [f.test_id for f in parse_failures(output)]
+            self.emit("human_test_started", agent=owner, task=tid)  # the IDE's test panel shows this run too
+            ht.run = SuiteRun(wt, lambda line: self.emit("human_test_output", agent=owner, task=tid, line=line))
+            res = ht.run.run()
+            ht.run = None
+            passed, summary = res["ok"], res["summary"]
+            failed = [x["id"] for x in res["tests"] if x["outcome"] == "failed"]
+            self.emit("human_test_result", agent=owner, task=tid, **res)
             self.emit("test_result", agent=owner, passed=passed, failed=failed, summary=summary, signature="")
             if not passed:
                 self.emit("human_submit_result", agent=owner, task=tid, ok=False, stage="tests", failed=failed, summary=summary)
@@ -810,7 +815,7 @@ class Orchestrator:
                 self.emit("agent_state", agent=owner, state="waiting_human")
             raise
         finally:
-            ht.submitting = False
+            ht.submitting, ht.run = False, None
 
     def _human_policy(self, owner: str, wt: Path) -> PathPolicy:
         """The paths a person playing `owner` may write: exactly what the AI engineer in that role may write."""

@@ -220,3 +220,16 @@ def test_the_ide_endpoints_refuse_a_replay(tmp_path):
     assert client.put(ide(pid, what="file"), json={"path": "a.py", "content": ""}).status_code == 409
     assert client.post(ide(pid, what="tests")).status_code == 409
     mgr.shutdown()
+
+
+def test_submit_streams_through_the_same_test_panel(build):
+    client, s, pid, ev, wt = build
+    write_db_tests(wt)
+    red = client.post(f"/api/projects/{pid}/tasks/t1/submit").json()
+    assert red["stage"] == "tests"
+    res = of_type(s.bus, "human_test_result")[-1]
+    assert res["ok"] is False and res["task"] == "t1" and res["failed"] >= 1 and sorted(red["failed"]) == sorted(t["id"] for t in res["tests"] if t["outcome"] == "failed")
+    assert of_type(s.bus, "human_test_started") and any("test_add_and_list" in e["line"] for e in of_type(s.bus, "human_test_output"))
+    solve_db(ev["worktree"], tests=False)
+    assert client.post(f"/api/projects/{pid}/tasks/t1/submit").json()["stage"] == "accepted"
+    assert of_type(s.bus, "human_test_result")[-1]["ok"] is True
