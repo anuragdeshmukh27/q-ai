@@ -163,11 +163,20 @@ def run(port: int, serve: bool) -> int:
         rep = c.get(f"/api/projects/{pid}/report").json()
         check(rep["total"] == 100 and [x["score"] for x in rep["criteria"]] == [4, 4, 4, 4, 4], "the report scores the run 100/100", f"{rep['total']} {[x['score'] for x in rep['criteria']]}")
         log_ids = {e["id"]: e for e in info["events"]}
-        check(len(rep["rows"]) == 20 and all(r["verified"] and r["event"] in log_ids for r in rep["rows"]), "every point quotes an entry that is in the session log")
+        check(len(rep["rows"]) == 20 and all(r["verified"] and (r["event"] in log_ids or rep["events"][r["event"]]["kind"] == "debrief_check") for r in rep["rows"]), "every point quotes an entry that is in the session log or one of the debrief's own measurements")
         fair = rep["fairness"]
         check(fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [] and fair["rubric"] == "v1", "fairness: 20 points quoted, 20 quotes matched, none dropped, rubric v1", str(fair))
         check(fair["tests_rerun"]["ok"] is True and fair["tests_rerun"]["passed"] == fair["tests_rerun"]["total"], "the suite was re-run on the merged project", str(fair["tests_rerun"]))
-        check(fair["wording"]["source"] == "template", "the stubbed model wrote nothing, so the template wording was used", str(fair["wording"]))
+        check(fair["voices"] == {"judges": "template", "coach": "template", "reason": "error"} and {r["worded_by"] for r in rep["rows"]} == {"rule"},
+              "every point is its rule's; the stubbed model wrote no line and no paragraph, so the template ones were used", str(fair["voices"]))
+        by = {**log_ids, **rep["events"]}
+        check(all(by[r["event"]]["t"] == r["t"] for r in rep["rows"]), "every point carries the time of the entry it quotes")
+        check(all(re.findall(r"\d\d:\d\d", r["note"]) in ([], [f"{int(r['t']) // 60:02d}:{int(r['t']) % 60:02d}"]) for r in rep["rows"]), "the time in every note is the time of the entry it quotes")
+        checks = [e for e in rep["events"].values() if e["kind"] == "debrief_check"]
+        check(len(checks) == 5 and any(e["text"].startswith("Debrief re-run on main: ") and "passed" in e["text"] for e in checks) and any(e["text"].startswith("Regression test ") for e in checks),
+              "the debrief's own measurements are entries a point quotes", str([e["text"] for e in checks]))
+        scoring = c.get(f"/api/projects/{pid}/session").json()["scoring"]
+        check(sum(len(x["rules"]) for x in scoring) == 20 and len(scoring) == 5, "the 20 rules in plain words come with the session (How you are scored)")
         md = c.get(f"/api/projects/{pid}/report", params={"format": "md"})
         check(md.status_code == 200 and md.text.startswith("# Debrief: Production incident") and "**Attempt 1: 100/100**" in md.text, "the markdown report is served")
         folder = next((tmp / "ws").glob("opd-bookings-down*")) / ".q" / "reports"

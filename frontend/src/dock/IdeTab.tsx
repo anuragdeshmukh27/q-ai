@@ -3,6 +3,7 @@ import { api, type IdeFile, type IdeTree } from '../api'
 import { acceptanceMark, ideRole, IdeController, otherFailures, type Mark } from '../ide'
 import { parseMarkdown, type Block, type Inline } from '../markdown'
 import type { OfficeModel } from '../model'
+import type { ScoringCriterion } from '../scenario'
 import { Branch, buildTree, Empty, type Decor, type Node } from './Explorer'
 import { useRefetch } from './hooks'
 import { GuidePanel } from './GuidePanel'
@@ -40,7 +41,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       ),
     [projectId],
   )
-  useSyncExternalStore(ctl.subscribe, ctl.getVersion)
+  useSyncExternalStore(ctl.subscribe, ctl.getVersion, ctl.getVersion)
   const [checking, setChecking] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState<string | null>(null)
@@ -68,9 +69,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   }
   const show = async (target: string, line?: number) => {
     setPending(null)
-    if (line) await ctl.openAt(target, line)
-    else if (ctl.tabs.includes(target)) ctl.activate(target)
-    else await ctl.openFile(target)
+    await ctl.pick(target, line)
   }
   const askClose = (path: string) => {
     if (ctl.isDirty(path)) setPending({ kind: 'close', path })
@@ -266,6 +265,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       <div className="flex w-[300px] shrink-0 flex-col border-l border-[var(--line)]">
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {taskId ? (doc.data ? <Doc blocks={blocks} /> : <div className="text-[13px] text-[var(--muted)]">{doc.error || 'Loading the task document…'}</div>) : <div className="text-[13px] text-[var(--muted)]">No open task. When the tasks before yours are merged, the task document appears here.</div>}
+          {model.scenario && model.scenario.scoring.length > 0 && <ScoringPanel scoring={model.scenario.scoring} name={(id) => model.name(id) || id} />}
         </div>
         {model.guide && <GuidePanel guide={model.guide} />}
         {task && <Acceptance model={model} entries={task.tests ?? []} />}
@@ -374,6 +374,33 @@ export function SearchPanel({ ctl, tree, box, onPick }: { ctl: IdeController; tr
         ))}
       </div>
     </div>
+  )
+}
+
+/** "How you are scored": the 20 rules of the debrief in plain words, by criterion and judge, shown with the task so that nothing in the report is a surprise. */
+export function ScoringPanel({ scoring, name }: { scoring: ScoringCriterion[]; name: (employee: string) => string }) {
+  const rules = scoring.reduce((n, c) => n + c.rules.length, 0)
+  return (
+    <details open className="mt-4 border-t border-[var(--line)] pt-3" aria-label="How you are scored">
+      <summary className="cursor-pointer text-[12px] font-bold uppercase tracking-wide text-[var(--muted)] hover:text-white">
+        How you are scored <span className="ml-1 font-normal normal-case">· {rules} rules, {new Set(scoring.map((c) => c.judge)).size} judges, 100 marks</span>
+      </summary>
+      <p className="mt-1.5 text-[12.5px] leading-snug text-[var(--muted)]">Each rule is worth one point (5 marks); every criterion has 4. The judges give their scores in the meeting room after your fix is accepted, and each point quotes a moment of your session.</p>
+      <div className="mt-2 space-y-2.5">
+        {scoring.map((c) => (
+          <section key={c.id} aria-label={c.name}>
+            <h4 className="text-[13px] font-bold text-white">
+              {c.name} <span className="font-normal text-[var(--muted)]">· judge {name(c.judge)}</span>
+            </h4>
+            <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-[12.5px] leading-snug text-[#c9d3ee]">
+              {c.rules.map((r) => (
+                <li key={r.id}>{r.plain}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </details>
   )
 }
 

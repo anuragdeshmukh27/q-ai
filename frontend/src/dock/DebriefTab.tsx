@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { OfficeModel } from '../model'
-import { deltaLabel, eventDetail, formatClock, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
+import { coachLabel, deltaLabel, eventDetail, formatClock, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
 
 const DOT: Record<string, string> = { architect: '#818cf8', planner: '#2dd4bf', backend: '#4ade80', frontend: '#f472b6', database: '#fb923c', integrator: '#94a3b8', qa: '#c084fc', reviewer: '#f87171' }
 
@@ -104,6 +104,10 @@ function Evidence({ report, model, open, onOpen }: { report: DebriefReport; mode
         <span className="text-[12.5px] text-[var(--muted)]">every point quotes a timestamped moment from your session</span>
         <span className="ml-auto font-mono text-[11.5px] text-[var(--muted)]">{report.files.md}</span>
       </div>
+      <div className="mb-2 mt-2 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2" aria-label="Coach">
+        <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--accent)]" title={report.coach.source === 'model' ? 'Written by the 7b model from the points below; every time, number and quote in it was checked against them' : 'Built from the points below, without a model'}>{coachLabel(report.coach)}</div>
+        <p className="text-[13.5px] leading-snug text-[#dfe5f5]">{report.coach.text}</p>
+      </div>
       {report.criteria.map((c) => (
         <section key={c.id} className="border-t border-[var(--line)] py-2.5" aria-label={c.name}>
           <h3 className="text-[14px] font-bold">
@@ -141,7 +145,7 @@ function Row({ row, report, model, open, onOpen }: { row: ReportRow; report: Deb
       </div>
       <span className="mt-0.5 text-right text-[12px] leading-tight">
         <span className="block font-semibold text-[var(--good)]" title="The quote was found in this entry of the session log">{row.verified ? '✓ verified' : ''}</span>
-        <span className="block text-[10.5px] uppercase tracking-wide text-[var(--muted)]" title={row.worded_by === 'model' ? 'The sentence was written by the 7b model and checked against the log' : 'The sentence comes from the rule that scored this point'}>{wordingLabel(row)}</span>
+        <span className="block text-[10.5px] uppercase tracking-wide text-[var(--muted)]" title="The sentence comes from the rule that scored this point; the 7b does not write the points">{wordingLabel(row)}</span>
       </span>
       {open && (
         <dl className="col-span-4 mt-1.5 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[12.5px]" aria-label={`Log entry ${row.event}`}>
@@ -165,7 +169,6 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
     [true, f.dropped.length === 1 ? 'Unbacked claim dropped' : 'Unbacked claims dropped', String(f.dropped.length)],
     [!!f.tests_rerun?.ok, 'Tests re-run, not guessed', f.tests_rerun ? `${f.tests_rerun.passed}/${f.tests_rerun.total}` : 'not run'],
     [true, 'Same rubric for every attempt', f.rubric],
-    [f.wording.source !== 'template', 'Sentences in the 7b’s own words', `${f.wording.model_points}/${f.points}`],
   ]
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-l border-[var(--line)] p-4 max-[1100px]:col-span-2 max-[1100px]:border-l-0 max-[1100px]:border-t" aria-label="Fairness checks">
@@ -179,7 +182,7 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
           </li>
         ))}
       </ul>
-      {f.wording.reason && <div className="mt-1 text-[12px] leading-snug text-[var(--muted)]">Wording: {f.wording.reason}.</div>}
+      {f.voices.reason && <div className="mt-1 text-[12px] leading-snug text-[var(--muted)]">The 7b was not used for the judges and the coach: {f.voices.reason}.</div>}
       {f.dropped.length > 0 && (
         <div className="mt-3 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[12.5px] leading-snug text-[#b9c4e0]">
           {f.dropped.map((d, i) => (

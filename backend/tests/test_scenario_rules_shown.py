@@ -23,7 +23,7 @@ def test_every_rule_has_a_sentence_for_the_learner_and_the_scoring_lists_them_by
     rules = {r["id"]: r["plain"] for c in scoring for r in c["rules"]}
     assert set(rules) == set(RULES) and len(rules) == 20 and all(len(t) > 25 and t.endswith(".") for t in rules.values())
     assert "within 2 minutes" in rules["first_update"] and "within a minute" in rules["answered_requests"] and "backend/api/appointments.py or doctors.py" in rules["read_the_route"]
-    assert "tests/regression/" in rules["regression_test_added"] and "before your first save" in rules["reproduced_first"] and "at most one hint" in rules["few_hints"].lower()
+    assert "tests/regression/" in rules["regression_test_added"] and "before you save any file" in rules["reproduced_first"] and "at most one hint" in rules["few_hints"].lower()
     assert not [t for t in rules.values() if re.search(r"\b(architect|planner|reviewer|qa)\b", t)]  # names, not role ids
 
 

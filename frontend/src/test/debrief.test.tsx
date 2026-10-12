@@ -4,7 +4,8 @@ import { COLS, MEETING_SPOTS, ROWS, buildBlocked } from '../office/layout'
 import { Dock } from '../components/Dock'
 import { DebriefTab } from '../dock/DebriefTab'
 import { OfficeModel, type AgentInfo, type QEvent, type Visual } from '../model'
-import { deltaLabel, eventDetail, previousAttempt, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
+import { coachLabel, deltaLabel, eventDetail, previousAttempt, rowsOf, scoreColor, voiceLabel, wordingLabel, type DebriefReport, type ReportRow, type ScoringCriterion } from '../scenario'
+import { ScoringPanel } from '../dock/IdeTab'
 
 const ROSTER: AgentInfo[] = [['architect', 'Aarav'], ['planner', 'Priya'], ['backend', 'Rohan'], ['database', 'Karan'], ['qa', 'Ananya'], ['reviewer', 'Vikram']].map(([id, name], i) => ({
   id, name, role: id, desk: [3 + i, 2], sprite: { palette: 'teal', accessory: 'none' },
@@ -14,7 +15,7 @@ let seq = 0
 const ev = (type: string, rest: Record<string, unknown> = {}, ts = 1000): QEvent => ({ seq: seq++, ts, type, ...rest })
 
 const row = (id: string, criterion: string, kind: 'strength' | 'gap', event: string, t: number, quote: string, note: string, advice = '', source = '#incident-opd'): ReportRow => ({
-  id, criterion, rule: id, kind, event, events: [event], t, source, quote, note, advice, verified: true, worded_by: 'template',
+  id, criterion, rule: id, kind, event, events: [event], t, source, quote, note, advice, verified: true, worded_by: 'rule',
 })
 
 const CRITERIA = [['communication', 'Communication', 'architect', 'Aarav', 3], ['diagnosis', 'Diagnosis', 'database', 'Karan', 4], ['fix_quality', 'Fix quality', 'reviewer', 'Vikram', 3],
@@ -38,7 +39,9 @@ function report(over: Partial<DebriefReport> = {}): DebriefReport {
       E021: { id: 'E021', t: 878, kind: 'submit', task: 'h1' },
     },
     fairness: { points: 9, quoted: 9, matched: 9, dropped: [{ finding: 'F05', text: 'You never ran the tests.', reason: 'event E999 is not in the session log' }], tests_rerun: { ok: true, passed: 97, total: 97 }, rubric: 'v1',
-                wording: { source: 'mixed', reason: 'the 7b repeated the template sentence word for word for 3 points', model_points: 6, copied: 3 } },
+                voices: { judges: 'mixed', coach: 'model', reason: '' } },
+    coach: { text: 'You scored 80 out of 100. Your fix was small and tested; the next step is to post your first update sooner.', source: 'model' },
+    judge_lines: {},
     focus: ['Add a regression test with every bug fix.', 'Search the whole codebase for a renamed name.', 'Send updates on the time you promised.'],
     attempts: [{ attempt: 1, total: 60, scores: {}, project: 'opd-bookings-down', finished_at: '2026-10-12T09:00:00', elapsed: 900 }, { attempt: 2, total: 80, scores: {}, project: 'opd-bookings-down-2', finished_at: '2026-10-12T10:00:00', elapsed: 1120 }],
     files: { md: '.q/reports/attempt-2.md', json: '.q/reports/attempt-2.json' },
@@ -165,14 +168,20 @@ describe('the Debrief tab', () => {
     expect(html).toContain('Focus for your next attempt'); expect(html).toContain('Add a regression test with every bug fix.'); expect(html).toContain('Send updates on the time you promised.')
   })
 
-  it('says what each score is made of and who wrote each sentence', () => {
+  it('says what each score is made of, labels every point as the rule\'s and the paragraph as the AI coach', () => {
     const r = report()
-    r.rows[0].worded_by = 'model'
     const html = render(withReport(r))
     expect(html).toContain('Aarav: Held: 3 of 4 rules. Missed: 1.'); expect(html).toContain('title="what 3 means"') // the summary is built from the rules; the level text is its tooltip
-    expect(html.match(/>AI wording</g)?.length).toBe(1); expect(html.match(/>template</g)?.length).toBe(3)
-    expect(html).toContain('Sentences in the 7b’s own words'); expect(html).toContain('6/9'); expect(html).toContain('Wording: the 7b repeated the template sentence word for word for 3 points.')
-    expect(wordingLabel(r.rows[0])).toBe('AI wording'); expect(wordingLabel(r.rows[1])).toBe('template')
+    expect(html.match(/>rule</g)?.length).toBe(4); expect(html).not.toContain('AI wording'); expect(html).not.toContain('Sentences in the 7b')
+    expect(html).toContain('aria-label="Coach"'); expect(html).toContain('>AI coach<'); expect(html).toContain('You scored 80 out of 100. Your fix was small and tested')
+    expect(wordingLabel(r.rows[0])).toBe('rule'); expect(coachLabel(r.coach)).toBe('AI coach'); expect(coachLabel({ source: 'template' })).toBe('Summary')
+  })
+
+  it('shows a template paragraph as a summary and says why the 7b was not used', () => {
+    const r = report({ coach: { text: 'You scored 80 out of 100. Every criterion scored 4 out of 4.', source: 'template' } })
+    r.fairness.voices = { judges: 'template', coach: 'template', reason: 'error' }
+    const html = render(withReport(r))
+    expect(html).toContain('>Summary<'); expect(html).not.toContain('>AI coach<'); expect(html).toContain('The 7b was not used for the judges and the coach: error.')
   })
 
   it('shows employee names, not role ids, in the detail of an entry', () => {
@@ -223,5 +232,51 @@ describe('the meeting room in the office', () => {
       expect(t.x >= 0 && t.x < COLS && t.y >= 0 && t.y < ROWS).toBe(true)
       expect(blocked[t.y][t.x]).toBe(false)
     }
+  })
+})
+
+describe('the judges\' lines in the channel', () => {
+  it('marks the lines the 7b wrote and uses the short text for the bubble', () => {
+    const m = model()
+    const visuals: Visual[] = []
+    m.onVisual((v) => visuals.push(v))
+    m.apply(ev('channel_message', { id: 'C020', channel: 'incident-opd', from: 'qa', text: 'I give you 2/4: at 14:38 you submitted without a test of your own, so add one.', source: 'debrief', t: 900, bubble: 'I give you 2/4: add a test.', debrief: true, voice: 'model' }))
+    m.apply(ev('channel_message', { id: 'C021', channel: 'incident-opd', from: 'architect', text: 'Communication 3/4. At 01:40: “Update” First update at 01:40. Tip: post sooner.', source: 'debrief', t: 901, bubble: 'Communication 3/4. Post sooner.', debrief: true, voice: 'template' }))
+    expect(m.channel.map((c) => c.voice)).toEqual(['model', 'template']); expect(voiceLabel(m.channel[0])).toBe('AI line'); expect(voiceLabel(m.channel[1])).toBe('')
+    expect(visuals.filter((v) => v.kind === 'say').map((v) => (v as { text: string }).text)).toEqual(['I give you 2/4: add a test.', 'Communication 3/4. Post sooner.'])
+  })
+})
+
+describe('How you are scored', () => {
+  const SCORING: ScoringCriterion[] = [
+    { id: 'communication', name: 'Communication', judge: 'architect', rules: [{ id: 'first_update', plain: 'Post a first update in #incident-opd within 2 minutes of the start.' }, { id: 'answered_requests', plain: 'When Aarav asks for an update, answer within a minute.' }] },
+    { id: 'diagnosis', name: 'Diagnosis', judge: 'database', rules: [{ id: 'reproduced_first', plain: 'Run the tests before you save any file, and read why they fail.' }] },
+  ]
+
+  it('lists the rules by criterion with the judge, in plain words', () => {
+    const html = renderToStaticMarkup(<ScoringPanel scoring={SCORING} name={(id) => ({ architect: 'Aarav', database: 'Karan' })[id] ?? id} />)
+    expect(html).toContain('aria-label="How you are scored"'); expect(html).toContain('How you are scored'); expect(html).toContain('3 rules, 2 judges, 100 marks')
+    expect(html).toContain('Communication'); expect(html).toContain('judge Aarav'); expect(html).toContain('judge Karan'); expect(html).toContain('Post a first update in #incident-opd within 2 minutes of the start.')
+    expect(html).toContain('Run the tests before you save any file'); expect(html).toContain('<details open'); expect(html).not.toContain('architect')
+  })
+
+  it('comes with the start of the incident and is empty for a scenario without a rubric', () => {
+    const m = model()
+    m.apply(ev('scenario_started', { scenario: 'x', title: 'X', role: 'backend', minutes: 25, channel: { id: 'c', name: '#c' }, teammates: [], started_at: 1000, attempt: 1, scoring: SCORING }))
+    expect(m.scenario?.scoring).toEqual(SCORING)
+    m.apply(ev('scenario_started', { scenario: 'x', title: 'X', role: 'backend', minutes: 25, channel: { id: 'c', name: '#c' }, teammates: [], started_at: 1000, attempt: 1 }))
+    expect(m.scenario?.scoring).toEqual([])
+  })
+})
+
+describe('the IDE stays in the dock while another tab shows', () => {
+  const dock = (m: OfficeModel) => renderToStaticMarkup(<Dock model={m} projectId="p1" replay={false} onDecide={() => {}} ticker="" onSubmit={async () => {}} onError={() => {}} onPost={async () => {}} onTryAgain={async () => {}} busy={false} />)
+
+  it('renders the IDE hidden behind the Explorer when you play a role, and not at all when you do not', () => {
+    const m = model() // plays backend
+    expect(dock(m)).toMatch(/class="hidden" data-testid="ide-host"/)
+    const other = new OfficeModel()
+    other.setRoster(ROSTER)
+    expect(dock(other)).not.toContain('ide-host')
   })
 })

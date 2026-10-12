@@ -26,10 +26,11 @@ const FOUND: IdeSearch = {
 
 function setup() {
   const calls: string[] = []
+  const reads: [string, boolean][] = [] // every read the server saw: the path, and whether the IDE did it by itself
   const errors: unknown[] = []
   const client: IdeClient = {
     tree: async () => TREE,
-    read: async (_r, p) => (calls.push(`read ${p}`), { path: p, content: FILES[p] }),
+    read: async (_r, p, auto) => (calls.push(`read ${p}`), reads.push([p, !!auto]), { path: p, content: FILES[p] }),
     write: async (_r, p, c) => (calls.push(`write ${p}`), (FILES[p] = c), { path: p }),
     runTests: async () => ({ started: true }),
     search: async (_r, q) => (calls.push(`search ${q}`), q === 'zzzz' ? { query: q, matches: 0, files: 0, truncated: false, results: [] } : FOUND),
@@ -37,7 +38,7 @@ function setup() {
   const ctl = new IdeController(client, (e) => errors.push(e))
   ctl.setRole('backend')
   ctl.tree = TREE // the folder is loaded
-  return { ctl, calls, errors }
+  return { ctl, calls, errors, reads }
 }
 
 describe('the IDE: several files open as tabs', () => {
@@ -121,6 +122,45 @@ describe('the IDE: several files open as tabs', () => {
     ;(ctl as unknown as { client: IdeClient }).client.read = async (r, p) => (p === 'gone.py' ? Promise.reject(new Error('file not found')) : read(r, p))
     await ctl.openFile('gone.py')
     expect(ctl.tabs).toEqual(['backend/api/appointments.py']); expect(ctl.open).toBe('backend/api/appointments.py'); expect(errors).toHaveLength(1)
+  })
+})
+
+describe('picking a file is logged as the learner’s own open', () => {
+  it('tells the server once when you pick the file the IDE had shown by itself', async () => {
+    const { ctl, reads } = setup()
+    await ctl.openFile('backend/api/appointments.py', true) // the IDE's first file
+    expect(reads).toEqual([['backend/api/appointments.py', true]])
+    await ctl.pick('backend/api/appointments.py') // the learner clicks the tab or the tree entry of the file that is open
+    await ctl.pick('backend/api/appointments.py')
+    expect(reads).toEqual([['backend/api/appointments.py', true], ['backend/api/appointments.py', false]]) // logged as theirs, once
+  })
+
+  it('opens a file that is not a tab yet with a read the server logs as the learner’s, and does not read it again for its tab', async () => {
+    const { ctl, reads } = setup()
+    await ctl.pick('backend/api/doctors.py')
+    await ctl.openFile('backend/api/appointments.py')
+    ctl.activate('backend/api/doctors.py')
+    await ctl.pick('backend/api/doctors.py')
+    expect(reads).toEqual([['backend/api/doctors.py', false], ['backend/api/appointments.py', false]])
+  })
+
+  it('shows the line of a search result in a tab that is open already, and logs that pick too', async () => {
+    const { ctl, reads } = setup()
+    await ctl.openFile('backend/api/doctors.py', true)
+    await ctl.openFile('backend/api/appointments.py', true)
+    await ctl.openAt('backend/api/doctors.py', 95)
+    expect(ctl.open).toBe('backend/api/doctors.py'); expect(ctl.reveal).toMatchObject({ path: 'backend/api/doctors.py', line: 95 })
+    expect(reads.filter(([, auto]) => !auto)).toEqual([['backend/api/doctors.py', false]])
+  })
+
+  it('forgets what was picked when the role changes', async () => {
+    const { ctl, reads } = setup()
+    await ctl.pick('backend/api/doctors.py')
+    ctl.setRole('database')
+    ctl.setRole('backend')
+    await ctl.openFile('backend/api/doctors.py', true)
+    await ctl.pick('backend/api/doctors.py')
+    expect(reads.map(([, auto]) => auto)).toEqual([false, true, false])
   })
 })
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OfficeModel, Tone } from '../model'
-import { formatClock, recipients, SOURCE_LABEL } from '../scenario'
+import { formatClock, recipients, SOURCE_LABEL, voiceLabel } from '../scenario'
 import { Empty } from './Explorer'
 
 const TONE: Record<Tone, string> = { info: '#6ea8ff', good: '#4ade80', bad: '#f87171', warn: '#fbbf24' }
@@ -76,6 +76,7 @@ export function Channel({ model, onPost, replay }: { model: OfficeModel; onPost?
                 <span className="ml-2 inline-flex gap-1.5 align-middle">
                   {m.hint && !mine && <span className="rounded border border-[var(--warn)] px-1.5 py-[0px] text-[10.5px] font-bold uppercase tracking-wide text-[var(--warn)]">hint</span>}
                   {SOURCE_LABEL[m.source] && <span className="text-[11px] text-[var(--muted)]">{SOURCE_LABEL[m.source]}</span>}
+                  {voiceLabel(m) && <span className="rounded border border-[var(--accent)] px-1.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--accent)]" title="Written by the 7b model from the points of your report and checked against them">{voiceLabel(m)}</span>}
                 </span>
               </div>
             </div>

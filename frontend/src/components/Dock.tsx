@@ -140,9 +140,14 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
           {open ? '▾' : '▴'}
         </button>
       </div>
-      {open && (
-        <div className="min-h-0 flex-1 border-t border-[var(--line)]">
-          {tab === 'IDE' && <IdeTab projectId={projectId} model={model} replay={replay} onSubmit={onSubmit} onError={onError} />}
+      {/* The IDE stays mounted (hidden) while another tab or the collapsed dock is showing: its open files and unsaved edits live in it, and it must not open its first file again each time you come back. */}
+      <div className={open ? 'min-h-0 flex-1 border-t border-[var(--line)]' : 'hidden'}>
+        {ide && (
+          <div className={tab === 'IDE' ? 'h-full' : 'hidden'} data-testid="ide-host">
+            <IdeTab projectId={projectId} model={model} replay={replay} onSubmit={onSubmit} onError={onError} />
+          </div>
+        )}
+        {open && (<>
           {tab === 'Debrief' && <DebriefTab model={model} projectId={projectId} onTryAgain={onTryAgain} busy={busy} />}
           {tab === 'Explorer' && <Explorer projectId={projectId} model={model} />}
           {tab === 'Terminal' && <Terminal model={model} />}
@@ -152,8 +157,8 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
           {tab === 'Leaderboard' && <LeaderboardTab />}
           {tab === 'Contract' && <ContractTab projectId={projectId} model={model} />}
           {tab === 'Gap report' && <GapReport projectId={projectId} model={model} />}
-        </div>
-      )}
+        </>)}
+      </div>
     </section>
   )
 }

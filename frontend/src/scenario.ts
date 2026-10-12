@@ -14,6 +14,14 @@ export interface ScenarioInfo {
   teammates: string[] // employee ids that can be asked in the channel
 }
 
+/** One criterion of the rubric with its judge and its rules in plain words ("How you are scored"). */
+export interface ScoringCriterion {
+  id: string
+  name: string
+  judge: string // employee id
+  rules: { id: string; plain: string }[]
+}
+
 /** The scenario of the current session (from the `scenario_started` event). */
 export interface ScenarioSession {
   id: string
@@ -23,6 +31,7 @@ export interface ScenarioSession {
   channelId: string
   channelName: string
   teammates: string[] // employee ids that can be asked in the channel
+  scoring: ScoringCriterion[] // the rules the debrief scores, in plain words: shown before the incident starts
   attempt: number // 1 for the first try, 2 for the next, ...
   startedAt: number // server clock, seconds since 1970
   endedAt: number | null // set when the session ends (fixed, stopped or failed): the timer stops
@@ -39,6 +48,7 @@ export interface ChannelMsg {
   replyTo: string
   hint: boolean // a reply to a question, or a pointer: counted as a hint
   bubble: string // a debrief post: the short version for the speech bubble
+  voice: 'model' | 'template' | '' // a judge's line in the debrief: written by the 7b (and checked), or the template's
 }
 
 export interface GuideStepView {
@@ -89,6 +99,9 @@ export const SOURCE_LABEL: Record<ChannelMsg['source'], string> = {
   debrief: 'debrief',
 }
 
+/** The small label of a debrief post in the channel: only the lines the 7b wrote carry one. */
+export const voiceLabel = (m: Pick<ChannelMsg, 'voice'>): string => (m.voice === 'model' ? 'AI line' : '')
+
 // -- the debrief (step 5): the report of an attempt, as GET /api/projects/{id}/report answers it ------------------------------------------------
 
 export interface ReportRow {
@@ -104,7 +117,7 @@ export interface ReportRow {
   note: string
   advice: string // a gap's tip for the next attempt
   verified: boolean
-  worded_by: 'model' | 'template'
+  worded_by: 'rule' // every sentence of a point is its rule's
 }
 export interface ReportCriterion {
   id: string
@@ -153,9 +166,11 @@ export interface DebriefReport {
     dropped: { finding: string; text: string; reason: string }[]
     tests_rerun: { ok: boolean; passed: number; total: number } | null
     rubric: string
-    wording: { source: 'model' | 'mixed' | 'template'; reason: string; model_points: number; copied: number } // who wrote the sentences of the points
+    voices: { judges: 'model' | 'mixed' | 'template'; coach: 'model' | 'template'; reason: string } // who wrote the judges' lines and the coach paragraph, and why not the 7b
   }
   focus: string[]
+  coach: { text: string; source: 'model' | 'template' } // the overall paragraph: the 7b's when it passed the check, else a summary built from the points
+  judge_lines: Record<string, { text: string; bubble: string; source: 'model' | 'template' }>
   attempts: AttemptRecord[]
   files: { md: string; json: string }
 }
@@ -207,5 +222,8 @@ export function eventDetail(report: DebriefReport, id: string, name: (employee: 
   return out
 }
 
-/** The label of a point's wording: the 7b's own sentence, or the template's. */
-export const wordingLabel = (r: Pick<ReportRow, 'worded_by'>): string => (r.worded_by === 'model' ? 'AI wording' : 'template')
+/** The label of a point's sentence: it is always its rule's. */
+export const wordingLabel = (_r: Pick<ReportRow, 'worded_by'>): string => 'rule'
+
+/** The label of the overall paragraph: "AI coach" when the 7b wrote it (and it passed the check), else "Summary". */
+export const coachLabel = (c: { source: 'model' | 'template' }): string => (c.source === 'model' ? 'AI coach' : 'Summary')

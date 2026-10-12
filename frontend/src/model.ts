@@ -502,7 +502,7 @@ export class OfficeModel {
         break
       case 'scenario_started': {
         const ch = (e.channel ?? {}) as { id?: string; name?: string }
-        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null }
+        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), scoring: Array.isArray(e.scoring) ? (e.scoring as ScenarioSession['scoring']) : [], attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null }
         this.say(`Incident: ${str(e.title)}`)
         break
       }
@@ -510,7 +510,7 @@ export class OfficeModel {
         const id = str(e.id)
         if (this.channel.some((m) => m.id === id)) break // a reconnect never shows a message twice
         const source = str(e.source) as ChannelMsg['source']
-        const m: ChannelMsg = { id, from: str(e.from), text: str(e.text), source, t: num(e.t), to: strs(e.to), replyTo: str(e.reply_to), hint: e.hint === true, bubble: str(e.bubble) }
+        const m: ChannelMsg = { id, from: str(e.from), text: str(e.text), source, t: num(e.t), to: strs(e.to), replyTo: str(e.reply_to), hint: e.hint === true, bubble: str(e.bubble), voice: e.voice === 'model' || e.voice === 'template' ? e.voice : '' }
         this.channel = [...this.channel, m].slice(-500)
         if (m.source !== 'learner') {
           const who = this.name(m.from)

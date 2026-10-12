@@ -32,6 +32,7 @@ export class IdeController {
   searching = false
   reveal: { path: string; line: number; seq: number } | null = null // a search result was clicked: the editor shows this line
   private revealSeq = 0
+  private deliberate = new Set<string>() // the files the person chose themselves (the server has logged those opens), as against the one the IDE showed by itself
 
   private client: IdeClient
   private onError: (e: unknown) => void
@@ -64,6 +65,7 @@ export class IdeController {
     this.query = ''
     this.found = null
     this.reveal = null
+    this.deliberate = new Set()
     this.touch()
   }
 
@@ -104,6 +106,7 @@ export class IdeController {
   /** Show a file. Edits to the one before stay in their draft (the dot in the tree and the header), so nothing is lost by looking at another file. */
   async openFile(path: string, auto = false): Promise<void> {
     this.open = path
+    if (!auto) this.deliberate.add(path)
     if (!this.tabs.includes(path)) this.tabs = [...this.tabs, path]
     if (!this.drafts.has(path)) {
       const gen = this.gen
@@ -182,13 +185,25 @@ export class IdeController {
     }
   }
 
-  /** A search result was clicked: open the file and ask the editor to show the line. */
-  async openAt(path: string, line: number): Promise<void> {
-    await this.openFile(path)
-    if (this.open === path) {
+  /** The person picks a file (the tree, a tab, a search result): a tab that is open already is shown again, and the first time they pick a file the IDE had shown by itself the server
+   *  is told, so that the pick is logged as the learner's own open (that is what "you opened the failing route" is read from). */
+  async pick(path: string, line?: number): Promise<void> {
+    if (this.tabs.includes(path)) {
+      this.activate(path)
+      if (!this.deliberate.has(path)) {
+        this.deliberate.add(path)
+        void this.client.read(this.role, path, false).catch(() => {})
+      }
+    } else await this.openFile(path)
+    if (line && this.open === path) {
       this.reveal = { path, line, seq: ++this.revealSeq }
       this.touch()
     }
+  }
+
+  /** A search result was clicked: open the file and ask the editor to show the line. */
+  async openAt(path: string, line: number): Promise<void> {
+    await this.pick(path, line)
   }
 
   /** The editor changed the open file. A file that may not be edited ignores it. */
