@@ -5,7 +5,7 @@ import type { IdeTestRun } from './model'
 
 export interface IdeClient {
   tree(role: string): Promise<IdeTree>
-  read(role: string, path: string): Promise<{ path: string; content: string }>
+  read(role: string, path: string, auto?: boolean): Promise<{ path: string; content: string }> // auto: the IDE opened it by itself, not the person
   write(role: string, path: string, content: string): Promise<{ path: string }>
   runTests(role: string): Promise<{ started: boolean }>
 }
@@ -91,14 +91,14 @@ export class IdeController {
   }
 
   /** Show a file. Edits to the one before stay in their draft (the dot in the tree and the header), so nothing is lost by looking at another file. */
-  async openFile(path: string): Promise<void> {
+  async openFile(path: string, auto = false): Promise<void> {
     this.open = path
     if (!this.drafts.has(path)) {
       const gen = this.gen
       this.loading = true
       this.touch()
       try {
-        const f = await this.client.read(this.role, path)
+        const f = await this.client.read(this.role, path, auto)
         if (gen !== this.gen) return
         this.drafts.set(path, { saved: f.content, text: f.content })
       } catch (e) {

@@ -97,6 +97,17 @@ def test_the_task_document_carries_the_brief_and_the_guide_is_a_file_in_the_proj
     assert first["task"] == "h1" and first["current"] == "run-tests" and [x["state"] for x in first["steps"]][:2] == ["current", "todo"]
 
 
+def test_a_file_the_ide_opens_by_itself_is_logged_as_automatic_and_does_not_move_the_guide(scenario):
+    client, s, pid, task, llm = scenario
+    ide = f"/api/projects/{pid}/ide/backend/file"
+    assert client.get(ide, params={"path": "backend/api/appointments.py", "auto": "true"}).status_code == 200
+    opened = [e for e in s.orch.log.events("file_opened")]
+    assert opened[-1]["path"] == "backend/api/appointments.py" and opened[-1]["auto"] is True
+    assert s.orch.guide.state()["current"] == "run-tests" and [x["state"] for x in s.orch.guide.state()["steps"]][1] == "todo"
+    client.get(ide, params={"path": "backend/api/appointments.py"})  # the learner opens it
+    assert "auto" not in s.orch.log.events("file_opened")[-1] and [x["state"] for x in s.orch.guide.state()["steps"]][1] == "done"
+
+
 def test_the_ide_shows_the_app_with_the_migrations_readable_and_only_backend_writable(scenario):
     client, s, pid, task, llm = scenario
     tree = client.get(f"/api/projects/{pid}/ide/backend/tree").json()

@@ -4,7 +4,7 @@ An entry is `{id: "E007", t: 63.2, kind, ...}`. `t` is seconds since the session
 Kinds and their fields:
 
     session_started   scenario, role
-    file_opened       path
+    file_opened       path, auto (true when the IDE opened its first file by itself)
     file_saved        path, added, removed, size            (lines added and removed compared with what was on disk)
     test_run          task, trigger ("ide" | "submit")
     test_result       task, ok, passed, failed (ids), summary, trigger

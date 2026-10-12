@@ -7,11 +7,12 @@ const MARK = { done: { icon: '✓', color: 'var(--good)' }, current: { icon: '�
 export function GuidePanel({ guide, initiallyOpen = true }: { guide: GuideView; initiallyOpen?: boolean }) {
   const [open, setOpen] = useState(initiallyOpen)
   const finished = guide.current === null
+  const at = guide.steps.findIndex((s) => s.id === guide.current) + 1
   return (
     <div className="max-h-[38%] shrink-0 overflow-y-auto border-t border-[var(--line)] p-3" aria-label="Priya's guide">
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 text-left text-[12px] font-bold uppercase tracking-wide text-[var(--muted)] hover:text-white">
         <span>Priya's guide</span>
-        <span className="ml-auto font-normal normal-case tabular-nums" aria-label="Guide progress">{finished ? 'all steps done' : `step ${guide.done + 1} of ${guide.steps.length}`}</span>
+        <span className="ml-auto font-normal normal-case tabular-nums" aria-label="Guide progress">{finished ? 'all steps done' : `step ${at} of ${guide.steps.length}`}</span>
         <span aria-hidden>{open ? '▾' : '▸'}</span>
       </button>
       {open && (

@@ -6,7 +6,7 @@
   "minutes": 25,
   "level": "Intermediate",
   "rubric": "opd-bookings-down-v1",
-  "goal": "Hospital OPD: appointment booking returns 500 in production",
+  "goal": "Production incident: Bookings are down",
   "brief": "It is 08:40 and the morning clinic opens at 09:00. Since Monday's deploy the front desk of the Hospital OPD cannot book an appointment: the booking request fails with a server error and the desk is writing patients on paper.\n\nYou are the Backend engineer on call. The app is finished and its tests are in the repo; something that changed on Monday broke it. Find out what, fix it in the files your role owns, and submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-opd. Ananya (QA) has the report, Aarav (lead) wants updates, Karan owns the database layer. Ask them when you need to; every question you ask is counted.",
   "seed": {"dir": "seed", "preset": "fastapi-vanilla"},
   "task": {

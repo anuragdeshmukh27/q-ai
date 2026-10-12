@@ -31,7 +31,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       new IdeController(
         {
           tree: (r) => api.ideTree(projectId!, r),
-          read: (r, p) => api.ideRead(projectId!, r, p),
+          read: (r, p, a) => api.ideRead(projectId!, r, p, a),
           write: (r, p, c) => api.ideWrite(projectId!, r, p, c),
           runTests: (r) => api.ideTests(projectId!, r),
         },
@@ -59,7 +59,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   useEffect(() => {
     if (!tree?.ready || ctl.open) return
     const first = tree.files.find((f) => f.writable && !f.path.startsWith('tests/') && !f.path.endsWith('__init__.py')) ?? tree.files.find((f) => f.writable)
-    if (first) void ctl.openFile(first.path)
+    if (first) void ctl.openFile(first.path, true) // the IDE's own first file: logged as automatic, so it is not the guide's "open the failing route"
   }, [ctl, tree, ctl.open])
 
   const root = useMemo(() => buildTree(tree?.files ?? []), [tree])

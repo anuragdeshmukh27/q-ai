@@ -464,7 +464,9 @@ class Session:
     def ide_tree(self, role: str) -> dict:
         return self._ide("ide_tree", role)
 
-    def ide_read(self, role: str, path: str) -> dict:
+    def ide_read(self, role: str, path: str, auto: bool = False) -> dict:
+        if auto and isinstance(self.orch, ScenarioBuild):
+            return self._ide("ide_read", role, path, True)
         return self._ide("ide_read", role, path)
 
     def ide_write(self, role: str, path: str, content: str) -> dict:

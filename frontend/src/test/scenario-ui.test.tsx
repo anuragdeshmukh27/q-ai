@@ -47,10 +47,11 @@ describe('the incident channel in Agent Chat', () => {
     say(m, 'C002', 'human', 'Karan, what changed on Monday?', { to: ['database'], t: 65 })
     say(m, 'C003', 'database', 'Migration 0007 renamed slot_time to slot_at.', { source: 'live', reply_to: 'C002', hint: true, t: 69 })
     say(m, 'C004', 'database', 'That was my migration.', { source: 'fallback', reply_to: 'C002', hint: true, t: 70 })
+    say(m, 'C005', 'human', 'What does the log say about the slots?', { to: ['qa'], t: 80 })
     const html = renderToStaticMarkup(<AgentChat model={m} onPost={async () => {}} />)
     expect(html).toContain('#incident-opd'); expect(html).toContain('All traffic'); expect(html).toContain('Hints used:')
     expect(html).toContain('Ananya'); expect(html).toContain('TypeError: add_appointment() got an unexpected keyword argument'); expect(html).toContain('00:03')
-    expect(html).toContain('You'); expect(html).toContain('@Karan'); expect(html).toContain('01:05')
+    expect(html).toContain('You'); expect(html).not.toContain('@Karan'); expect(html).toContain('@Ananya'); expect(html).toContain('01:05')
     expect(html.match(/>hint</g)?.length).toBe(2); expect(html).toContain('AI reply'); expect(html).toContain('scripted reply')
   })
 

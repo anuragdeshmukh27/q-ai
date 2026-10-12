@@ -44,6 +44,18 @@ async function ready(f = fake()) {
   return f
 }
 
+describe('the IDE: files it opens by itself', () => {
+  it('tells the server which open was the IDE itself and which was the person', async () => {
+    const seen: (boolean | undefined)[] = []
+    const client: IdeClient = { tree: async () => TREE, read: async (_r, p, auto) => (seen.push(auto), { path: p, content: 'x' }), write: async (_r, p) => ({ path: p }), runTests: async () => ({ started: true }) }
+    const ctl = new IdeController(client, () => {})
+    ctl.setRole('database')
+    await ctl.openFile('database/calculations.py', true) // the first file, shown when the folder is ready
+    await ctl.openFile('database/connection.py') // the person clicked it
+    expect(seen).toEqual([true, false])
+  })
+})
+
 describe('the IDE: editing and saving', () => {
   it('opens a file, tracks the unsaved edit and clears it on save', async () => {
     const { ctl, files, calls } = await ready()

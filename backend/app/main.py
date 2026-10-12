@@ -276,8 +276,8 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         return session(pid).ide_tree(role)
 
     @app.get("/api/projects/{pid}/ide/{role}/file")
-    def ide_read(pid: str, role: str, path: str):
-        return session(pid).ide_read(role, path)
+    def ide_read(pid: str, role: str, path: str, auto: bool = False):
+        return session(pid).ide_read(role, path, auto)
 
     @app.put("/api/projects/{pid}/ide/{role}/file")
     def ide_write(pid: str, role: str, body: FileBody):

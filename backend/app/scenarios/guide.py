@@ -13,7 +13,7 @@ from .loader import GuideStep, Scenario
 
 def matches(step: GuideStep, event: dict) -> bool:
     a = step.advance_on
-    if event.get("kind") != a.kind:
+    if event.get("kind") != a.kind or event.get("auto"):
         return False
     if a.path is not None and not fnmatch.fnmatch(str(event.get("path", "")), a.path):
         return False

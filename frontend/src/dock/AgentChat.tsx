@@ -71,7 +71,7 @@ export function Channel({ model, onPost, replay }: { model: OfficeModel; onPost?
                 <div className="text-[11.5px] tabular-nums text-[var(--muted)]">{formatClock(m.t)}</div>
               </div>
               <div className="min-w-0 flex-1 text-[#c9d3ee]">
-                {m.to.length > 0 && <span className="mr-1 text-[var(--muted)]">{m.to.map((id) => `@${model.name(id)}`).join(' ')}</span>}
+                {m.to.length > 0 && !m.to.some((id) => m.text.toLowerCase().includes(model.name(id).toLowerCase())) && <span className="mr-1 text-[var(--muted)]">{m.to.map((id) => `@${model.name(id)}`).join(' ')}</span>}
                 {m.text}
                 <span className="ml-2 inline-flex gap-1.5 align-middle">
                   {m.hint && !mine && <span className="rounded border border-[var(--warn)] px-1.5 py-[0px] text-[10.5px] font-bold uppercase tracking-wide text-[var(--warn)]">hint</span>}

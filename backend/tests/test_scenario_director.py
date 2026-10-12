@@ -294,6 +294,8 @@ def test_the_guide_advances_on_what_you_do_and_never_on_a_timer():
     assert out[-1]["current"] == "open-route"
     log.add("file_opened", role="backend", path="database/migrations/0007_rename_slot_time_to_slot_at.sql")  # out of order: remembered
     assert out[-1]["current"] == "open-route"
+    log.add("file_opened", role="backend", path="backend/api/appointments.py", auto=True)  # the IDE showed its first file by itself: not the learner's choice
+    assert out[-1]["current"] == "open-route"
     log.add("file_opened", role="backend", path="backend/api/appointments.py")
     assert out[-1]["current"] == "fix" and [s["state"] for s in out[-1]["steps"]][:5] == ["done", "done", "done", "done", "current"]  # the migration and the post were already done
     log.add("file_saved", role="backend", path="tests/api/test_x.py", added=1, removed=0, size=1)  # not a backend file: no

@@ -124,9 +124,10 @@ class ScenarioBuild(Orchestrator):
         elif e["type"] == "human_test_result":
             self.log.add("test_result", task=e["task"], ok=bool(e["ok"]), passed=e["passed"], failed=[x["id"] for x in e["tests"] if x["outcome"] == "failed"], summary=e["summary"], trigger=self._trigger)
 
-    def ide_read(self, role: str, rel: str) -> dict:
+    def ide_read(self, role: str, rel: str, auto: bool = False) -> dict:
+        """`auto`: the IDE opened the file by itself (its first file); that is logged, but it is not something the learner chose, so the guide does not count it."""
         out = super().ide_read(role, rel)
-        self.log.add("file_opened", role=role, path=out["path"])
+        self.log.add("file_opened", role=role, path=out["path"], **({"auto": True} if auto else {}))
         return out
 
     def ide_write(self, role: str, rel: str, content: str) -> dict:

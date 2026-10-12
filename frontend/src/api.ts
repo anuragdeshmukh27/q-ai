@@ -275,7 +275,7 @@ export const api = {
   startScenario: (sid: string) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/start`, { method: 'POST', body: '{}' }),
   postChannel: (id: string, text: string, to?: string) => call<{ to: string[]; pending: string[] }>(`/api/projects/${id}/channel`, { method: 'POST', body: JSON.stringify({ text, to: to || null }) }),
   ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),
-  ideRead: (id: string, role: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}`),
+  ideRead: (id: string, role: string, path: string, auto = false) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}${auto ? '&auto=1' : ''}`),
   ideWrite: (id: string, role: string, path: string, content: string) => call<{ path: string; size: number; task: string }>(`/api/projects/${id}/ide/${role}/file`, { method: 'PUT', body: JSON.stringify({ path, content }) }),
   ideTests: (id: string, role: string) => call<{ started: boolean; task: string }>(`/api/projects/${id}/ide/${role}/tests`, { method: 'POST', body: '{}' }),
   escalate: (id: string, action: 'retry' | 'replan' | 'stop', agent: string) => post(`/api/projects/${id}/escalation`, { action, agent }),
