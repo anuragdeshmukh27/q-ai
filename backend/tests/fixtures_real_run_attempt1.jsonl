@@ -1,0 +1,42 @@
+{"id": "E001", "t": 0.0, "kind": "session_started", "scenario": "opd-bookings-down", "role": "backend"}
+{"id": "E002", "t": 3.0, "kind": "team_message", "message": "C001", "from": "qa", "text": "Booking is down. POST /api/doctors/{id}/appointments returns 500 for every patient. The server log says: TypeError: add_appointment() got an unexpected keyword argument 'slot_time'. Editing an appointment fails the same way, and GET /api/doctors/{id}/slots dies with KeyError: 'slot_time'. Listing and cancelling still work. It started after Monday's deploy.", "source": "scripted", "ref": "qa-report"}
+{"id": "E003", "t": 4.3, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E004", "t": 40.1, "kind": "file_opened", "role": "backend", "path": "database/migrations/0007_rename_slot_time_to_slot_at.sql"}
+{"id": "E005", "t": 43.2, "kind": "file_opened", "role": "backend", "path": "backend/api/doctors.py"}
+{"id": "E006", "t": 75.6, "kind": "message_posted", "message": "C002", "text": "Bookings fail since migration 0007 renamed slot_time to slot_at. Fixing now.", "to": []}
+{"id": "E007", "t": 75.6, "kind": "team_message", "message": "C003", "from": "architect", "text": "Thanks for the update. Keep us posted.", "source": "scripted", "ref": "C002"}
+{"id": "E008", "t": 84.3, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E009", "t": 104.0, "kind": "file_opened", "role": "backend", "path": "tests/api/test_booking.py"}
+{"id": "E010", "t": 240.8, "kind": "team_message", "message": "C004", "from": "database", "text": "Heads up from me: Monday's migration 0007 renamed appointments.slot_time to slot_at, and database/appointments.py already uses slot_at. I did not touch backend/. Check database/migrations/0007 if it helps.", "source": "scripted", "ref": "db-pointer"}
+{"id": "E011", "t": 240.8, "kind": "hint_given", "message": "C004", "from": "database", "source": "scripted", "reason": "timeline", "question": "", "n": 1}
+{"id": "E012", "t": 375.9, "kind": "team_message", "message": "C005", "from": "architect", "text": "No update from you for 5 minutes. Where are we on the booking fix? The desk is still on paper.", "source": "scripted", "ref": "lead-nudge"}
+{"id": "E013", "t": 475.5, "kind": "message_posted", "message": "C006", "text": "Bookings fail since the migration renamed slot_time to slot_at. Fixing now, ETA 10 min.", "to": ["architect"]}
+{"id": "E014", "t": 483.6, "kind": "team_message", "message": "C007", "from": "architect", "text": "Great, thanks for the update. ETA 10 min. Keep us posted!", "source": "live", "ref": "C006"}
+{"id": "E015", "t": 483.6, "kind": "hint_given", "message": "C007", "from": "architect", "source": "live", "reason": "", "question": "Bookings fail since the migration renamed slot_time to slot_at. Fixing now, ETA 10 min.", "n": 2}
+{"id": "E016", "t": 489.5, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E017", "t": 496.0, "kind": "file_opened", "role": "backend", "path": "tests/api/test_booking.py"}
+{"id": "E018", "t": 518.7, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 0, "removed": 0, "size": 0}
+{"id": "E019", "t": 518.8, "kind": "file_opened", "role": "backend", "path": "tests/regression/test_regression_slot_at.py"}
+{"id": "E020", "t": 529.9, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 53, "removed": 0, "size": 2886}
+{"id": "E021", "t": 775.6, "kind": "team_message", "message": "C008", "from": "architect", "text": "Still nothing in the channel. Tell me where it breaks and what you are doing about it.", "source": "scripted", "ref": "lead-nudge"}
+{"id": "E022", "t": 1075.3, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E023", "t": 1076.5, "kind": "team_message", "message": "C009", "from": "architect", "text": "10 more minutes and the whole morning list is on paper. What is the status?", "source": "scripted", "ref": "lead-nudge"}
+{"id": "E024", "t": 1109.6, "kind": "test_result", "task": "h1", "ok": false, "passed": 90, "failed": ["tests/api/test_booking.py::test_booking_an_appointment_returns_201", "tests/api/test_booking.py::test_editing_an_appointment_moves_its_time", "tests/api/test_booking.py::test_doctor_slots_list_the_booked_times_of_the_day", "tests/api/test_contract_appointments.py::test_put_api_appointments_id_1_rejects_an_unknown_id", "tests/api/test_contract_appointments.py::test_appointments_are_created_and_listed_under_their_doctor", "tests/api/test_contract_appointments.py::test_appointments_belong_to_one_doctor_only", "tests/api/test_contract_appointments.py::test_deleting_a_doctor_deletes_its_appointments", "tests/api/test_contract_appointments.py::test_appointments_blank_required_text_is_a_400_with_a_message", "tests/api/test_contract_appointments.py::test_appointments_complete_sets_status_to_completed", "tests/api/test_contract_appointments.py::test_appointments_cancel_sets_status_to_cancelled", "tests/api/test_contract_appointments.py::test_appointments_rule_values_are_checked_with_a_400_and_a_message", "tests/api/test_contract_appointments.py::test_appointments_status_cannot_leave_completed", "tests/regression/test_regression_slot_at.py::test_booking_an_appointment_returns_201", "tests/regression/test_regression_slot_at.py::test_editing_an_appointment_moves_its_time", "tests/regression/test_regression_slot_at.py::test_doctor_slots_list_the_booked_times_of_the_day"], "summary": "15 failed, 90 passed in 33.91s", "trigger": "ide"}
+{"id": "E025", "t": 1182.6, "kind": "file_saved", "role": "backend", "path": "backend/api/appointments.py", "added": 4, "removed": 4, "size": 6840}
+{"id": "E026", "t": 1184.3, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E027", "t": 1191.5, "kind": "test_result", "task": "h1", "ok": false, "passed": 103, "failed": ["tests/api/test_booking.py::test_doctor_slots_list_the_booked_times_of_the_day", "tests/regression/test_regression_slot_at.py::test_doctor_slots_list_the_booked_times_of_the_day"], "summary": "2 failed, 103 passed in 6.75s", "trigger": "ide"}
+{"id": "E028", "t": 1192.5, "kind": "file_opened", "role": "backend", "path": "backend/api/doctors.py"}
+{"id": "E029", "t": 1236.1, "kind": "file_saved", "role": "backend", "path": "backend/api/doctors.py", "added": 1, "removed": 1, "size": 5027}
+{"id": "E030", "t": 1239.3, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E031", "t": 1246.1, "kind": "test_result", "task": "h1", "ok": true, "passed": 105, "failed": [], "summary": "105 passed in 6.30s", "trigger": "ide"}
+{"id": "E032", "t": 1259.4, "kind": "message_posted", "message": "C010", "text": "Fix is ready: both routes use slot_at now, regression test added, all tests green. Submitting.", "to": ["architect"]}
+{"id": "E033", "t": 1264.3, "kind": "team_message", "message": "C011", "from": "architect", "text": "Great! Submitting now. ETA 5 min for review and merge.", "source": "live", "ref": "C010"}
+{"id": "E034", "t": 1264.3, "kind": "hint_given", "message": "C011", "from": "architect", "source": "live", "reason": "", "question": "Fix is ready: both routes use slot_at now, regression test added, all tests green. Submitting.", "n": 3}
+{"id": "E035", "t": 1276.0, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E036", "t": 1276.8, "kind": "submit", "task": "h1"}
+{"id": "E037", "t": 1276.9, "kind": "test_run", "task": "h1", "trigger": "submit"}
+{"id": "E038", "t": 1283.0, "kind": "test_result", "task": "h1", "ok": true, "passed": 105, "failed": [], "summary": "105 passed in 5.68s", "trigger": "submit"}
+{"id": "E039", "t": 1289.5, "kind": "submit_result", "task": "h1", "ok": true, "stage": "accepted", "summary": "105 passed in 5.68s", "failed": [], "review_items": 0}
+{"id": "E040", "t": 1289.5, "kind": "team_message", "message": "C012", "from": "architect", "text": "Accepted and merged. Thank you, the desk can book again. Ananya, please run your checks on main.", "source": "scripted", "ref": "react-accepted-lead"}
+{"id": "E041", "t": 1294.9, "kind": "team_message", "message": "C013", "from": "qa", "text": "Checked on main: booking, editing and the slot picker all work again.", "source": "scripted", "ref": "react-accepted-qa"}
+{"id": "E042", "t": 1303.9, "kind": "session_finished", "ok": true}

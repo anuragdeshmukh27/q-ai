@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import AgentConfig
+from .projectfiles import MAX_FILE_BYTES, file_tree
 from .sandbox.paths import glob_to_regex
 
 MAX_OUTPUT_LINES = 3000
@@ -115,3 +116,34 @@ class SuiteRun:
     def _timeout(self) -> None:
         self.timed_out = True
         self.kill()
+
+
+MAX_SEARCH_FILES = 40  # files listed in an answer
+MAX_SEARCH_LINES = 20  # lines listed per file
+MIN_QUERY = 2
+
+
+def search_worktree(wt: Path, query: str) -> dict:
+    """Project-wide search for the person's IDE: every text file of the worktree, the ones the role may not edit included, case-insensitive and literal.
+    `matches` and `files` count everything found; `results` lists the first files and lines: [{path, count, lines: [{line, text}]}]."""
+    q = query.strip()
+    if len(q) < MIN_QUERY or len(q) > 200:
+        raise IDEError(f"Type {MIN_QUERY} to 200 characters to search for.", 400)
+    needle = q.casefold()
+    results: list[dict] = []
+    matches = files = 0
+    for f in file_tree(wt):
+        if f["size"] > MAX_FILE_BYTES:
+            continue
+        try:
+            lines = (Path(wt) / f["path"]).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue  # a binary file (a database, an image) has nothing to find
+        hits = [(i, l) for i, l in enumerate(lines, 1) if needle in l.casefold()]
+        if not hits:
+            continue
+        matches += len(hits)
+        files += 1
+        if len(results) < MAX_SEARCH_FILES:
+            results.append({"path": f["path"], "count": len(hits), "lines": [{"line": i, "text": l.strip()[:200]} for i, l in hits[:MAX_SEARCH_LINES]]})
+    return {"query": q, "matches": matches, "files": files, "truncated": files > len(results), "results": results}

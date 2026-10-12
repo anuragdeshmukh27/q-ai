@@ -95,7 +95,7 @@
       ]
     },
     {
-      "id": "db-pointer", "at": 240, "from": "database", "hint": true, "skip_if": "asked:database",
+      "id": "db-pointer", "at": 240, "from": "database", "hint": true, "skip_if": ["asked:database", "opened:database/migrations/0007*", "said:slot_at|0007"],
       "text": "Heads up from me: Monday's migration 0007 renamed appointments.slot_time to slot_at, and database/appointments.py already uses slot_at. I did not touch backend/. Check database/migrations/0007 if it helps."
     },
     {

@@ -9,6 +9,7 @@ scenario; if the model is not available, busy, slow or answers badly, the script
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 import threading
 from typing import Callable
@@ -35,6 +36,21 @@ def _first_sentences(text: str, limit: int = MAX_REPLY_CHARS) -> str:
     cut = text[:limit]
     end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
     return cut[: end + 1] if end > 60 else cut.rstrip(" ,;:") + "…"
+
+
+_QUESTION_START = re.compile(r"^(how|what|where|why|which|who|when|can|could|would|do|does|did|is|are|should|any|tell|explain|show|help)\b", re.I)
+_LEADING_NAME = re.compile(r"^@?\w+(?:[,:]\s+|\s+(?=(?:how|what|where|why|which|who|when|can|could|would|do|does|did|is|are|should)\b))", re.I)  # "Karan, what changed" and "Karan what changed"
+_ASKS_FOR_HELP = re.compile(r"\b(help me|i('| a)m stuck|any idea|any hint|any advice|can you|could you|would you|do you know|i need (help|a hint|advice)|please (tell|explain|check|confirm|look|help|show))", re.I)
+
+
+def is_question(text: str) -> bool:
+    """The learner asks a teammate something or asks for help (a hint when they answer), as opposed to reporting what they found or did (a status update, which is only acknowledged)."""
+    if "?" in text:
+        return True
+    if _ASKS_FOR_HELP.search(text):
+        return True
+    # a sentence that opens like a question and is short, without a colon ("What I found: ..." is a report)
+    return any(_QUESTION_START.match(x) and ":" not in x and len(x.split()) <= 18 for x in (_LEADING_NAME.sub("", y.strip()) for y in re.split(r"(?<=[.!])\s+|\n", text)) if x)
 
 
 def fallback_text(scenario: Scenario, cid: str, question: str, extra: dict[str, str] | None = None) -> str:
@@ -102,7 +118,8 @@ class Director:
         self.messages: list[dict] = []
         self.closed = False  # the incident is over (accepted) or the session stopped: no more nudges
         self.learner_posted = False
-        self.asked: set[str] = set()
+        self.asked: set[str] = set()  # teammates the learner asked a question
+        self.posts: list[str] = []  # what the learner posted
         self.hints = 0
         self._fired: set[str] = set()
         self._nudges = 0
@@ -134,14 +151,20 @@ class Director:
         with self._lock:
             self.hints += 1
             n = self.hints
-        self.log.add("hint_given", message=msg["id"], **{"from": msg["from"]}, source=source, reason=reason, question=question, n=n)
+        self.log.add("hint_given", message=msg["id"], **{"from": msg["from"]}, source=source, reason=reason, question=question, text=msg["text"], n=n)
 
     # -- the timeline ----------------------------------------------------------------
     def _skipped(self, item: TimelineItem) -> bool:
-        if item.skip_if == "learner_posted":
-            return self.learner_posted
-        if item.skip_if and item.skip_if.startswith("asked:"):
-            return item.skip_if.split(":", 1)[1] in self.asked
+        """Any condition of the item holds: the learner already did what the message is for (so it is neither said nor counted as a hint)."""
+        for cond in item.conditions():
+            if cond == "learner_posted" and self.learner_posted:
+                return True
+            if cond.startswith("asked:") and cond.split(":", 1)[1] in self.asked:
+                return True
+            if cond.startswith("opened:") and any(fnmatch.fnmatch(str(e.get("path", "")), cond[7:]) for e in self.log.events("file_opened") if not e.get("auto")):
+                return True
+            if cond.startswith("said:") and any(re.search(cond[5:], t, re.I) for t in self.posts):
+                return True
         return False
 
     def _fire(self, item: TimelineItem, text: str, extra: dict | None = None) -> dict:
@@ -219,15 +242,24 @@ class Director:
         if not text:
             raise ValueError("write a message")
         addressed, others = self._addressed(text, to)
+        question = is_question(text)
         with self._lock:
             if self._halted.is_set():
                 raise ValueError("The incident channel is closed.")
             self.learner_posted = True
             self._last_post = self.log.now()
-            self.asked.update(addressed)
+            self.posts.append(text)
+            if question:
+                self.asked.update(addressed)
         msg = self._say("human", text, "learner", to=addressed)
         self.log.add("message_posted", message=msg["id"], text=text, to=addressed)
         pending: list[str] = []
+        if not question:  # a status update or a remark: one scripted acknowledgement (the lead's, or from the one teammate it is addressed to), never a live reply and never a hint
+            with self._lock:
+                ack = self.scenario.acks[self._ack % len(self.scenario.acks)]
+                self._ack += 1
+            self._answer_scripted(addressed[0] if addressed else "architect", ack, msg)
+            return {"message": msg, "to": addressed, "pending": []}
         if not addressed:
             if others:  # a colleague who is not part of this incident
                 self._answer_scripted("architect", f"{', '.join(others)} is not on this incident. Ask Ananya, Karan or me.", msg)

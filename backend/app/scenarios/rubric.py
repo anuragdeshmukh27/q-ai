@@ -21,6 +21,7 @@ LEVELS = ("0", "1", "2", "3", "4")
 
 class RuleRef(BaseModel):
     id: str
+    label: str = Field(min_length=3)  # the rule in a few words ("a regression test added"): the criterion's summary lists the ones that held and the ones that did not
     params: dict = Field(default_factory=dict)
     advice: str = Field(min_length=10)  # what to do next time when this rule is a gap
 

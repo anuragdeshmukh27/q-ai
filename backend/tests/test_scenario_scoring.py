@@ -111,18 +111,19 @@ def test_a_weak_run_scores_what_it_earned_and_every_gap_cites_a_real_entry():
 def test_each_rule_cites_the_entries_that_prove_it():
     strong, weak = facts(STRONG, STRONG_FACTS), facts(WEAK, WEAK_FACTS)
     ev = lambda f, kind, **m: next(e for e in f.log if e["kind"] == kind and all(e.get(k) == v for k, v in m.items()))  # noqa: E731
-    assert finding(strong, "first_update").events == [ev(strong, "message_posted")["id"]]
-    assert finding(strong, "read_the_migration").events == [ev(strong, "file_opened", path=MIGRATION)["id"]]
-    assert finding(strong, "regression_test_added").events == [ev(strong, "file_saved", path=REGRESSION)["id"]]
-    assert finding(strong, "reported_the_outcome").events == [ev(strong, "message_posted", message="C003")["id"]]
+    assert finding(strong, "first_update").events[0] == ev(strong, "message_posted")["id"]
+    assert finding(strong, "read_the_migration").events[0] == ev(strong, "file_opened", path=MIGRATION)["id"]
+    assert finding(strong, "regression_test_added").events[0] == ev(strong, "file_saved", path=REGRESSION)["id"]
+    assert finding(strong, "reported_the_outcome").events[0] == ev(strong, "message_posted", message="C003")["id"]
+    assert finding(strong, "reproduced_first").events[0] == ev(strong, "test_result")["id"]  # the first run's result line, "12 failed, 89 passed in 4.1s"
     # the gaps point at the moment that shows them
-    assert finding(weak, "first_update").events == [ev(weak, "message_posted")["id"]] and "05:30" in finding(weak, "first_update").text
-    assert finding(weak, "no_nudges").events == [ev(weak, "team_message", ref="lead-nudge")["id"]]
-    assert finding(weak, "reproduced_first").events == [ev(weak, "file_saved", path=APPT)["id"]] and "before you had run the tests" in finding(weak, "reproduced_first").text
-    assert finding(weak, "no_pointer_needed").events == [ev(weak, "hint_given", n=1)["id"]]
-    assert finding(weak, "no_red_submit").events == [ev(weak, "submit_result", stage="tests")["id"]]
-    assert finding(weak, "review_clean").events == [ev(weak, "submit_result", stage="review")["id"]]
-    assert finding(weak, "few_hints").events == [ev(weak, "hint_given", n=2)["id"]]
+    assert finding(weak, "first_update").events[0] == ev(weak, "message_posted")["id"] and "05:30" in finding(weak, "first_update").text
+    assert finding(weak, "no_nudges").events[0] == ev(weak, "team_message", ref="lead-nudge")["id"]
+    assert finding(weak, "reproduced_first").events[0] == ev(weak, "file_saved", path=APPT)["id"] and "started editing at 01:00; the first test run came at 07:00" in finding(weak, "reproduced_first").text
+    assert finding(weak, "no_pointer_needed").events[0] == ev(weak, "hint_given", n=1)["id"]
+    assert finding(weak, "no_red_submit").events[0] == ev(weak, "submit_result", stage="tests")["id"]
+    assert finding(weak, "review_clean").events[0] == ev(weak, "submit_result", stage="review")["id"]
+    assert finding(weak, "few_hints").events[0] == ev(weak, "hint_given", n=2)["id"]
     assert finding(weak, "old_name_gone").text == f"slot_time is still used in {APPT}."
 
 
@@ -188,7 +189,7 @@ def test_event_text_is_what_a_quote_must_match():
     f = facts(WEAK, WEAK_FACTS)
     by = lambda kind, **m: next(e for e in f.log if e["kind"] == kind and all(e.get(k) == v for k, v in m.items()))  # noqa: E731
     assert event_text(by("message_posted")) == "ok still on it" and event_text(by("file_saved", path=DOCT)) == f"Saved {DOCT} (+1 -1 lines)"
-    assert event_text(by("submit_result", stage="tests")) == "3 tests still fail" and event_text(by("hint_given", n=2)) == "Hint 2 from database"
+    assert event_text(by("submit_result", stage="tests")) == "3 tests still fail" and event_text(by("hint_given", n=2)) == "Hint 2 from Karan: I did not touch backend/. Have a look at database/migrations/0007."
     assert event_text(by("file_opened", path=MIGRATION)) == MIGRATION and event_text(by("submit")) == "Submit for review"
     msg = by("message_posted")
     assert quote_matches("OK still on it", msg) and quote_matches("“ok still on it…”", msg) and not quote_matches("ok it is fixed", msg) and not quote_matches("", msg)
@@ -296,10 +297,10 @@ def test_a_second_wording_call_while_the_first_is_going_is_not_made():
 
 # -- the report -----------------------------------------------------------------------------------------------------
 
-def report_for(steps, extra, wording=None, dropped=None, source="template", reason="", history=None, attempt=1):
+def report_for(steps, extra, wording=None, dropped=None, reason="", history=None, attempt=1):
     f = facts(steps, extra)
     return build_report(scenario=SCN, rubric=RUBRIC, attempt=attempt, project="opd-bookings-down", facts=f, results=score(RUBRIC, f), names=NAMES, wording=wording, dropped=dropped,
-                        wording_source=source, wording_reason=reason, history=history)
+                        wording_reason=reason, history=history)
 
 
 def test_the_report_of_a_strong_run():
@@ -320,7 +321,7 @@ def test_the_report_of_a_weak_run_has_gaps_with_advice_and_a_focus_list():
     assert len(gaps) == 16 and all(x["advice"] for x in gaps)
     assert len(r["focus"]) == 3 and r["focus"][0] == next(x["advice"] for x in r["rows"] if x["criterion"] == "communication" and x["kind"] == "gap")
     first = next(x for x in r["rows"] if x["rule"] == "first_update")
-    assert first["quote"] == "ok still on it" and first["t"] == 330.0 and first["source"] == "#incident-opd" and r["events"][first["event"]]["text"] == "ok still on it"
+    assert first["quote"] == "ok still on it" and first["t"] == 330.0 and first["source"] == "#incident-opd · You" and r["events"][first["event"]]["text"] == "ok still on it"
     assert r["criteria"][0]["descriptor"] == RUBRIC.criterion("communication").descriptors["0"]
 
 
@@ -330,11 +331,11 @@ def test_wording_that_survived_the_verifier_replaces_the_template_and_the_drops_
     f1 = next(x for x in findings if x.rule == "first_update")
     kept, dropped = verify_points([point(f1.id, f1.events[0], "ok still on it", note="Your first update said nothing about the cause.", advice="Name the column in your first post."),
                                    point("F02", "E999", "never happened", note="You never ran the tests.")], findings, f.log)
-    r = report_for(WEAK, WEAK_FACTS, kept, dropped, source="model")
+    r = report_for(WEAK, WEAK_FACTS, kept, dropped, reason="")
     row = next(x for x in r["rows"] if x["rule"] == "first_update")
     assert row["worded_by"] == "model" and row["note"] == "Your first update said nothing about the cause." and row["advice"] == "Name the column in your first post."
     assert r["fairness"]["dropped"] == [{"finding": "F02", "text": "You never ran the tests.", "reason": "event E999 is not in the session log"}]
-    assert r["fairness"]["wording"] == {"source": "model", "reason": "", "model_points": 1} and r["fairness"]["points"] == 20 and r["fairness"]["matched"] == 20
+    assert r["fairness"]["wording"] == {"source": "mixed", "reason": "", "model_points": 1, "copied": 0} and r["fairness"]["points"] == 20 and r["fairness"]["matched"] == 20
     assert r["total"] == 20  # the wording never changes a score
 
 
@@ -353,7 +354,7 @@ def test_the_markdown_report_lists_every_criterion_the_fairness_checks_and_the_a
     r = report_for(WEAK, WEAK_FACTS, history=[{"attempt": 1, "total": 20, "scores": {}, "project": "a", "finished_at": "x", "elapsed": 1}], attempt=2)
     md = render_markdown(r, NAMES)
     assert md.startswith("# Debrief: Production incident: Bookings are down") and "**Attempt 2: 20/100**" in md
-    assert "| Diagnosis | Karan | 0/4 |" in md and "## Fix quality 2/4" in md and "**GAP** 05:30 · #incident-opd · E" in md and "“ok still on it”" in md
+    assert "| Diagnosis | Karan | 0/4 |" in md and "## Fix quality 2/4" in md and "**GAP** 05:30 · #incident-opd · You · E" in md and "“ok still on it”" in md
     assert "Quotes matched to the session log: 20/20" in md and "Tests re-run, not guessed: 102/102" in md and "Same rubric for every attempt: v1" in md
     assert "## Focus for the next attempt" in md and "- Attempt 1: 20/100" in md
 

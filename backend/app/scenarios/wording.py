@@ -102,9 +102,9 @@ class Wordsmith:
         lines = []
         for f in findings:
             proof = "; ".join(f'{i} at {clock(log[i]["t"])}: "{event_text(log[i])[:160]}"' for i in f.events if i in log)
-            lines.append(f"{f.id} [{f.kind.upper()}] {f.text}\n   evidence: {proof}" + (f"\n   advice to rephrase: {f.advice}" if f.advice else ""))
+            lines.append(f"{f.id} [{f.kind.upper()}] fact: {f.text}\n   evidence: {proof}" + (f"\n   advice to reword: {f.advice}" if f.advice else ""))
         system = ("You write feedback for a junior engineer who just handled a production incident in a simulated team. Below are the points of the scoring: every point is already "
-                  "decided, you only word it. For each point write `note`: one plain sentence (at most 25 words) about what the learner did or did not do, using only the facts and "
+                  "decided, you only word it. Speak to the learner (\"you\") in your own words: never copy the fact or the advice word for word. For each point write `note`: one plain sentence (at most 25 words) about what the learner did or did not do, using only the facts and "
                   "evidence given; and `advice`: for a GAP, one imperative sentence (at most 25 words) for the next attempt, based on the advice given; for a STRENGTH leave it empty. "
                   "Also give `event`: the id of one evidence entry the sentence rests on, and `quote`: 3 to 12 words copied WORD FOR WORD from that entry's quoted text. "
                   "Never invent an event id, a time, a file name or a number. Reply with JSON: {\"points\": [{\"finding\": \"F01\", \"event\": \"E004\", \"quote\": \"...\", "

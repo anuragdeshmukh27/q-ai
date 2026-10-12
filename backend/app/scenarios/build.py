@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..config import WORKSPACE
+from ..humanide import search_worktree
 from ..integrator import Integrator
 from ..memory import MessageBus, ProjectMemory
 from ..orchestrator import Orchestrator
@@ -150,13 +151,21 @@ class ScenarioBuild(Orchestrator):
         return out
 
     def ide_write(self, role: str, rel: str, content: str) -> dict:
+        wt = self._ide_worktree(role)
+        created = not (wt / rel).is_file()
         try:
-            before = read_project_file(self._ide_worktree(role), rel)["content"]
-        except Exception:  # a new file, or a path the write below will refuse with its own message
+            before = "" if created else read_project_file(wt, rel)["content"]
+        except Exception:  # a path the write below will refuse with its own message
             before = ""
         out = super().ide_write(role, rel, content)
-        added, removed = diff_stats(before, content)
-        self.log.add("file_saved", role=role, path=out["path"], added=added, removed=removed, size=out["size"])
+        added, removed = diff_stats(before, content)  # a new file has nothing before it: every line is added
+        self.log.add("file_saved", role=role, path=out["path"], added=added, removed=removed, size=out["size"], created=created)
+        return out
+
+    def ide_search(self, role: str, query: str) -> dict:
+        """A project-wide search: read-only files included. Every search is logged with its query and how much it found (the debrief can use that)."""
+        out = search_worktree(self._ide_worktree(role), query)
+        self.log.add("search", role=role, query=out["query"], matches=out["matches"], files=out["files"])
         return out
 
     def submit_human_task(self, tid: str) -> dict:

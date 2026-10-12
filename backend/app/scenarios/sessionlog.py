@@ -5,12 +5,13 @@ Kinds and their fields:
 
     session_started   scenario, role
     file_opened       path, auto (true when the IDE opened its first file by itself)
-    file_saved        path, added, removed, size            (lines added and removed compared with what was on disk)
+    file_saved        path, added, removed, size, created   (lines added and removed compared with what was on disk; `created`: the file did not exist before, so all its lines are added)
+    search            query, matches, files                 (a project-wide search in the IDE: how many lines matched, in how many files)
     test_run          task, trigger ("ide" | "submit")
     test_result       task, ok, passed, failed (ids), summary, trigger
     message_posted    message (the channel message id), text, to (the teammates addressed)
     team_message      message, from, text, source ("scripted" | "live" | "fallback"), ref (the timeline item, or the learner's message)
-    hint_given        message, from, source, reason, question, n (this is hint number n)
+    hint_given        message, from, source, reason, question, text, n (this is hint number n; `text` is what the teammate said)
     submit            task
     submit_result     task, ok, stage ("tests" | "scope" | "review" | "accepted"), summary, failed, review_items
     session_finished  ok
@@ -25,7 +26,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-KINDS = ("session_started", "file_opened", "file_saved", "test_run", "test_result", "message_posted", "team_message", "hint_given", "submit", "submit_result", "session_finished")
+KINDS = ("session_started", "file_opened", "file_saved", "search", "test_run", "test_result", "message_posted", "team_message", "hint_given", "submit", "submit_result", "session_finished")
 
 
 class SessionLog:
@@ -95,5 +96,5 @@ class SessionLog:
         """The counts the debrief starts from."""
         with self._lock:
             by = {k: sum(1 for e in self._events if e["kind"] == k) for k in KINDS}
-            return {"events": len(self._events), "hints": by["hint_given"], "test_runs": by["test_run"], "saves": by["file_saved"], "opened": by["file_opened"],
+            return {"events": len(self._events), "hints": by["hint_given"], "test_runs": by["test_run"], "saves": by["file_saved"], "opened": by["file_opened"], "searches": by["search"],
                     "messages": by["message_posted"], "submits": by["submit"]}

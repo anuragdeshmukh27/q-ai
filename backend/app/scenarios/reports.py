@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from .rubric import Rubric
-from .scoring import CriterionResult, Facts, SOURCES, clock, event_text
+from .scoring import CriterionResult, Facts, clock, event_text, source_label
 from .wording import Dropped, PointWording, quote_matches
 
 REPORT_VERSION = 1
@@ -55,8 +55,19 @@ def _clip(text: str, n: int = QUOTE_CHARS) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
+def criterion_summary(res: CriterionResult) -> str:
+    """What the score of a criterion is made of, from its rules: what held and what did not (never from the score level alone)."""
+    held = [f.label for f in res.findings if f.kind == "strength"]
+    missed = [f.label for f in res.findings if f.kind == "gap"]
+    if not missed:
+        return "Everything held: " + ", ".join(held) + "."
+    if not held:
+        return "Nothing held. Missed: " + ", ".join(missed) + "."
+    return "Held: " + ", ".join(held) + ". Missed: " + ", ".join(missed) + "."
+
+
 def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts: Facts, results: list[CriterionResult], names: dict[str, str],
-                 wording: dict[str, PointWording] | None = None, dropped: list[Dropped] | None = None, wording_source: str = "template", wording_reason: str = "",
+                 wording: dict[str, PointWording] | None = None, dropped: list[Dropped] | None = None, wording_reason: str = "",
                  history: list[dict] | None = None, finished_at: float | None = None) -> dict:
     """The report of one attempt. `wording` is what survived the verifier (finding id -> point); every other point reads with the template wording."""
     wording = wording or {}
@@ -64,10 +75,14 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
     events = {e["id"]: e for e in facts.log}
     rows: list[dict] = []
     criteria: list[dict] = []
+    copied = 0
     for c, res in zip(rubric.criteria, results):
         ids: list[str] = []
         for f in res.findings:
             w = wording.get(f.id)
+            if w and " ".join(w.note.split()) == " ".join(f.text.split()) and (f.kind == "strength" or not w.advice or " ".join(w.advice.split()) == " ".join(f.advice.split())):
+                copied += 1  # the 7b gave the sentence back word for word: it is the template's, and is shown as such
+                w = None
             event_id = w.event if w else f.events[0]
             quote = w.quote if w else _clip(event_text(events[event_id]))
             if not quote_matches(quote, events[event_id]):  # a last check of every row that is shown
@@ -78,12 +93,12 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
                 dropped.append(Dropped(f.id, f.text, "no quotable moment"))
                 continue
             row = {"id": f"R{len(rows) + 1:02d}", "criterion": c.id, "rule": f.rule, "kind": f.kind, "event": event_id, "events": f.events, "t": events[event_id]["t"],
-                   "source": SOURCES.get(events[event_id]["kind"], "Session"), "quote": quote, "note": w.note if w else f.text,
+                   "source": source_label(events[event_id]), "quote": quote, "note": w.note if w else f.text,
                    "advice": (w.advice if w and w.advice else f.advice) if f.kind == "gap" else "", "verified": True, "worded_by": "model" if w else "template"}
             rows.append(row)
             ids.append(row["id"])
         criteria.append({"id": c.id, "name": c.name, "judge": c.judge, "judge_name": names.get(c.judge, c.judge), "score": res.score, "max": rubric.points_per_criterion,
-                         "descriptor": c.descriptors[str(res.score)], "keep": c.keep, "rows": ids})
+                         "descriptor": c.descriptors[str(res.score)], "summary": criterion_summary(res), "keep": c.keep, "rows": ids})
     total = sum(c["score"] for c in criteria) * rubric.weight
     gaps = [r for c in sorted(criteria, key=lambda c: c["score"]) for r in rows if r["criterion"] == c["id"] and r["kind"] == "gap" and r["advice"]]
     focus: list[str] = []
@@ -101,26 +116,35 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
         "rubric": {"id": rubric.id, "version": rubric.version}, "criteria": criteria, "rows": rows, "events": {i: events[i] for i in {e for r in rows for e in r["events"]}},
         "fairness": {"points": len(rows), "quoted": sum(1 for r in rows if r["quote"]), "matched": sum(1 for r in rows if r["verified"]), "dropped": [d.as_dict() for d in dropped],
                      "tests_rerun": {"ok": bool(rerun and rerun.get("ok")), "passed": rerun.get("passed", 0), "total": rerun.get("passed", 0) + rerun.get("failed", 0)} if rerun else None,
-                     "rubric": f"v{rubric.version}", "wording": {"source": wording_source, "reason": wording_reason, "model_points": sum(1 for r in rows if r["worded_by"] == "model")}},
+                     "rubric": f"v{rubric.version}", "wording": _wording(rows, wording_reason, copied)},
         "focus": focus[:3] or [f"A full-marks run. Try to beat your time of {clock(record['elapsed'])}, or keep these habits in the next scenario."],
         "attempts": [*prior, record], "files": {"md": f".q/reports/attempt-{attempt}.md", "json": f".q/reports/attempt-{attempt}.json"},
     }
+
+
+def _wording(rows: list[dict], reason: str, copied: int) -> dict:
+    """Who wrote the sentences: `model` when the 7b's own sentence is shown for every point, `template` when none is, `mixed` otherwise, and why."""
+    n = sum(1 for r in rows if r["worded_by"] == "model")
+    source = "model" if rows and n == len(rows) else "template" if n == 0 else "mixed"
+    if not reason and copied:
+        reason = f"the 7b repeated the template sentence word for word for {copied} point{'s' if copied != 1 else ''}"
+    return {"source": source, "reason": reason, "model_points": n, "copied": copied}
 
 
 def render_markdown(report: dict, names: dict[str, str]) -> str:
     lines = [f"# Debrief: {report['title']}", "", f"**Attempt {report['attempt']}: {report['total']}/{report['max']}** · {clock(report['elapsed'])} on the clock · rubric {report['rubric']['id']}", ""]
     lines += ["| Criterion | Judge | Score |", "| --- | --- | --- |", *[f"| {c['name']} | {c['judge_name']} | {c['score']}/{c['max']} |" for c in report["criteria"]], ""]
     for c in report["criteria"]:
-        lines += [f"## {c['name']} {c['score']}/{c['max']}", "", f"_{c['descriptor']}_", ""]
+        lines += [f"## {c['name']} {c['score']}/{c['max']}", "", f"_{c['summary']}_", ""]
         for r in (x for x in report["rows"] if x["criterion"] == c["id"]):
-            lines += [f"- **{r['kind'].upper()}** {clock(r['t'])} · {r['source']} · {r['event']}: “{r['quote']}”", f"  {r['note']}" + (f" Next attempt: {r['advice']}" if r["advice"] else "")]
+            lines += [f"- **{r['kind'].upper()}** {clock(r['t'])} · {r['source']} · {r['event']}: “{r['quote']}”", f"  {r['note']}" + (f" Next attempt: {r['advice']}" if r["advice"] else "") + f" [{'AI wording' if r['worded_by'] == 'model' else 'template'}]"]
         lines.append("")
     f = report["fairness"]
     rerun = f["tests_rerun"]
     lines += ["## Fairness checks", "", f"- Points that quote a moment: {f['quoted']}/{f['points']}", f"- Quotes matched to the session log: {f['matched']}/{f['points']}",
               f"- Claims dropped: {len(f['dropped'])}", *[f"  - dropped: “{d['text']}” ({d['reason']})" for d in f["dropped"]],
               f"- Tests re-run, not guessed: {(str(rerun['passed']) + '/' + str(rerun['total'])) if rerun else 'could not be re-run'}",
-              f"- Same rubric for every attempt: {f['rubric']}", f"- Wording: {f['wording']['source']}" + (f" ({f['wording']['reason']})" if f["wording"]["reason"] else ""), ""]
+              f"- Same rubric for every attempt: {f['rubric']}", f"- Wording: {f['wording']['source']} ({f['wording']['model_points']} of {f['points']} points in the 7b's own words)" + (f", {f['wording']['reason']}" if f["wording"]["reason"] else ""), ""]
     lines += ["## Focus for the next attempt", "", *[f"{i}. {x}" for i, x in enumerate(report["focus"], 1)], ""]
     lines += ["## Attempts", "", *[f"- Attempt {a['attempt']}: {a['total']}/{report['max']}" for a in report["attempts"]], ""]
     return "\n".join(lines)

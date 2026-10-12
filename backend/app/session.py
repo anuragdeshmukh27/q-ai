@@ -19,7 +19,7 @@ from .approvals import ApprovalQueue
 from .config import PROMPTS_DIR, WORKSPACE, ROOT, AgentConfig, load_agents
 from .events import EventBus
 from .llm import LLMClient, agent_context
-from .humanide import IDEError
+from .humanide import IDEError, search_worktree
 from .orchestrator import ENGINEERS, Orchestrator
 from .ports import PortError, PortManager
 from .presets import list_presets, load_preset
@@ -483,6 +483,17 @@ class Session:
 
     def ide_run_tests(self, role: str) -> dict:
         return self._ide("ide_run_tests", role)
+
+    def ide_search(self, role: str, query: str) -> dict:
+        """A project-wide search in the role's folder. A scenario logs it (query and match count) in the session log."""
+        if self.kind == "replay" or self.orch is None:
+            raise SessionError("Demo mode replays a recording; the IDE only works in a live Simulation build.", 409)
+        try:
+            if isinstance(self.orch, ScenarioBuild):
+                return self.orch.ide_search(role, query)
+            return search_worktree(self.orch._ide_worktree(role), query)
+        except IDEError as e:
+            raise SessionError(str(e), e.status) from None
 
     # -- a scenario: the incident channel, the guide, the session log ----------------------------------
     def _scenario_build(self) -> ScenarioBuild:

@@ -17,7 +17,7 @@ from ..config import load_agents
 
 SCENARIOS_DIR = Path(__file__).resolve().parent
 ROLES = ("database", "backend", "frontend")
-EVENT_KINDS = ("file_opened", "file_saved", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result")
+EVENT_KINDS = ("file_opened", "file_saved", "search", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result")
 REACT_ON = ("submit_result", "test_result")
 BUILTIN_PLACEHOLDERS = ("failed", "summary")  # filled in when a reaction is posted
 ROUTE_PARAMS = ("id", "doctor_id", "appointment_id")  # `{id}` in a text is a route template, not a placeholder
@@ -74,7 +74,7 @@ class TimelineItem(BaseModel):
     max: int = Field(default=1, ge=1)
     delay: float = Field(default=0, ge=0)
     hint: bool = False
-    skip_if: str | None = None  # "learner_posted" | "asked:<character>"
+    skip_if: str | list[str] | None = None  # one condition or several, any of which skips the item: "learner_posted", "asked:<character>" (a question to them), "opened:<glob>" (a file they opened themselves), "said:<regex>" (a post of theirs)
 
     model_config = {"populate_by_name": True}
 
@@ -86,16 +86,25 @@ class TimelineItem(BaseModel):
             raise ValueError(f"timeline item {self.id}: give exactly one of `text`, `texts`")
         if self.on is not None and self.on not in REACT_ON:
             raise ValueError(f"timeline item {self.id}: `on` must be one of {', '.join(REACT_ON)}")
-        if self.skip_if is not None and not (self.skip_if == "learner_posted" or re.fullmatch(r"asked:[a-z]+", self.skip_if)):
-            raise ValueError(f"timeline item {self.id}: skip_if must be learner_posted or asked:<character>")
+        for c in self.conditions():
+            if c.startswith("said:"):
+                try:
+                    re.compile(c[5:])
+                except re.error:
+                    raise ValueError(f"timeline item {self.id}: skip_if {c!r} is not a valid pattern") from None
+            elif not (c == "learner_posted" or re.fullmatch(r"asked:[a-z]+", c) or re.fullmatch(r"opened:\S+", c) or re.fullmatch(r"said:.+", c)):
+                raise ValueError(f"timeline item {self.id}: skip_if must be learner_posted, asked:<character>, opened:<glob> or said:<pattern>")
         return self
+
+    def conditions(self) -> list[str]:
+        return [] if self.skip_if is None else [self.skip_if] if isinstance(self.skip_if, str) else list(self.skip_if)
 
     def all_texts(self) -> list[str]:
         return [self.text] if self.text is not None else list(self.texts or [])
 
 
 class Advance(BaseModel):
-    kind: Literal["file_opened", "file_saved", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result"]
+    kind: Literal["file_opened", "file_saved", "search", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result"]
     path: str | None = None  # a glob for file events
     ok: bool | None = None
 
@@ -193,8 +202,11 @@ def _check(s: Scenario, folder: Path) -> list[str]:
             problems.append(f"timeline {item.id}: `from` {item.from_!r} is not one of the characters")
         if item.hint and item.from_ not in s.characters:
             problems.append(f"timeline {item.id}: a hint needs a character")
-        if item.skip_if and item.skip_if.startswith("asked:") and item.skip_if.split(":", 1)[1] not in s.characters:
-            problems.append(f"timeline {item.id}: skip_if names a character that does not exist")
+        for cond in item.conditions():
+            if cond.startswith("asked:") and cond.split(":", 1)[1] not in s.characters:
+                problems.append(f"timeline {item.id}: skip_if names a character that does not exist")
+            if cond.startswith("opened:") and not any(fnmatch.fnmatch(p.relative_to(seed).as_posix(), cond[7:]) for p in seed.rglob("*") if p.is_file()):
+                problems.append(f"timeline {item.id}: no file of the seed matches {cond[7:]!r}")
     for where, text in texts:
         for name in _BRACES.findall(text):
             if name not in known and name not in ROUTE_PARAMS:

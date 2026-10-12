@@ -292,6 +292,11 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         """Save a file inside the role's owned paths while the role has an open human task (403 elsewhere, 409 without a task)."""
         return session(pid).ide_write(role, body.path, body.content)
 
+    @app.get("/api/projects/{pid}/ide/{role}/search")
+    def ide_search(pid: str, role: str, q: str):
+        """Search every file of the role's folder (read-only ones too): {query, matches, files, truncated, results: [{path, count, lines: [{line, text}]}]}."""
+        return session(pid).ide_search(role, q)
+
     @app.post("/api/projects/{pid}/ide/{role}/tests")
     def ide_tests(pid: str, role: str):
         """Run the suite in the background: `human_test_output` lines, then one `human_test_result {task, ok, passed, failed, tests, summary}`."""

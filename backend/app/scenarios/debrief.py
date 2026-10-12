@@ -131,11 +131,10 @@ class Debrief:
         findings = [f for r in results for f in r.findings]
         points, reason = self.wordsmith.word(findings, facts.log)
         kept, dropped = verify_points(points or [], findings, facts.log)
-        source = "template" if not kept else ("model" if len(kept) == len(findings) else "mixed")
         if points is not None and not kept:
             reason = reason or "every point was dropped by the verifier"
         report = build_report(scenario=b.scenario, rubric=self.rubric, attempt=self.attempt, project=b.root.name if b.root else "", facts=facts, results=results, names=names,
-                              wording=kept, dropped=dropped, wording_source=source, wording_reason=reason, history=self.history.attempts())
+                              wording=kept, dropped=dropped, wording_reason=reason, history=self.history.attempts())
         for c in report["criteria"]:
             if self._halted.is_set():
                 return b.emit("debrief_ended", ok=False)
