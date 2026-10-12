@@ -265,6 +265,14 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
         """The scenario session so far: clock, logged events with their ids, hints, guide, channel."""
         return session(pid).session_info()
 
+    @app.get("/api/projects/{pid}/report")
+    def debrief_report(pid: str, format: str = "json"):
+        """The debrief report of a scenario attempt (404 until the fix is accepted and the team has met). `?format=md` answers the markdown that is saved in the project."""
+        if format not in ("json", "md"):
+            raise SessionError("format must be json or md")
+        out = session(pid).report(markdown=format == "md")
+        return PlainTextResponse(out, media_type="text/plain; charset=utf-8") if format == "md" else out
+
     @app.get("/api/projects/{pid}/tasks/{tid}/guide")
     def task_guide(pid: str, tid: str):
         return PlainTextResponse(session(pid).guide_doc(tid), media_type="text/plain; charset=utf-8")

@@ -116,15 +116,19 @@ class Director:
         self._ticker: threading.Thread | None = None
 
     # -- saying things ---------------------------------------------------------------
-    def _say(self, sender: str, text: str, source: str, ref: str = "", **extra) -> dict:
+    def _say(self, sender: str, text: str, source: str, ref: str = "", log: bool = True, **extra) -> dict:
         with self._lock:
             n = len(self.messages) + 1
             msg = {"id": f"C{n:03d}", "channel": self.scenario.channel.id, "from": sender, "text": text, "source": source, "t": round(self.log.now(), 1), **({"ref": ref} if ref else {}), **extra}
             self.messages.append(msg)
         self.emit("channel_message", **msg)
-        if sender != "human":
+        if sender != "human" and log:
             self.log.add("team_message", message=msg["id"], **{"from": sender}, text=text, source=source, ref=ref)
         return msg
+
+    def announce(self, sender: str, text: str, **extra) -> dict:
+        """A message of the debrief meeting: in the channel like any other, but not in the session log (the log is the evidence the debrief is scored from)."""
+        return self._say(sender, text, "debrief", log=False, **extra)
 
     def _hint(self, msg: dict, source: str, reason: str, question: str) -> None:
         with self._lock:

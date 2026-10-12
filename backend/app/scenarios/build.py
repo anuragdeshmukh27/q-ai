@@ -21,10 +21,14 @@ from ..project import git, slugify
 from ..projectfiles import ProjectFileError, read_project_file
 from ..repo import Repo
 from ..schemas import ArchitectOutput
+from .debrief import Debrief
 from .director import Director, Replier
 from .guide import GuideTracker, guide_markdown
 from .loader import Scenario
+from .reports import History
+from .rubric import Rubric
 from .sessionlog import SessionLog
+from .wording import Wordsmith
 
 
 REGRESSION_TESTS = "tests/regression/**"  # where the learner's own tests go (the folder is in the seed)
@@ -44,7 +48,8 @@ def diff_stats(before: str, after: str) -> tuple[int, int]:
 class ScenarioBuild(Orchestrator):
     STAGES = ("setup", "tasks", "verify")
 
-    def __init__(self, scenario: Scenario, registry, llm, bus=None, clock: Callable[[], float] = time.monotonic, replier: Replier | None = None, **kw):
+    def __init__(self, scenario: Scenario, registry, llm, bus=None, clock: Callable[[], float] = time.monotonic, replier: Replier | None = None,
+                 rubric: Rubric | None = None, wordsmith: Wordsmith | None = None, attempt: int = 1, debrief_pace: float = 3.5, **kw):
         kw.update(mode="simulation", human_roles=(scenario.role,), qa=False, polish=False)  # QA's phase and the polish task belong to a build from a goal
         super().__init__(scenario.goal, registry, llm, bus, **kw)
         self.scenario = scenario
@@ -55,12 +60,15 @@ class ScenarioBuild(Orchestrator):
         self.log.subscribe(self.guide.on_event)
         self.log.subscribe(self.director.on_log_event)
         self.bus.subscribe(self._on_event)
+        self.attempt = attempt
+        self.history = History(self.base or WORKSPACE, scenario.id)
+        self.debrief = Debrief(self, rubric, wordsmith or Wordsmith(), self.history, attempt, debrief_pace) if rubric is not None else None  # no rubric, no debrief
         self._trigger = "ide"  # what started the test run that is going: the IDE's Run tests, or Submit
 
     # -- the pipeline -----------------------------------------------------------------
     def run(self):
         self.emit("scenario_started", scenario=self.scenario.id, title=self.scenario.title, role=self.scenario.role, minutes=self.scenario.minutes,
-                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at)
+                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at, attempt=self.attempt)
         self.log.add("session_started", scenario=self.scenario.id, role=self.scenario.role)
         self.director.start()
         return super().run()
@@ -168,10 +176,14 @@ class ScenarioBuild(Orchestrator):
     # -- the end -------------------------------------------------------------------------
     def stop(self) -> None:
         self.director.stop()
+        if self.debrief:
+            self.debrief.stop()
         super().stop()
 
     def _finish(self, seconds: float):
         res = super()._finish(seconds)
         self.log.add("session_finished", ok=res.ok)
         self.director.closed = True  # the thanks that are still waiting for their delay are posted; nobody nudges any more
+        if self.debrief and res.ok and self.log.first_accepted():
+            self.debrief.start()  # the team walks to the meeting room; the report arrives as `debrief_report`
         return res

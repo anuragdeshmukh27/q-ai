@@ -31,6 +31,9 @@ from .router import Router
 from .scenarios.build import ScenarioBuild
 from .scenarios.director import Replier
 from .scenarios.loader import Scenario, ScenarioError, load_scenario
+from .scenarios.reports import History
+from .scenarios.rubric import Rubric, load_rubric
+from .scenarios.wording import Wordsmith
 from .scheduler import MetricsSampler, ModelScheduler
 from .scope import classify_goal
 
@@ -57,6 +60,7 @@ class Settings:
     max_gap: float = 3.0  # replay never waits longer than this (at 1x) between two events
     polish: bool = True  # live builds end with the Frontend UI polish task (Q_POLISH=0 turns it off)
     fast_live: bool = True  # live builds skip an unneeded polish pass and allow one LLM review round per task (Q_FAST_LIVE=0 turns it off)
+    debrief_pace: float = 3.5  # seconds between the judges' posts in the debrief meeting (Q_DEBRIEF_PACE; tests use 0)
 
     @classmethod
     def from_env(cls, env=None) -> "Settings":
@@ -70,6 +74,10 @@ class Settings:
             s.leaderboard_db = Path(env["Q_DB"])
         s.polish = env.get("Q_POLISH", "1").strip().lower() not in ("0", "false", "no", "off")
         s.fast_live = env.get("Q_FAST_LIVE", "1").strip().lower() not in ("0", "false", "no", "off")
+        try:
+            s.debrief_pace = max(0.0, float(env.get("Q_DEBRIEF_PACE", s.debrief_pace)))
+        except ValueError:
+            pass
         mode = env.get("Q_MODE", "live").strip().lower()
         s.q_mode = mode if mode in ("live", "record", "replay") else "live"
         return s
@@ -230,14 +238,15 @@ class Session:
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
         self._thread.start()
 
-    def start_scenario(self, scn: Scenario) -> None:
-        """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls)."""
+    def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int) -> None:
+        """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls). `attempt`: the number of this try (1 for the first)."""
         mgr = self.mgr
         llm = mgr.make_llm(None)
         fast = mgr.settings.fast_live
         self.scenario = scn
         replier = Replier(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
-        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
+        wordsmith = Wordsmith(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
+        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, rubric=rubric, wordsmith=wordsmith, attempt=attempt, debrief_pace=mgr.settings.debrief_pace, approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
                                   local_only=True, ports=mgr.ports, max_parallel=1, fast_live=fast, router=mgr.router)
         self.fast_live = fast
         if mgr.scheduler is not None:
@@ -493,8 +502,19 @@ class Session:
     def session_info(self) -> dict:
         """The whole session so far: the scenario, the clock, every logged event (quotable by id), the guide and the channel."""
         orch = self._scenario_build()
-        return {"scenario": orch.scenario.public(), "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
+        return {"scenario": orch.scenario.public(), "attempt": orch.attempt, "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
                 "summary": orch.log.summary(), "events": orch.log.events(), "guide": orch.guide.state(), "messages": list(orch.director.messages)}
+
+    def report(self, markdown: bool = False) -> dict | str:
+        """The debrief report of this attempt (the dict, or the markdown source), once the debrief has finished."""
+        orch = self._scenario_build()
+        report = orch.debrief.report if orch.debrief else None
+        if report is None:
+            raise SessionError("There is no report yet: it is written when the fix has been accepted and the team has met.", 404)
+        if not markdown:
+            return report
+        assert self.root
+        return (self.root / report["files"]["md"]).read_text(encoding="utf-8")
 
     def guide_doc(self, tid: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
@@ -610,7 +630,7 @@ class Session:
         return {"id": self.id, "goal": self.goal, "kind": self.kind, "state": self.state, "mode": self.mode, "speed": self.speed,
                 "created": self.created, "events": len(self.bus.history), "overrides": dict(self.overrides), "recording": self.recording, "fast_live": self.fast_live,
                 "pending_approvals": self.approvals.pending(), "app": self.app(), **snap,
-                **({"scenario": {**self.scenario.public(), "started_at": self.orch.log.started_at, "summary": self.orch.log.summary()}} if self.scenario and isinstance(self.orch, ScenarioBuild) else {})}
+                **({"scenario": {**self.scenario.public(), "attempt": self.orch.attempt, "started_at": self.orch.log.started_at, "summary": self.orch.log.summary()}} if self.scenario and isinstance(self.orch, ScenarioBuild) else {})}
 
 
 # -- all sessions -----------------------------------------------------------------------------------
@@ -688,6 +708,7 @@ class SessionManager:
     def start_scenario(self, scenario_id: str) -> Session:
         try:
             scn = load_scenario(scenario_id)
+            rubric = load_rubric(scn)
         except ScenarioError as e:
             unknown = str(e).startswith("unknown")
             raise SessionError(str(e) if unknown else "That scenario is not available.", 404 if unknown else 500) from None
@@ -697,7 +718,7 @@ class SessionManager:
             s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
             self.sessions[s.id] = s
             try:
-                s.start_scenario(scn)
+                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id).next_number())
             except Exception:
                 del self.sessions[s.id]
                 raise

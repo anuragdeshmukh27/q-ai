@@ -87,6 +87,10 @@ class SessionLog:
         with self._lock:
             return next((dict(e) for e in self._events if e["id"] == event_id), None)
 
+    def first_accepted(self) -> dict | None:
+        """The submit_result that accepted the fix, if there is one."""
+        return next((e for e in self.events("submit_result") if e.get("ok")), None)
+
     def summary(self) -> dict:
         """The counts the debrief starts from."""
         with self._lock:

@@ -10,6 +10,7 @@ from pathlib import Path
 from app.llm import StructuredResult
 from app.providers.base import ProviderError
 from app.scenarios.director import ChatReply
+from app.scenarios.wording import WordingOutput
 
 from test_orchestrator import FakeLLM
 
@@ -31,13 +32,15 @@ class FakeClock:
 
 class ScenarioLLM(FakeLLM):
     """The FakeLLM (every review is a PASS) that also answers the teammates of a scenario. `reply` is what a teammate says; `fail` makes the call raise like Ollama being down;
-    `delay` makes it slow; `gate` holds it until the test opens it. `prompts` keeps every system prompt a teammate was given."""
+    `delay` makes it slow; `gate` holds it until the test opens it. `prompts` keeps every system prompt a teammate was given.
+    The debrief's wording call (WordingOutput) is answered by `wording(system_prompt) -> list of points`, or fails like Ollama being down when there is none."""
 
-    def __init__(self, reply: str = "It was my migration 0007: slot_time is slot_at now.", fail: bool = False, delay: float = 0.0, gate: threading.Event | None = None):
+    def __init__(self, reply: str = "It was my migration 0007: slot_time is slot_at now.", fail: bool = False, delay: float = 0.0, gate: threading.Event | None = None, wording=None):
         super().__init__()
-        self.reply, self.fail, self.delay, self.gate = reply, fail, delay, gate
+        self.reply, self.fail, self.delay, self.gate, self.wording = reply, fail, delay, gate, wording
         self.prompts: list[str] = []
         self.chat_calls = 0
+        self.wording_calls = 0
 
     def call(self, model_id, messages, schema_model, temperature=0.2):
         if schema_model is ChatReply:
@@ -50,6 +53,11 @@ class ScenarioLLM(FakeLLM):
             if self.fail:
                 raise ProviderError("Ollama is not running")
             return StructuredResult(ChatReply(reply=self.reply), model_id, 1, 10, 5, 0.01, "{}")
+        if schema_model is WordingOutput:
+            self.wording_calls += 1
+            if self.wording is None:
+                raise ProviderError("Ollama is not running")
+            return StructuredResult(WordingOutput(points=self.wording(messages[0]["content"])), model_id, 1, 10, 5, 0.01, "{}")
         return super().call(model_id, messages, schema_model, temperature)
 
 
