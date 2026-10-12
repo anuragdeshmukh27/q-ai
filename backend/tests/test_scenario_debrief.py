@@ -188,7 +188,7 @@ def test_a_weak_attempt_gets_gaps_with_advice_and_every_point_is_still_quoted(tm
         crit = {c["id"]: c["score"] for c in report["criteria"]}
         assert crit["testing"] == 0 and crit["communication"] == 4  # a red submit, no green run of its own, no new test; but the questions to Karan were early and named the rename
         assert rule("no_red_submit")["kind"] == "gap" and rule("regression_test_added")["kind"] == "gap" and rule("regression_test_proves_fix")["kind"] == "gap"
-        assert rule("reproduced_first")["kind"] == "gap" and "before you had run the tests" in rule("reproduced_first")["note"] or rule("reproduced_first")["worded_by"] == "model"
+        assert rule("reproduced_first")["kind"] == "gap" and rule("reproduced_first")["event"].startswith("E")  # the weak attempt fixed first and ran the tests later
         assert rule("few_hints")["kind"] == "gap" and rule("few_hints")["event"].startswith("E")
         assert all(r["advice"] for r in report["rows"] if r["kind"] == "gap") and all(not r["advice"] for r in report["rows"] if r["kind"] == "strength")
         # the model's wording: one point held, two were dropped and recorded; the score did not move

@@ -182,7 +182,7 @@ def test_the_reference_fix_through_the_ide_is_accepted_and_every_step_is_in_the_
     assert red["ok"] is False and red["failed"] >= 3
     current = {p: client.get(f"{ide}/file", params={"path": p}).json()["content"] for p in FIX_FILES}
     client.get(f"{ide}/file", params={"path": "database/migrations/0007_rename_slot_time_to_slot_at.sql"})
-    client.post(f"/api/projects/{pid}/channel", json={"text": "Found it: the routes still say slot_time, the migration renamed it.", "to": "database"})
+    client.post(f"/api/projects/{pid}/channel", json={"text": "Karan, did the migration rename slot_time? The routes still use it.", "to": "database"})
     s.orch.director.join()
     for path, text in apply_reference_fix(current).items():
         assert client.put(f"{ide}/file", json={"path": path, "content": text}).status_code == 200
