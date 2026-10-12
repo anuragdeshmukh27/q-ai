@@ -6,7 +6,7 @@ import { characterSheet } from './characters'
 import { CONFETTI, Particles } from './effects'
 import * as F from './furniture'
 import { icons } from './icons'
-import { CHAIRS, COFFEE, COFFEE_SPOTS, COLS, PLANTS, RACKS, RECEPTION, RECEPTION_SEAT, ROWS, RUG, SOFA, TABLE, TILE, WORLD_H, WORLD_W, blockedFor, buildBlocked, visitSpots } from './layout'
+import { CHAIRS, COFFEE, COFFEE_SPOTS, COLS, MEETING_SPOTS, PLANTS, RACKS, RECEPTION, RECEPTION_SEAT, ROWS, RUG, SOFA, TABLE, TILE, WORLD_H, WORLD_W, blockedFor, buildBlocked, visitSpots } from './layout'
 import { COLORS, STATE_COLOR, STATE_LABEL, lookFor } from './palette'
 import { hash, hexNum, toTexture, type Surface } from './pixel'
 import { GLOW, paintScreen } from './screens'
@@ -339,8 +339,19 @@ export class OfficeScene {
       case 'alert':
         this.actors.get(v.agent)?.flash(icons().bang, 3, this.now)
         break
+      case 'meeting': {
+        let i = 0
+        for (const a of this.actors.values()) {
+          a.dropErrands()
+          a.meetingSpot = v.on ? MEETING_SPOTS[i++ % MEETING_SPOTS.length] : null
+        }
+        break
+      }
       case 'reset':
-        this.actors.forEach((a) => a.dropErrands())
+        this.actors.forEach((a) => {
+          a.dropErrands()
+          a.meetingSpot = null
+        })
         this.bubbles.forEach((b) => b.box.destroy({ children: true }))
         this.bubbles = []
         this.particles.clear()
@@ -524,7 +535,7 @@ export class OfficeScene {
       if (!tag || !view) continue
       const state = this.forced.get(id) ?? view.state
       const away = !actor.seated
-      const shown = away && state === 'idle' ? 'walking' : state
+      const shown = actor.meetingSpot && away ? 'meeting' : away && state === 'idle' ? 'walking' : state
       const key = `${shown}|${this.selected === id}|${view.task?.id ?? ''}|${u.toFixed(2)}|${view.name}`
       if (key !== tag.key) {
         tag.key = key
@@ -532,7 +543,7 @@ export class OfficeScene {
         const col = STATE_COLOR[shown] ?? '#7c8499'
         tag.name.style.fontSize = 14 * u
         tag.status.style.fontSize = 11 * u
-        tag.status.text = `● ${STATE_LABEL[shown] ?? shown}${view.task && shown !== 'idle' && shown !== 'walking' ? ' · ' + view.task.id : ''}`
+        tag.status.text = `● ${STATE_LABEL[shown] ?? shown}${view.task && shown !== 'idle' && shown !== 'walking' && shown !== 'meeting' ? ' · ' + view.task.id : ''}`
         tag.status.style.fill = col
         const w = Math.max(tag.name.width, tag.status.width) + 14 * u
         const h = tag.name.height + tag.status.height + 6 * u

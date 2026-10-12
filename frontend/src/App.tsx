@@ -77,7 +77,7 @@ export default function App() {
         </main>
         {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} onEscalate={q.escalate} />}
       </div>
-      <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} onSubmit={q.submitTask} onError={q.fail} onPost={q.postChannel} />
+      <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} onSubmit={q.submitTask} onError={q.fail} onPost={q.postChannel} onTryAgain={q.startScenario} busy={q.busy} />
     </div>
   )
 }

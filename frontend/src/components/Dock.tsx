@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AgentChat } from '../dock/AgentChat'
 import { Approvals } from '../dock/Approvals'
 import { ContractTab } from '../dock/ContractTab'
+import { DebriefTab } from '../dock/DebriefTab'
 import { Explorer } from '../dock/Explorer'
 import { GapReport } from '../dock/GapReport'
 import { GitGraph } from '../dock/GitGraph'
@@ -11,7 +12,7 @@ import { Terminal } from '../dock/Terminal'
 import type { OfficeModel } from '../model'
 import { unreadCount } from '../scenario'
 
-const TABS = ['IDE', 'Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
+const TABS = ['IDE', 'Debrief', 'Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
 type Tab = (typeof TABS)[number]
 
 // the Gap report tab only exists for a project that was imported (Finish my project)
@@ -25,9 +26,12 @@ interface Props {
   onSubmit: (task: string) => Promise<void>
   onError: (e: unknown) => void
   onPost: (text: string, to?: string) => Promise<void>
+  /** Start the scenario again (the Debrief tab's Try again): the next attempt. */
+  onTryAgain: (scenarioId: string) => Promise<void>
+  busy: boolean
 }
 
-export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError, onPost }: Props) {
+export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError, onPost, onTryAgain, busy }: Props) {
   const [tab, setTab] = useState<Tab>('Explorer')
   const ide = model.humanRoles.size > 0 && !replay // the IDE tab exists while the person plays a role in a live Simulation build
   const [open, setOpen] = useState(true)
@@ -80,12 +84,37 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
   }, [viewing, channelSize])
   const unread = model.scenario ? unreadCount(model.channel, seen) : 0
 
-  const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' ? (model.scenario ? unread : model.messages.length) : 0)
+  // the debrief: the meeting brings the channel forward, the report brings the Debrief tab forward (once each)
+  const debriefPhase = model.debrief?.phase
+  const hasReport = !!model.debrief?.report
+  const debrief = !!model.debrief && !replay // the Debrief tab exists from the meeting on
+  const [reportSeen, setReportSeen] = useState(false)
+  useEffect(() => {
+    if (debriefPhase === 'meeting') {
+      setTab('Agent Chat')
+      setOpen(true)
+    }
+  }, [debriefPhase])
+  useEffect(() => {
+    if (hasReport) {
+      setTab('Debrief')
+      setOpen(true)
+    }
+  }, [hasReport])
+  useEffect(() => setReportSeen(false), [startedAt])
+  useEffect(() => {
+    if (open && tab === 'Debrief' && hasReport) setReportSeen(true)
+  }, [open, tab, hasReport])
+  useEffect(() => {
+    if (!debrief && tab === 'Debrief') setTab('Explorer')
+  }, [debrief, tab])
+
+  const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' ? (model.scenario ? unread : model.messages.length) : t === 'Debrief' && hasReport && !reportSeen ? 1 : 0)
 
   return (
-    <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? (tab === 'IDE' ? 'min(560px, 62vh)' : 'min(300px, 36vh)') : 44 }}>
+    <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? (tab === 'IDE' || tab === 'Debrief' ? 'min(560px, 62vh)' : 'min(300px, 36vh)') : 44 }}>
       <div className="flex h-[44px] shrink-0 items-center gap-1 px-3">
-        {TABS.filter((t) => (t !== 'Gap report' || model.finish) && (t !== 'IDE' || ide)).map((t) => (
+        {TABS.filter((t) => (t !== 'Gap report' || model.finish) && (t !== 'IDE' || ide) && (t !== 'Debrief' || debrief)).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -114,6 +143,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
       {open && (
         <div className="min-h-0 flex-1 border-t border-[var(--line)]">
           {tab === 'IDE' && <IdeTab projectId={projectId} model={model} replay={replay} onSubmit={onSubmit} onError={onError} />}
+          {tab === 'Debrief' && <DebriefTab model={model} projectId={projectId} onTryAgain={onTryAgain} busy={busy} />}
           {tab === 'Explorer' && <Explorer projectId={projectId} model={model} />}
           {tab === 'Terminal' && <Terminal model={model} />}
           {tab === 'Agent Chat' && <AgentChat model={model} onPost={onPost} replay={replay} />}

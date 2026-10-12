@@ -26,7 +26,7 @@ describe('the session of a scenario in the office model', () => {
     const { m } = setup()
     expect(m.scenario).toBeNull()
     m.apply(ev('scenario_started', STARTED))
-    expect(m.scenario).toEqual({ id: 'opd-bookings-down', title: 'Production incident: Bookings are down', role: 'backend', minutes: 25, channelId: 'incident-opd', channelName: '#incident-opd', teammates: ['qa', 'architect', 'database', 'planner'], startedAt: 1000, endedAt: null })
+    expect(m.scenario).toEqual({ id: 'opd-bookings-down', title: 'Production incident: Bookings are down', role: 'backend', minutes: 25, channelId: 'incident-opd', channelName: '#incident-opd', teammates: ['qa', 'architect', 'database', 'planner'], attempt: 1, startedAt: 1000, endedAt: null })
     expect(m.ticker).toContain('Production incident')
   })
 
@@ -111,7 +111,7 @@ describe('the helpers of the scenario UI', () => {
   })
 
   it('counts the team messages you have not seen, never your own', () => {
-    const mk = (id: string, source: ChannelMsg['source']): ChannelMsg => ({ id, from: 'qa', text: '', source, t: 0, to: [], replyTo: '', hint: false })
+    const mk = (id: string, source: ChannelMsg['source']): ChannelMsg => ({ id, from: 'qa', text: '', source, t: 0, to: [], replyTo: '', hint: false, bubble: '' })
     const channel = [mk('1', 'scripted'), mk('2', 'learner'), mk('3', 'live'), mk('4', 'fallback')]
     expect([unreadCount(channel, 0), unreadCount(channel, 2), unreadCount(channel, 4), unreadCount(channel, 99)]).toEqual([3, 2, 0, 0])
   })

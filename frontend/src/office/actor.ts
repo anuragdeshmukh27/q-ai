@@ -47,6 +47,7 @@ export class Actor {
   path: Tile[] = []
   errands: Errand[] = []
   forced: string | null = null // debug: show a state without events
+  meetingSpot: Tile | null = null // the debrief: where this employee stands in the meeting room (null: at the desk)
   private facing: 'down' | 'up' | 'side' = 'down'
   private flip = 1
   private walked = 0
@@ -91,6 +92,10 @@ export class Actor {
     return [this.tile, ...(this.errands[0] ? [this.errands[0].spot] : [])]
   }
 
+  get inMeeting(): boolean {
+    return !!this.meetingSpot && !this.path.length && same(this.tile, this.meetingSpot)
+  }
+
   get seated(): boolean {
     return !this.path.length && same(this.tile, this.seat)
   }
@@ -112,6 +117,7 @@ export class Actor {
 
   private desired(state: string): Tile {
     if (this.errands.length) return this.errands[0].spot
+    if (this.meetingSpot) return this.meetingSpot
     if (state === 'loading_model') return this.env.coffeeSpot(this.id)
     return this.seat
   }

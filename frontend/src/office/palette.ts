@@ -76,6 +76,7 @@ export const COLORS = {
 }
 
 export const STATE_COLOR: Record<string, string> = {
+  meeting: '#fbbf24',
   idle: '#7c8499',
   thinking: '#a78bfa',
   typing: '#60a5fa',
@@ -91,6 +92,7 @@ export const STATE_COLOR: Record<string, string> = {
 }
 
 export const STATE_LABEL: Record<string, string> = {
+  meeting: 'in the meeting',
   idle: 'idle',
   thinking: 'thinking',
   typing: 'typing',

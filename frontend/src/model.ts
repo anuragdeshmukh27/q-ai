@@ -2,7 +2,7 @@
 import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
 import type { CostReport, GapInfo, Metrics } from './api'
-import type { ChannelMsg, GuideView, ScenarioSession } from './scenario'
+import type { ChannelMsg, DebriefReport, DebriefState, GuideView, ScenarioSession } from './scenario'
 
 export interface QEvent {
   seq: number
@@ -72,6 +72,7 @@ export type Visual =
   | { kind: 'test'; agent: string; ok: boolean }
   | { kind: 'celebrate'; agents?: string[] } // agents: only these employees get a small burst (an Ask-employee request); none: the whole office
   | { kind: 'reset' }
+  | { kind: 'meeting'; on: boolean } // the team walks to the meeting room (the debrief) or back to their desks
   | { kind: 'alert'; agent: string }
   | { kind: 'toast'; level: Tone; title: string; text: string; key?: string; action?: ToastAction }
   | { kind: 'toast_update'; key: string; level: Tone; title: string; text: string }
@@ -185,6 +186,7 @@ export class OfficeModel {
   channel: ChannelMsg[] = []
   guide: GuideView | null = null
   hints = 0
+  debrief: DebriefState | null = null // the meeting and the report after an accepted fix (step 5)
   humanRoles = new Set<string>() // simulation: the employees the person plays; their desks read "You"
   private realNames = new Map<string, string>() // their names from the roster, kept to restore them
   private owners = new Map<string, string>()
@@ -249,6 +251,7 @@ export class OfficeModel {
     this.channel = []
     this.guide = null
     this.hints = 0
+    this.debrief = null
     this.applyHumanNames()
     this.setRoster(this.order.map((id) => this.agents.get(id)!).map(({ id, name, role, desk, sprite }) => ({ id, name, role, desk, sprite })), false)
     this.tasks = []
@@ -499,7 +502,7 @@ export class OfficeModel {
         break
       case 'scenario_started': {
         const ch = (e.channel ?? {}) as { id?: string; name?: string }
-        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), startedAt: num(e.started_at), endedAt: null }
+        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null }
         this.say(`Incident: ${str(e.title)}`)
         break
       }
@@ -507,16 +510,39 @@ export class OfficeModel {
         const id = str(e.id)
         if (this.channel.some((m) => m.id === id)) break // a reconnect never shows a message twice
         const source = str(e.source) as ChannelMsg['source']
-        const m: ChannelMsg = { id, from: str(e.from), text: str(e.text), source, t: num(e.t), to: strs(e.to), replyTo: str(e.reply_to), hint: e.hint === true }
+        const m: ChannelMsg = { id, from: str(e.from), text: str(e.text), source, t: num(e.t), to: strs(e.to), replyTo: str(e.reply_to), hint: e.hint === true, bubble: str(e.bubble) }
         this.channel = [...this.channel, m].slice(-500)
         if (m.source !== 'learner') {
           const who = this.name(m.from)
-          if (this.agents.has(m.from)) this.show({ kind: 'say', agent: m.from, text: clip(m.text, 70), tone: 'info' }, visuals)
-          this.show({ kind: 'toast', level: 'info', title: `${who} in ${this.scenario?.channelName ?? 'the channel'}`, text: clip(m.text, 140) }, visuals)
+          if (this.agents.has(m.from)) this.show({ kind: 'say', agent: m.from, text: m.bubble || clip(m.text, 70), tone: m.source === 'debrief' ? 'good' : 'info' }, visuals)
+          if (m.source !== 'debrief') this.show({ kind: 'toast', level: 'info', title: `${who} in ${this.scenario?.channelName ?? 'the channel'}`, text: clip(m.text, 140) }, visuals)
           this.say(`${who}: ${clip(m.text, 80)}`)
         }
         break
       }
+      case 'debrief_started': {
+        const judges = Array.isArray(e.judges) ? (e.judges as DebriefState['judges']) : []
+        this.debrief = { phase: 'meeting', attempt: num(e.attempt, 1), judges, report: null }
+        for (const v of this.agents.values()) if (v.state === 'celebrating') v.state = 'idle'
+        this.show({ kind: 'meeting', on: true }, visuals)
+        this.say('Debrief: the team is in the meeting room')
+        break
+      }
+      case 'debrief_report': {
+        const report = e.report as DebriefReport
+        this.debrief = { phase: 'done', attempt: report.attempt, judges: this.debrief?.judges ?? [], report }
+        this.show({ kind: 'toast', level: 'good', title: 'Debrief report ready', text: `${report.total}/${report.max}, attempt ${report.attempt}: open the Debrief tab`, key: 'debrief-report' }, visuals)
+        this.say(`Report ready: ${report.total}/${report.max} (saved to ${report.files.md})`)
+        break
+      }
+      case 'debrief_ended': {
+        this.show({ kind: 'meeting', on: false }, visuals)
+        if (this.debrief && !this.debrief.report) this.debrief = { ...this.debrief, phase: 'failed' }
+        break
+      }
+      case 'debrief_failed':
+        this.show({ kind: 'toast', level: 'warn', title: 'The debrief could not be completed', text: clip(str(e.reason), 140) }, visuals)
+        break
       case 'guide_progress': {
         this.guide = { task: str(e.task), current: typeof e.current === 'string' ? e.current : null, done: num(e.done), steps: Array.isArray(e.steps) ? (e.steps as GuideView['steps']) : [] }
         break
