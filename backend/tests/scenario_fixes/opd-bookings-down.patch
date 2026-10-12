@@ -1,0 +1,42 @@
+diff --git a/backend/api/appointments.py b/backend/api/appointments.py
+index 8c9c8c5..e329e13 100644
+--- a/backend/api/appointments.py
++++ b/backend/api/appointments.py
+@@ -47,9 +47,9 @@ def handle_post_doctors_appointments_by_doctor_id(doctor_id: int, req: PostDocto
+     # Add a appointment to a doctor
+     # error: raise HTTPException(status_code=404, detail="Doctor not found")
+     # body: if doctors_db.get_doctor(doctor_id) is None: raise HTTPException(status_code=404, detail="Doctor not found")
+-    # body: return db.add_appointment(doctor_id=doctor_id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_time=req.time, reason=req.reason, status=req.status)
++    # body: return db.add_appointment(doctor_id=doctor_id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_at=req.time, reason=req.reason, status=req.status)
+     if doctors_db.get_doctor(doctor_id) is None: raise HTTPException(status_code=404, detail="Doctor not found")
+-    return db.add_appointment(doctor_id=doctor_id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_time=req.time, reason=req.reason, status=req.status)
++    return db.add_appointment(doctor_id=doctor_id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_at=req.time, reason=req.reason, status=req.status)
+ 
+ class PutAppointmentsByIdRequest(BaseModel):
+     patient_name: Required
+@@ -74,10 +74,10 @@ class PutAppointmentsByIdResponse(BaseModel):
+ def handle_put_appointments_by_id(id: int, req: PutAppointmentsByIdRequest):
+     # Edit one appointment Answers 409 when: That status change is not allowed (the database refuses it by itself and the app turns that into the 409: never check it in the route function).
+     # error: raise HTTPException(status_code=404, detail="Appointment not found")
+-    # body: row = db.update_appointment(appointment_id=id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_time=req.time, reason=req.reason, status=req.status)
++    # body: row = db.update_appointment(appointment_id=id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_at=req.time, reason=req.reason, status=req.status)
+     # body: if row is None: raise HTTPException(status_code=404, detail="Appointment not found")
+     # body: return row
+-    row = db.update_appointment(appointment_id=id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_time=req.time, reason=req.reason, status=req.status)
++    row = db.update_appointment(appointment_id=id, patient_name=req.patient_name, patient_phone=req.patient_phone, date=req.date, slot_at=req.time, reason=req.reason, status=req.status)
+     if row is None: raise HTTPException(status_code=404, detail="Appointment not found")
+     return row
+ 
+diff --git a/backend/api/doctors.py b/backend/api/doctors.py
+index cefb768..933e96a 100644
+--- a/backend/api/doctors.py
++++ b/backend/api/doctors.py
+@@ -92,7 +92,7 @@ def handle_delete_doctors_by_id(id: int):
+ 
+ def booked_times(doctor_id: int, date: str) -> list[str]:
+     """The times of day already taken on `date`, earliest first (what the front desk's slot picker greys out)."""
+-    return [row["slot_time"] for row in appointments_db.booked_slots(doctor_id, date)]
++    return [row["slot_at"] for row in appointments_db.booked_slots(doctor_id, date)]
+ 
+ 
+ class GetDoctorsSlotsByIdResponse(BaseModel):
