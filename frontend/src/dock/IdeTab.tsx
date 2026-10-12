@@ -48,6 +48,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const [left, setLeft] = useState<'files' | 'search'>('files') // the left column: the file tree, or the project-wide search (Ctrl+Shift+F)
   const [pending, setPending] = useState<Pending | null>(null) // a switch or a close that waits for the answer about unsaved edits
   const searchBox = useRef<HTMLInputElement>(null)
+  const [scoringChoice, setScoringChoice] = useState<boolean | null>(null) // "How you are scored": open until your first test run, unless you opened or closed it yourself
 
   // leaving the page with edits that are not saved: the browser asks first
   const unsaved = ctl.dirty.length
@@ -263,12 +264,16 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       </div>
 
       <div className="flex w-[300px] shrink-0 flex-col border-l border-[var(--line)]">
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="p-3">
           {taskId ? (doc.data ? <Doc blocks={blocks} /> : <div className="text-[13px] text-[var(--muted)]">{doc.error || 'Loading the task document…'}</div>) : <div className="text-[13px] text-[var(--muted)]">No open task. When the tasks before yours are merged, the task document appears here.</div>}
-          {model.scenario && model.scenario.scoring.length > 0 && <ScoringPanel scoring={model.scenario.scoring} name={(id) => model.name(id) || id} />}
+          {model.scenario && model.scenario.scoring.length > 0 && (
+            <ScoringPanel scoring={model.scenario.scoring} name={(id) => model.name(id) || id} open={scoringChoice ?? model.ide.result === null} onToggle={setScoringChoice} />
+          )}
         </div>
         {model.guide && <GuidePanel guide={model.guide} />}
         {task && <Acceptance model={model} entries={task.tests ?? []} />}
+        </div>
       </div>
     </div>
   )
@@ -378,10 +383,10 @@ export function SearchPanel({ ctl, tree, box, onPick }: { ctl: IdeController; tr
 }
 
 /** "How you are scored": the 20 rules of the debrief in plain words, by criterion and judge, shown with the task so that nothing in the report is a surprise. */
-export function ScoringPanel({ scoring, name }: { scoring: ScoringCriterion[]; name: (employee: string) => string }) {
+export function ScoringPanel({ scoring, name, open = true, onToggle }: { scoring: ScoringCriterion[]; name: (employee: string) => string; open?: boolean; onToggle?: (open: boolean) => void }) {
   const rules = scoring.reduce((n, c) => n + c.rules.length, 0)
   return (
-    <details open className="mt-4 border-t border-[var(--line)] pt-3" aria-label="How you are scored">
+    <details open={open} onToggle={(e) => onToggle?.((e.currentTarget as HTMLDetailsElement).open)} className="mt-4 border-t border-[var(--line)] pt-3" aria-label="How you are scored">
       <summary className="cursor-pointer text-[12px] font-bold uppercase tracking-wide text-[var(--muted)] hover:text-white">
         How you are scored <span className="ml-1 font-normal normal-case">· {rules} rules, {new Set(scoring.map((c) => c.judge)).size} judges, 100 marks</span>
       </summary>
