@@ -21,6 +21,7 @@ LEVELS = ("0", "1", "2", "3", "4")
 
 class RuleRef(BaseModel):
     id: str
+    plain: str = Field(min_length=10)  # the rule in a sentence for the learner: shown before the incident starts ("How you are scored")
     label: str = Field(min_length=3)  # the rule in a few words ("a regression test added"): the criterion's summary lists the ones that held and the ones that did not
     params: dict = Field(default_factory=dict)
     advice: str = Field(min_length=10)  # what to do next time when this rule is a gap
@@ -79,6 +80,10 @@ class Rubric(BaseModel):
 
     def public(self) -> dict:
         return {"id": self.id, "version": self.version, "criteria": [{"id": c.id, "name": c.name, "judge": c.judge} for c in self.criteria]}
+
+    def scoring(self) -> list[dict]:
+        """What the learner may read before the incident starts: every criterion with its judge and its rules in plain words (the numbers are in the sentences)."""
+        return [{"id": c.id, "name": c.name, "judge": c.judge, "rules": [{"id": r.id, "plain": r.plain} for r in c.rules]} for c in self.criteria]
 
 
 def load_rubric(scenario: Scenario) -> Rubric:

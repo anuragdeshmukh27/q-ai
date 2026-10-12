@@ -112,7 +112,7 @@
     }
   ],
   "guide": [
-    {"id": "run-tests", "title": "Reproduce it", "text": "Press Run tests and read which tests fail and the first error line of each. That is your starting point.", "advance_on": {"kind": "test_run"}},
+    {"id": "run-tests", "title": "Reproduce it", "text": "Press Run tests and read which tests fail and the first error line of each. That is your starting point. Post a first update in #incident-opd within 2 minutes, and answer Aarav within a minute when he asks.", "advance_on": {"kind": "test_run"}},
     {"id": "open-route", "title": "Open the failing route", "text": "The error names a function and a file under backend/api/. Open backend/api/appointments.py and find the call that fails.", "advance_on": {"kind": "file_opened", "path": "backend/api/appointments.py"}},
     {"id": "open-migration", "title": "Find what changed", "text": "Something changed on Monday. The database/migrations folder is read-only for you but you can read it: open the newest migration.", "advance_on": {"kind": "file_opened", "path": "database/migrations/0007*"}},
     {"id": "tell-channel", "title": "Tell the team", "text": "Post what you found in #incident-opd (Agent Chat tab). Aarav is waiting for an update; you can also ask Karan or Ananya.", "advance_on": {"kind": "message_posted"}},

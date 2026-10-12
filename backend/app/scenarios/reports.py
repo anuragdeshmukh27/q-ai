@@ -13,8 +13,8 @@ import time
 from pathlib import Path
 
 from .rubric import Rubric
-from .scoring import CriterionResult, Facts, clock, event_text, source_label
-from .wording import Dropped, PointWording, quote_matches
+from .scoring import CriterionResult, Facts, clock, event_text, note_matches, source_label
+from .wording import Dropped, quote_matches
 
 REPORT_VERSION = 1
 QUOTE_CHARS = 200
@@ -67,34 +67,25 @@ def criterion_summary(res: CriterionResult) -> str:
 
 
 def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts: Facts, results: list[CriterionResult], names: dict[str, str],
-                 wording: dict[str, PointWording] | None = None, dropped: list[Dropped] | None = None, wording_reason: str = "",
                  history: list[dict] | None = None, finished_at: float | None = None) -> dict:
-    """The report of one attempt. `wording` is what survived the verifier (finding id -> point); every other point reads with the template wording."""
-    wording = wording or {}
-    dropped = list(dropped or [])
+    """The report of one attempt. Every sentence of a point is its rule's; a point is shown only when its quote is in the entry it cites and every time, file and test count
+    of its sentence is that entry's (a point that fails is dropped and recorded under `fairness.dropped`). The coach paragraph and the judges' lines are added by `attach_voices`."""
+    dropped: list[Dropped] = []
     events = {e["id"]: e for e in facts.log}
     rows: list[dict] = []
     criteria: list[dict] = []
-    copied = 0
     for c, res in zip(rubric.criteria, results):
         ids: list[str] = []
         for f in res.findings:
-            w = wording.get(f.id)
-            if w and " ".join(w.note.split()) == " ".join(f.text.split()) and (f.kind == "strength" or not w.advice or " ".join(w.advice.split()) == " ".join(f.advice.split())):
-                copied += 1  # the 7b gave the sentence back word for word: it is the template's, and is shown as such
-                w = None
-            event_id = w.event if w else f.events[0]
-            quote = w.quote if w else _clip(event_text(events[event_id]))
-            if not quote_matches(quote, events[event_id]):  # a last check of every row that is shown
-                dropped.append(Dropped(f.id, quote[:200], f"the quote is not in {event_id}"))
-                w, event_id = None, f.events[0]
-                quote = _clip(event_text(events[event_id]))
-            if not quote_matches(quote, events[event_id]):
-                dropped.append(Dropped(f.id, f.text, "no quotable moment"))
+            event_id = f.events[0]
+            quote = _clip(event_text(events[event_id]))
+            problem = None if quote_matches(quote, events[event_id]) else f"the quote is not in {event_id}"
+            problem = problem or note_matches(f.text, events[event_id])
+            if problem:
+                dropped.append(Dropped(f.id, f.text, problem))
                 continue
             row = {"id": f"R{len(rows) + 1:02d}", "criterion": c.id, "rule": f.rule, "kind": f.kind, "event": event_id, "events": f.events, "t": events[event_id]["t"],
-                   "source": source_label(events[event_id]), "quote": quote, "note": w.note if w else f.text,
-                   "advice": (w.advice if w and w.advice else f.advice) if f.kind == "gap" else "", "verified": True, "worded_by": "model" if w else "template"}
+                   "source": source_label(events[event_id]), "quote": quote, "note": f.text, "advice": f.advice if f.kind == "gap" else "", "verified": True, "worded_by": "rule"}
             rows.append(row)
             ids.append(row["id"])
         criteria.append({"id": c.id, "name": c.name, "judge": c.judge, "judge_name": names.get(c.judge, c.judge), "score": res.score, "max": rubric.points_per_criterion,
@@ -109,42 +100,58 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
     rerun = facts.rerun
     prior = [a for a in (history or []) if a["attempt"] != attempt]
     record = {"attempt": attempt, "total": total, "scores": {c["id"]: c["score"] for c in criteria}, "project": project,
-              "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(finished_at or time.time())), "elapsed": accepted["t"] if accepted else facts.log[-1]["t"]}
+              "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(finished_at or time.time())), "elapsed": accepted["t"] if accepted else facts.session[-1]["t"]}
     return {
         "version": REPORT_VERSION, "scenario": scenario.id, "title": scenario.title, "project": project, "attempt": attempt,
         "total": total, "max": rubric.max_total, "elapsed": record["elapsed"], "minutes": scenario.minutes, "finished_at": record["finished_at"],
         "rubric": {"id": rubric.id, "version": rubric.version}, "criteria": criteria, "rows": rows, "events": {i: events[i] for i in {e for r in rows for e in r["events"]}},
         "fairness": {"points": len(rows), "quoted": sum(1 for r in rows if r["quote"]), "matched": sum(1 for r in rows if r["verified"]), "dropped": [d.as_dict() for d in dropped],
                      "tests_rerun": {"ok": bool(rerun and rerun.get("ok")), "passed": rerun.get("passed", 0), "total": rerun.get("passed", 0) + rerun.get("failed", 0)} if rerun else None,
-                     "rubric": f"v{rubric.version}", "wording": _wording(rows, wording_reason, copied)},
+                     "rubric": f"v{rubric.version}", "voices": {"judges": "template", "coach": "template", "reason": ""}},
         "focus": focus[:3] or [f"A full-marks run. Try to beat your time of {clock(record['elapsed'])}, or keep these habits in the next scenario."],
-        "attempts": [*prior, record], "files": {"md": f".q/reports/attempt-{attempt}.md", "json": f".q/reports/attempt-{attempt}.json"},
+        "coach": {"text": template_coach(total, rubric.max_total, criteria, rows, focus), "source": "template"},
+        "judge_lines": {}, "attempts": [*prior, record], "files": {"md": f".q/reports/attempt-{attempt}.md", "json": f".q/reports/attempt-{attempt}.json"},
     }
 
 
-def _wording(rows: list[dict], reason: str, copied: int) -> dict:
-    """Who wrote the sentences: `model` when the 7b's own sentence is shown for every point, `template` when none is, `mixed` otherwise, and why."""
-    n = sum(1 for r in rows if r["worded_by"] == "model")
-    source = "model" if rows and n == len(rows) else "template" if n == 0 else "mixed"
-    if not reason and copied:
-        reason = f"the 7b repeated the template sentence word for word for {copied} point{'s' if copied != 1 else ''}"
-    return {"source": source, "reason": reason, "model_points": n, "copied": copied}
+def template_coach(total: int, top: int, criteria: list[dict], rows: list[dict], focus: list[str]) -> str:
+    """The overall paragraph when the model does not write it: the score, the best and the weakest criterion and what to do first, from the findings only."""
+    best = max(criteria, key=lambda c: c["score"])
+    weak = min(criteria, key=lambda c: c["score"])
+    lines = [f"You scored {total} out of {top}."]
+    if best["score"] == weak["score"]:
+        lines.append(f"Every criterion scored {best['score']} out of {best['max']}.")
+    else:
+        lines.append(f"{best['name']} was your strongest area ({best['score']}/{best['max']}) and {weak['name']} the weakest ({weak['score']}/{weak['max']}).")
+    lines.append(f"First thing for the next attempt: {focus[0][0].lower() + focus[0][1:]}" if focus else "There is nothing to fix: keep these habits in the next scenario.")
+    return " ".join(lines)
+
+
+def attach_voices(report: dict, judge_lines: dict[str, dict], coach: dict, dropped: list[Dropped], reason: str = "") -> dict:
+    """Add what the model said (when it passed the verifier) to the report: each judge's spoken line and the coach paragraph, with who wrote each, and the claims dropped."""
+    report["judge_lines"] = judge_lines
+    report["coach"] = coach
+    report["fairness"]["dropped"] += [d.as_dict() for d in dropped]
+    sources = {v["source"] for v in judge_lines.values()}
+    report["fairness"]["voices"] = {"judges": "model" if sources == {"model"} else "template" if "model" not in sources else "mixed", "coach": coach["source"], "reason": reason}
+    return report
 
 
 def render_markdown(report: dict, names: dict[str, str]) -> str:
     lines = [f"# Debrief: {report['title']}", "", f"**Attempt {report['attempt']}: {report['total']}/{report['max']}** · {clock(report['elapsed'])} on the clock · rubric {report['rubric']['id']}", ""]
+    lines += [f"_{'AI coach' if report['coach']['source'] == 'model' else 'Summary'}:_ {report['coach']['text']}", ""]
     lines += ["| Criterion | Judge | Score |", "| --- | --- | --- |", *[f"| {c['name']} | {c['judge_name']} | {c['score']}/{c['max']} |" for c in report["criteria"]], ""]
     for c in report["criteria"]:
         lines += [f"## {c['name']} {c['score']}/{c['max']}", "", f"_{c['summary']}_", ""]
         for r in (x for x in report["rows"] if x["criterion"] == c["id"]):
-            lines += [f"- **{r['kind'].upper()}** {clock(r['t'])} · {r['source']} · {r['event']}: “{r['quote']}”", f"  {r['note']}" + (f" Next attempt: {r['advice']}" if r["advice"] else "") + f" [{'AI wording' if r['worded_by'] == 'model' else 'template'}]"]
+            lines += [f"- **{r['kind'].upper()}** {clock(r['t'])} · {r['source']} · {r['event']}: “{r['quote']}”", f"  {r['note']}" + (f" Next attempt: {r['advice']}" if r["advice"] else "") + " [rule]"]
         lines.append("")
     f = report["fairness"]
     rerun = f["tests_rerun"]
     lines += ["## Fairness checks", "", f"- Points that quote a moment: {f['quoted']}/{f['points']}", f"- Quotes matched to the session log: {f['matched']}/{f['points']}",
               f"- Claims dropped: {len(f['dropped'])}", *[f"  - dropped: “{d['text']}” ({d['reason']})" for d in f["dropped"]],
               f"- Tests re-run, not guessed: {(str(rerun['passed']) + '/' + str(rerun['total'])) if rerun else 'could not be re-run'}",
-              f"- Same rubric for every attempt: {f['rubric']}", f"- Wording: {f['wording']['source']} ({f['wording']['model_points']} of {f['points']} points in the 7b's own words)" + (f", {f['wording']['reason']}" if f["wording"]["reason"] else ""), ""]
+              f"- Same rubric for every attempt: {f['rubric']}", f"- Judges' lines: {f['voices']['judges']}; coach paragraph: {f['voices']['coach']}" + (f" ({f['voices']['reason']})" if f["voices"]["reason"] else ""), ""]
     lines += ["## Focus for the next attempt", "", *[f"{i}. {x}" for i, x in enumerate(report["focus"], 1)], ""]
     lines += ["## Attempts", "", *[f"- Attempt {a['attempt']}: {a['total']}/{report['max']}" for a in report["attempts"]], ""]
     return "\n".join(lines)

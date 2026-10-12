@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.registry import ModelRegistry
 from app.scenarios.reports import History
-from app.scenarios.wording import PointWording
+from app.scenarios.wording import VoiceLine, VoiceOutput
 from app.session import SessionManager
 
 from api_helpers import make_client, make_settings, wait_for
@@ -122,11 +122,13 @@ def test_a_strong_attempt_ends_in_the_meeting_room_with_five_judges_and_a_full_r
     fair = report["fairness"]
     assert fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [] and fair["rubric"] == "v1"
     assert fair["tests_rerun"]["ok"] is True and fair["tests_rerun"]["passed"] == fair["tests_rerun"]["total"] and fair["tests_rerun"]["total"] >= 100
-    assert fair["wording"]["source"] == "template" and fair["wording"]["reason"] == "error"  # the scripted model was not set up to word anything: the template wording was used
+    assert fair["voices"] == {"judges": "template", "coach": "template", "reason": "error"}  # the scripted model was not set up to speak: the template lines were used
+    assert {r["worded_by"] for r in report["rows"]} == {"rule"} and report["coach"]["source"] == "template" and {v["source"] for v in report["judge_lines"].values()} == {"template"}
     assert events(s, "debrief_report")[0]["report"] == report
     log = {e["id"]: e for e in client.get(f"/api/projects/{pid}/session").json()["events"]}
-    assert all(r["event"] in log and r["verified"] and set(r["events"]) <= set(log) for r in report["rows"])  # every point quotes an entry of the session log
-    assert report["events"] and all(k in log and report["events"][k] == log[k] for k in report["events"])
+    checks = {k for k, e in report["events"].items() if e["kind"] == "debrief_check"}  # what the debrief measured has entries of its own, after the session's
+    assert all(r["verified"] and set(r["events"]) <= set(report["events"]) for r in report["rows"]) and len(checks) == 5 and not checks & set(log)
+    assert report["events"] and all(report["events"][k] == log[k] for k in report["events"] if k not in checks)  # every other quoted entry is an entry of the session log
     assert client.get(f"/api/projects/{pid}/session").json()["events"][-1]["kind"] == "session_finished"  # the debrief adds nothing to the evidence
 
 
@@ -167,16 +169,16 @@ def weak_attempt(client, s, pid):
     assert answer["ok"] and answer["stage"] == "accepted"
 
 
-def test_a_weak_attempt_gets_gaps_with_advice_and_every_point_is_still_quoted(tmp_path):
-    def word(prompt: str):
-        evidence = dict(re.findall(r"^(F\d\d) \[.*\n   evidence: (E\d+) at", prompt, re.M))
-        text = dict(re.findall(r"^(F\d\d) \[.*\n   evidence: E\d+ at [\d:]+: \"(.*?)\"$", prompt, re.M))
-        f1 = "F01"
-        return [PointWording(finding=f1, event=evidence[f1], quote=text[f1][:30], note="You never posted, so the lead had nobody to ask.", advice="Post a first update in the channel within two minutes."),
-                PointWording(finding="F02", event="E999", quote="you answered at once", note="You answered at once.", advice=""),                    # an event that does not exist
-                PointWording(finding="F05", event=evidence["F05"], quote="I ran the tests first", note="You ran the tests first.", advice="")]  # a quote that is not in the entry
+def test_a_weak_attempt_gets_gaps_with_advice_and_the_model_only_speaks(tmp_path):
+    def speak(prompt: str):
+        said = {m.group(1): (m.group(2), m.group(3)) for m in re.finditer(r'criterion "(\w+)": [^\n]*?score (\d/4)\. Moment at (\d\d:\d\d)', prompt)}
+        line = lambda cid, tail: VoiceLine(criterion=cid, line=f"I give you {said[cid][0]}. At {said[cid][1]} {tail}")  # noqa: E731
+        return VoiceOutput(lines=[line("communication", "your update was not what the team needed, so say what you found."), line("diagnosis", "you started to edit first, so run the tests and read before you change anything."),
+                                  VoiceLine(criterion="testing", line=f"I give you {said['testing'][0]}. At 99:59 you did something nobody logged, so be careful."),  # an invented time
+                                  line("ownership", "you leaned on a hint, so try the next step alone first.")],  # nothing for fix_quality
+                           coach=f"You scored {re.search(r'total score is (.+?)/100', prompt).group(1)} out of 100. You fixed the code but did not run the tests first and wrote no test of your own, so start with the tests next time.")
 
-    llm = ScenarioLLM(wording=word)
+    llm = ScenarioLLM(wording=speak)
     client, mgr, settings = manager(tmp_path, llm)
     pid, s = start(client, mgr)
     try:
@@ -191,15 +193,20 @@ def test_a_weak_attempt_gets_gaps_with_advice_and_every_point_is_still_quoted(tm
         assert rule("reproduced_first")["kind"] == "gap" and rule("reproduced_first")["event"].startswith("E")  # the weak attempt fixed first and ran the tests later
         assert rule("few_hints")["kind"] == "gap" and rule("few_hints")["event"].startswith("E")
         assert all(r["advice"] for r in report["rows"] if r["kind"] == "gap") and all(not r["advice"] for r in report["rows"] if r["kind"] == "strength")
-        # the model's wording: one point held, two were dropped and recorded; the score did not move
-        first = rule("first_update")
-        assert first["worded_by"] == "model" and first["note"] == "You never posted, so the lead had nobody to ask."
-        dropped = report["fairness"]["dropped"]
-        assert [(d["finding"], d["reason"]) for d in dropped][:1] == [("F02", "event E999 is not in the session log")] and any(d["finding"] == "F05" and "the quote is not in" in d["reason"] for d in dropped)
-        assert report["fairness"]["wording"]["source"] == "mixed" and report["fairness"]["wording"]["model_points"] == 1
+        assert {r["worded_by"] for r in report["rows"]} == {"rule"}  # the sentences of the points are the rules'
+        # the model spoke: three lines held, two were dropped and recorded, the coach paragraph held; the score did not move
+        lines = report["judge_lines"]
+        assert {c: v["source"] for c, v in lines.items()} == {"communication": "model", "diagnosis": "model", "fix_quality": "template", "testing": "template", "ownership": "model"}
+        dropped = {d["finding"]: d["reason"] for d in report["fairness"]["dropped"]}
+        assert "no line" in dropped["fix_quality"] and "99:59" in dropped["testing"] and set(dropped) == {"fix_quality", "testing"}
+        assert report["coach"]["source"] == "model" and report["coach"]["text"].startswith(f"You scored {report['total']} out of 100.")
+        assert report["fairness"]["voices"] == {"judges": "mixed", "coach": "model", "reason": ""}
+        posts = {e["criterion"]: e for e in events(s, "channel_message") if e.get("criterion")}
+        assert {c: e["voice"] for c, e in posts.items()} == {c: v["source"] for c, v in lines.items()} and posts["communication"]["text"] == lines["communication"]["text"]
+        assert posts["testing"]["text"].startswith("Testing 0/4.") and len(posts["communication"]["bubble"]) <= 78  # the template post for the line that was dropped
         assert len(report["focus"]) == 3 and all(f for f in report["focus"])
         md = client.get(f"/api/projects/{pid}/report", params={"format": "md"}).text
-        assert "**GAP**" in md and "Claims dropped: 2" in md
+        assert "**GAP**" in md and "Claims dropped: 2" in md and "AI coach" in md
     finally:
         s.orch.stop()
         mgr.shutdown()

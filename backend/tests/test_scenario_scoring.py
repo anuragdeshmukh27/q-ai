@@ -10,13 +10,12 @@ from pathlib import Path
 import pytest
 
 from app.config import load_agents
-from app.llm import StructuredResult
 from app.scenarios import scoring
 from app.scenarios.loader import ScenarioError, load_scenario
 from app.scenarios.reports import History, build_report, render_markdown
 from app.scenarios.rubric import load_rubric
 from app.scenarios.scoring import Facts, clock, event_text, score
-from app.scenarios.wording import PointWording, WordingOutput, Wordsmith, quote_matches, verify_points
+from app.scenarios.wording import quote_matches
 
 from scenario_fixtures import APPT, DOCT, MIGRATION, REGRESSION, STRONG, STRONG_FACTS, STRONG_SCORES, SUBMIT_OK, WEAK, WEAK_FACTS, WEAK_SCORES, facts, make_log
 from scenario_helpers import ScenarioLLM
@@ -119,7 +118,7 @@ def test_each_rule_cites_the_entries_that_prove_it():
     # the gaps point at the moment that shows them
     assert finding(weak, "first_update").events[0] == ev(weak, "message_posted")["id"] and "05:30" in finding(weak, "first_update").text
     assert finding(weak, "no_nudges").events[0] == ev(weak, "team_message", ref="lead-nudge")["id"]
-    assert finding(weak, "reproduced_first").events[0] == ev(weak, "file_saved", path=APPT)["id"] and "started editing at 01:00; the first test run came at 07:00" in finding(weak, "reproduced_first").text
+    assert finding(weak, "reproduced_first").events[0] == ev(weak, "file_saved", path=APPT)["id"] and "You started editing at 01:00 before you had run the tests." == finding(weak, "reproduced_first").text
     assert finding(weak, "no_pointer_needed").events[0] == ev(weak, "hint_given", n=1)["id"]
     assert finding(weak, "no_red_submit").events[0] == ev(weak, "submit_result", stage="tests")["id"]
     assert finding(weak, "review_clean").events[0] == ev(weak, "submit_result", stage="review")["id"]
@@ -196,118 +195,18 @@ def test_event_text_is_what_a_quote_must_match():
     assert not quote_matches("ok", msg)  # too short to prove anything unless it is the whole text
 
 
-# -- the verifier of the wording ---------------------------------------------------------------------------------
-
-def findings_and_log():
-    f = facts(WEAK, WEAK_FACTS)
-    return [x for r in score(RUBRIC, f) for x in r.findings], f.log
-
-
-def point(finding_id, event, quote, note="You were slow to update.", advice="Post earlier."):
-    return PointWording(finding=finding_id, event=event, quote=quote, note=note, advice=advice)
-
-
-def test_the_verifier_keeps_a_point_whose_event_and_quote_hold():
-    findings, log = findings_and_log()
-    f1 = next(x for x in findings if x.rule == "first_update")
-    kept, dropped = verify_points([point(f1.id, f1.events[0], "still on it")], findings, log)
-    assert list(kept) == [f1.id] and kept[f1.id].quote == "still on it" and dropped == []
-
-
-def test_the_verifier_drops_invented_ids_and_quotes_and_records_why():
-    findings, log = findings_and_log()
-    f1 = next(x for x in findings if x.rule == "first_update")
-    f2 = next(x for x in findings if x.rule == "no_nudges")
-    other = next(e["id"] for e in log if e["kind"] == "test_run")  # a real entry that is not evidence for f1
-    claims = [
-        point(f1.id, "E999", "still on it"),                                           # the entry does not exist
-        point(f1.id, f1.events[0], "I ran the tests five times"),                      # the quote is not in the entry
-        point(f1.id, other, "Run tests (ide)"),                                         # real entry and quote, but not evidence for this point
-        point("F99", f1.events[0], "still on it"),                                      # a point that does not exist
-        point(f2.id, f2.events[0], "No update from you for 5 minutes", note="Look at E777 for the proof."),  # the sentence cites an entry that does not exist
-        point(f2.id, f2.events[0], "No update from you for 5 minutes", note=" "),         # no sentence
-    ]
-    kept, dropped = verify_points(claims, findings, log)
-    assert kept == {}
-    reasons = [d.reason for d in dropped]
-    assert reasons[0] == "event E999 is not in the session log" and "the quote is not in" in reasons[1] and "not evidence for this point" in reasons[2]
-    assert reasons[3] == "there is no finding F99" and "does not exist" in reasons[4] and reasons[5] == "the point has no sentence"
-    assert [d.finding for d in dropped] == [f1.id, f1.id, f1.id, "", f2.id, f2.id]
-
-
-def test_a_second_sentence_for_the_same_point_is_dropped():
-    findings, log = findings_and_log()
-    f1 = next(x for x in findings if x.rule == "first_update")
-    kept, dropped = verify_points([point(f1.id, f1.events[0], "still on it"), point(f1.id, f1.events[0], "still on it", note="Another one.")], findings, log)
-    assert len(kept) == 1 and dropped[0].reason == "a second sentence for the same point"
-
-
-# -- the wording call: the model, or the template when it cannot be used --------------------------------------------
-
-class WordingLLM(ScenarioLLM):
-    def __init__(self, points=None, fail=False, delay=0.0):
-        super().__init__(fail=fail, delay=delay)
-        self.points = points
-        self.wording_calls = 0
-
-    def call(self, model_id, messages, schema_model, temperature=0.2):
-        if schema_model is WordingOutput:
-            self.wording_calls += 1
-            if self.delay:
-                time.sleep(self.delay)
-            if self.fail:
-                from app.providers.base import ProviderError
-                raise ProviderError("Ollama is not running")
-            self.prompt = messages[0]["content"]
-            return StructuredResult(WordingOutput(points=self.points or []), model_id, 1, 10, 5, 0.01, "{}")
-        return super().call(model_id, messages, schema_model, temperature)
-
-
-def test_the_model_is_asked_to_word_points_that_are_already_decided():
-    findings, log = findings_and_log()
-    llm = WordingLLM([point("F01", "E001", "x")])
-    points, reason = Wordsmith(llm, available=lambda: True).word(findings, log)
-    assert reason == "" and len(points) == 1 and llm.wording_calls == 1
-    assert "[GAP]" in llm.prompt and "[STRENGTH]" in llm.prompt and "WORD FOR WORD" in llm.prompt and "ok still on it" in llm.prompt and "E" in llm.prompt
-
-
-@pytest.mark.parametrize("llm,available,timeout,reason", [
-    (WordingLLM(fail=True), True, 5, "error"),
-    (WordingLLM(delay=1.0, points=[point("F01", "E001", "x")]), True, 0.2, "timeout"),
-    (WordingLLM([point("F01", "E001", "x")]), False, 5, "unavailable"),
-    (WordingLLM([]), True, 5, "invalid"),
-    (None, True, 5, "unavailable"),
-])
-def test_the_wording_falls_back_to_the_template_when_the_model_cannot_be_used(llm, available, timeout, reason):
-    findings, log = findings_and_log()
-    points, why = Wordsmith(llm, available=lambda: available, timeout=timeout).word(findings, log)
-    assert points is None and why == reason
-
-
-def test_a_second_wording_call_while_the_first_is_going_is_not_made():
-    findings, log = findings_and_log()
-    slow = WordingLLM(delay=1.0, points=[point("F01", "E001", "x")])
-    ws = Wordsmith(slow, timeout=5)
-    first = threading.Thread(target=ws.word, args=(findings, log))
-    first.start()
-    time.sleep(0.2)
-    assert ws.word(findings, log) == (None, "busy")
-    first.join()
-
-
 # -- the report -----------------------------------------------------------------------------------------------------
 
-def report_for(steps, extra, wording=None, dropped=None, reason="", history=None, attempt=1):
+def report_for(steps, extra, history=None, attempt=1):
     f = facts(steps, extra)
-    return build_report(scenario=SCN, rubric=RUBRIC, attempt=attempt, project="opd-bookings-down", facts=f, results=score(RUBRIC, f), names=NAMES, wording=wording, dropped=dropped,
-                        wording_reason=reason, history=history)
+    return build_report(scenario=SCN, rubric=RUBRIC, attempt=attempt, project="opd-bookings-down", facts=f, results=score(RUBRIC, f), names=NAMES, history=history)
 
 
 def test_the_report_of_a_strong_run():
     r = report_for(STRONG, STRONG_FACTS)
     assert r["total"] == 100 and r["max"] == 100 and r["attempt"] == 1 and r["rubric"] == {"id": "opd-bookings-down-v1", "version": 1}
     assert [(c["id"], c["score"], c["judge_name"]) for c in r["criteria"]] == [("communication", 4, "Aarav"), ("diagnosis", 4, "Karan"), ("fix_quality", 4, "Vikram"), ("testing", 4, "Ananya"), ("ownership", 4, "Aarav")]
-    assert len(r["rows"]) == 20 and all(x["kind"] == "strength" and x["verified"] and x["quote"] and x["worded_by"] == "template" and x["advice"] == "" for x in r["rows"])
+    assert len(r["rows"]) == 20 and all(x["kind"] == "strength" and x["verified"] and x["quote"] and x["worded_by"] == "rule" and x["advice"] == "" for x in r["rows"])
     fair = r["fairness"]
     assert (fair["points"], fair["quoted"], fair["matched"], fair["dropped"], fair["rubric"]) == (20, 20, 20, [], "v1") and fair["tests_rerun"] == {"ok": True, "passed": 102, "total": 102}
     assert r["focus"] and "full-marks" in r["focus"][0] and r["attempts"] == [r["attempts"][0]] and r["attempts"][0]["total"] == 100
@@ -323,31 +222,6 @@ def test_the_report_of_a_weak_run_has_gaps_with_advice_and_a_focus_list():
     first = next(x for x in r["rows"] if x["rule"] == "first_update")
     assert first["quote"] == "ok still on it" and first["t"] == 330.0 and first["source"] == "#incident-opd · You" and r["events"][first["event"]]["text"] == "ok still on it"
     assert r["criteria"][0]["descriptor"] == RUBRIC.criterion("communication").descriptors["0"]
-
-
-def test_wording_that_survived_the_verifier_replaces_the_template_and_the_drops_are_listed():
-    f = facts(WEAK, WEAK_FACTS)
-    findings = [x for res in score(RUBRIC, f) for x in res.findings]
-    f1 = next(x for x in findings if x.rule == "first_update")
-    kept, dropped = verify_points([point(f1.id, f1.events[0], "ok still on it", note="Your first update said nothing about the cause.", advice="Name the column in your first post."),
-                                   point("F02", "E999", "never happened", note="You never ran the tests.")], findings, f.log)
-    r = report_for(WEAK, WEAK_FACTS, kept, dropped, reason="")
-    row = next(x for x in r["rows"] if x["rule"] == "first_update")
-    assert row["worded_by"] == "model" and row["note"] == "Your first update said nothing about the cause." and row["advice"] == "Name the column in your first post."
-    assert r["fairness"]["dropped"] == [{"finding": "F02", "text": "You never ran the tests.", "reason": "event E999 is not in the session log"}]
-    assert r["fairness"]["wording"] == {"source": "mixed", "reason": "", "model_points": 1, "copied": 0} and r["fairness"]["points"] == 20 and r["fairness"]["matched"] == 20
-    assert r["total"] == 20  # the wording never changes a score
-
-
-def test_a_row_whose_quote_is_wrong_is_never_shown():
-    f = facts(WEAK, WEAK_FACTS)
-    findings = [x for res in score(RUBRIC, f) for x in res.findings]
-    f1 = next(x for x in findings if x.rule == "first_update")
-    forged = {f1.id: PointWording(finding=f1.id, event=f1.events[0], quote="we fixed it at 01:00", note="x", advice="y")}  # as if the verifier had been skipped
-    r = report_for(WEAK, WEAK_FACTS, forged)
-    row = next(x for x in r["rows"] if x["rule"] == "first_update")
-    assert row["worded_by"] == "template" and row["quote"] == "ok still on it"
-    assert r["fairness"]["dropped"][0]["reason"].startswith("the quote is not in") and r["fairness"]["matched"] == r["fairness"]["points"]
 
 
 def test_the_markdown_report_lists_every_criterion_the_fairness_checks_and_the_attempts(tmp_path):

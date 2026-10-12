@@ -513,7 +513,7 @@ class Session:
     def session_info(self) -> dict:
         """The whole session so far: the scenario, the clock, every logged event (quotable by id), the guide and the channel."""
         orch = self._scenario_build()
-        return {"scenario": orch.scenario.public(), "attempt": orch.attempt, "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
+        return {"scenario": orch.scenario.public(), "attempt": orch.attempt, "scoring": orch.debrief.rubric.scoring() if orch.debrief else [], "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
                 "summary": orch.log.summary(), "events": orch.log.events(), "guide": orch.guide.state(), "messages": list(orch.director.messages)}
 
     def report(self, markdown: bool = False) -> dict | str:

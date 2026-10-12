@@ -14,7 +14,6 @@ from app.scenarios.loader import TimelineItem, load_scenario
 from app.scenarios.reports import build_report, render_markdown
 from app.scenarios.rubric import load_rubric
 from app.scenarios.scoring import Facts, display_name, event_text, score, source_label
-from app.scenarios.wording import PointWording
 
 from scenario_fixtures import APPT, DOCT, MIGRATION, REGRESSION, STRONG, STRONG_FACTS, SUBMIT_OK, WEAK, WEAK_FACTS, facts, make_log
 from scenario_helpers import ScenarioLLM
@@ -242,7 +241,7 @@ def test_the_hand_test_log_scored_as_it_was_and_after_the_fixes():
     assert finding(before, "few_hints").kind == "gap" and finding(after, "few_hints").kind == "strength" and finding(after, "no_pointer_needed").kind == "strength"
     # the first save of any file (08:38, the empty regression test) comes before the first run of the tests (17:55): the tests were not run first
     gap = finding(after, "reproduced_first")
-    assert gap.kind == "gap" and "started editing at 08:38; the first test run came at 17:55" in gap.text
+    assert gap.kind == "gap" and gap.text == "You started editing at 08:38 before you had run the tests."
     assert finding(after, "no_nudges").kind == "gap" and "3 times" in finding(after, "no_nudges").text
 
 
@@ -256,7 +255,7 @@ def test_reproduced_first_cites_the_first_test_run_and_quotes_its_result_line():
     x = finding(f, "reproduced_first")
     by = {e["id"]: e for e in f.log}
     assert by[x.events[0]]["t"] == 26 and event_text(by[x.events[0]]) == "12 failed, 89 passed in 4.1s" and by[x.events[1]]["t"] == 20
-    assert "ran the tests at 00:20 (12 failed, 89 passed in 4.1s), before the first edit" in x.text
+    assert x.text == "Your first test run finished at 00:26 (12 failed, 89 passed in 4.1s), before the first edit."  # the time is the quoted result line's
 
 
 def test_the_first_edit_is_the_first_save_of_any_file_a_test_included():
@@ -274,7 +273,7 @@ def test_green_before_submit_is_the_last_green_run_and_must_come_after_the_last_
     stale = [s for s in STRONG] + [(160, "file_saved", {"role": "backend", "path": APPT, "added": 1, "removed": 0, "size": 1, "created": False})]  # saved again after the green run
     stale.sort(key=lambda s: s[0])
     gap = finding(facts(stale, STRONG_FACTS), "green_before_submit")
-    assert gap.kind == "gap" and "came before your last change" in gap.text
+    assert gap.kind == "gap" and "after your last green run" in gap.text and gap.events[0] != finding(facts(STRONG, STRONG_FACTS), "green_before_submit").events[0]
 
 
 def test_reported_the_outcome_needs_a_post_after_the_last_green_run():
@@ -296,13 +295,14 @@ def test_the_regression_test_is_quoted_by_the_save_that_holds_its_lines_not_the_
     assert f.first_edit["added"] == 0  # the empty file is still the first save
 
 
-def test_the_old_name_point_cites_the_last_save_and_a_search_for_the_name_is_another_proof():
-    steps = STRONG + [(125, "search", {"role": "backend", "query": "slot_time", "matches": 9, "files": 4})]
-    steps.sort(key=lambda s: s[0])
-    f = facts(steps, STRONG_FACTS)
+def test_the_old_name_point_quotes_the_debriefs_own_scan_of_the_folder():
+    f = facts(STRONG, STRONG_FACTS)
     by = {e["id"]: e for e in f.log}
     x = finding(f, "old_name_gone")
-    assert by[x.events[0]]["path"] == DOCT and any(by[i]["kind"] == "search" for i in x.events) and event_text(by[x.events[-1]] if False else next(by[i] for i in x.events if by[i]["kind"] == "search")) == "Searched for “slot_time”: 9 matches in 4 files"
+    assert by[x.events[0]]["kind"] == "debrief_check" and event_text(by[x.events[0]]) == "Debrief scan of backend/: no file says slot_time any more"
+    left = Facts(make_log(STRONG), old_name_files=[APPT, DOCT], rerun=STRONG_FACTS["rerun"], regression=STRONG_FACTS["regression"])
+    y = finding(left, "old_name_gone")
+    assert y.kind == "gap" and event_text(next(e for e in left.log if e["id"] == y.events[0])) == f"Debrief scan of backend/: slot_time is still in {APPT}, {DOCT}" and y.text == f"slot_time is still used in {APPT}, {DOCT}."
 
 
 # -- 4. names, never role ids -----------------------------------------------------------------------------------------------
@@ -338,45 +338,11 @@ def test_a_criterion_summary_lists_what_held_and_what_was_missed():
     assert next(c for c in weak["criteria"] if c["id"] == "testing")["summary"].startswith("Nothing held. Missed: a green run of your own before Submit")
 
 
-# -- 7. one quote does not repeat ----------------------------------------------------------------------------------------------
-
-def test_points_quote_different_entries_where_another_entry_proves_the_point():
-    for steps, extra in ((STRONG, STRONG_FACTS), (WEAK, WEAK_FACTS)):
-        r = report(facts(steps, extra))
-        quoted = [x["event"] for x in r["rows"]]
-        assert max(quoted.count(e) for e in set(quoted)) <= 3, quoted  # the thin fixture sessions have few entries; the real run below has a distinct quote for every point
-    real = report(Facts(real_log(True), **REAL_FACTS))
-    quoted = [x["event"] for x in real["rows"]]
-    assert len(set(quoted)) == len(quoted) == 20  # every point of the hand-test run has its own quote
-
-
 def test_every_point_still_cites_an_entry_when_it_is_the_only_one():
     steps = [(0, "session_started", {"scenario": "x", "role": "backend"}), (10, "session_finished", {"ok": False})]
     r = report(Facts(make_log(steps)))
-    assert len(r["rows"]) == 20 and all(x["event"] in ("E001", "E002") and x["verified"] for x in r["rows"])
-
-
-# -- 8. who wrote the sentences ---------------------------------------------------------------------------------------------------
-
-def test_a_sentence_the_model_copied_from_the_template_is_labelled_template():
-    f = facts(STRONG, STRONG_FACTS)
-    fs = [x for res in score(RUBRIC, f) for x in res.findings]
-    first, second = fs[0], fs[1]
-    wording = {first.id: PointWording(finding=first.id, event=first.events[0], quote=event_text(next(e for e in f.log if e["id"] == first.events[0]))[:30], note=first.text),  # word for word
-               second.id: PointWording(finding=second.id, event=second.events[0], quote=event_text(next(e for e in f.log if e["id"] == second.events[0]))[:30], note="You posted early, so the lead did not have to ask.")}
-    r = report(f, wording=wording)
-    rows = {x["rule"]: x for x in r["rows"]}
-    assert rows[first.rule]["worded_by"] == "template" and rows[second.rule]["worded_by"] == "model" and rows[second.rule]["note"] == "You posted early, so the lead did not have to ask."
-    w = r["fairness"]["wording"]
-    assert w["source"] == "mixed" and w["model_points"] == 1 and w["copied"] == 1 and "repeated the template sentence word for word for 1 point" in w["reason"]
-    assert "[AI wording]" in render_markdown(r, NAMES) and "[template]" in render_markdown(r, NAMES)
-    none = report(f, wording={first.id: wording[first.id]})
-    assert none["fairness"]["wording"]["source"] == "template" and none["fairness"]["wording"]["model_points"] == 0
-
-
-def test_a_report_without_any_model_wording_says_template():
-    r = report(facts(STRONG, STRONG_FACTS), wording_reason="error")
-    assert r["fairness"]["wording"] == {"source": "template", "reason": "error", "model_points": 0, "copied": 0} and {x["worded_by"] for x in r["rows"]} == {"template"}
+    by = {e["id"]: e for e in Facts(make_log(steps)).log}
+    assert len(r["rows"]) == 20 and all((x["event"] in ("E001", "E002") or by[x["event"]]["kind"] == "debrief_check") and x["verified"] for x in r["rows"])
 
 
 # -- 6. new files --------------------------------------------------------------------------------------------------------------------
@@ -384,7 +350,7 @@ def test_a_report_without_any_model_wording_says_template():
 def test_a_new_file_counts_every_line_as_added():
     assert diff_stats("", "a\nb\nc\n") == (3, 0) and diff_stats("", "single line without newline") == (1, 0) and diff_stats("", "") == (0, 0)
     assert diff_stats("a\n", "a\nb\n") == (1, 0)
-    assert event_text({"kind": "file_saved", "path": "tests/regression/test_x.py", "added": 53, "removed": 0, "created": True}) == "Created tests/regression/test_x.py (+53 lines)"
+    assert event_text({"kind": "file_saved", "path": "tests/regression/test_x.py", "added": 53, "removed": 0, "created": True}) == "Created tests/regression/test_x.py (+53 -0 lines)"
     assert event_text({"kind": "file_saved", "path": "tests/regression/test_x.py", "added": 0, "removed": 0, "created": True}) == "Created tests/regression/test_x.py (empty file)"
     assert event_text({"kind": "file_saved", "path": "a.py", "added": 1, "removed": 1}) == "Saved a.py (+1 -1 lines)"
 

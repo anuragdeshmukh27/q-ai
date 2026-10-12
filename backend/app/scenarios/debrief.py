@@ -17,11 +17,11 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from ..humanide import SuiteRun
-from .reports import History, build_report, write_report
+from ..humanide import SuiteRun, summary_line
+from .reports import History, attach_voices, build_report, write_report
 from .rubric import Rubric
 from .scoring import Facts, clock, score
-from .wording import Wordsmith, verify_points
+from .wording import Wordsmith, build_voices
 
 if TYPE_CHECKING:
     from .build import ScenarioBuild
@@ -52,8 +52,12 @@ def scan_old_name(root: Path, folder: str, name: str) -> list[str]:
 
 
 def fails_on_seed(seed_dir: Path, project: Path, rel: str) -> bool:
+    return run_on_seed(seed_dir, project, rel)[0]
+
+
+def run_on_seed(seed_dir: Path, project: Path, rel: str) -> tuple[bool, str]:
     """The learner's new test, put into a fresh copy of the seed (the project as it was before the fix): it has to fail there, and fail by an assertion or an error of the
-    test run (exit code 1), not because the file cannot be loaded (exit code 2) or holds no test (5)."""
+    test run (exit code 1), not because the file cannot be loaded (exit code 2) or holds no test (5). Returns (it failed that way, pytest's summary line, "1 failed in 0.4s")."""
     tmp = Path(tempfile.mkdtemp(prefix="q-seed-"))
     try:
         copy = tmp / "seed"
@@ -62,11 +66,21 @@ def fails_on_seed(seed_dir: Path, project: Path, rel: str) -> bool:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(Path(project) / rel, target)
         r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--color=no", rel], cwd=copy, capture_output=True, text=True, timeout=SEED_TIMEOUT)
-        return r.returncode == 1
+        return r.returncode == 1, summary_line(r.stdout, "")
     except (OSError, subprocess.TimeoutExpired):
-        return False
+        return False, "could not be run"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def moment_of(criterion: dict, rows: list[dict]) -> dict | None:
+    """The moment a judge talks about: the first gap of the criterion (with its tip), else its first strength (with what to keep doing)."""
+    mine = [r for r in rows if r["criterion"] == criterion["id"]]
+    gap = next((r for r in mine if r["kind"] == "gap"), None)
+    row = gap or (mine[0] if mine else None)
+    if row is None:
+        return None
+    return {"t": row["t"], "quote": _clip(row["quote"], 90), "note": row["note"], "tip": row["advice"] if gap and gap["advice"] else criterion["keep"]}
 
 
 def judge_post(criterion: dict, rows: list[dict]) -> tuple[str, str]:
@@ -128,18 +142,17 @@ class Debrief:
             return b.emit("debrief_ended", ok=False)
         facts = self.measure()
         results = score(self.rubric, facts)
-        findings = [f for r in results for f in r.findings]
-        points, reason = self.wordsmith.word(findings, facts.log)
-        kept, dropped = verify_points(points or [], findings, facts.log)
-        if points is not None and not kept:
-            reason = reason or "every point was dropped by the verifier"
         report = build_report(scenario=b.scenario, rubric=self.rubric, attempt=self.attempt, project=b.root.name if b.root else "", facts=facts, results=results, names=names,
-                              wording=kept, dropped=dropped, wording_reason=reason, history=self.history.attempts())
+                              history=self.history.attempts())
+        # the points are final: the model only says them aloud (each judge's line, the coach paragraph), and a line that says anything else is dropped
+        moments = {c["id"]: m for c in report["criteria"] if (m := moment_of(c, report["rows"]))}
+        lines, coach, dropped, reason = build_voices(report, self.wordsmith, moments, lambda c: judge_post(c, report["rows"]))
+        attach_voices(report, lines, coach, dropped, reason)
         for c in report["criteria"]:
             if self._halted.is_set():
                 return b.emit("debrief_ended", ok=False)
-            text, bubble = judge_post(c, report["rows"])
-            b.director.announce(c["judge"], text, bubble=bubble, debrief=True, criterion=c["id"], score=c["score"])
+            said = lines[c["id"]]
+            b.director.announce(c["judge"], said["text"], bubble=said["bubble"], debrief=True, criterion=c["id"], score=c["score"], voice=said["source"])
             self._wait(self.pace)
         if self._halted.is_set():
             return b.emit("debrief_ended", ok=False)
@@ -166,8 +179,8 @@ class Debrief:
         old_name_files: list[str] = []
         rerun: dict | None = None
         regression: dict | None = None
+        rule = next((r for c in self.rubric.criteria for r in c.rules if r.id == "old_name_gone"), None)
         if root and Path(root).is_dir():
-            rule = next((r for c in self.rubric.criteria for r in c.rules if r.id == "old_name_gone"), None)
             if rule:
                 old_name_files = scan_old_name(root, str(rule.params.get("folder", "backend")), str(rule.params.get("old_name", "")))
             try:
@@ -178,5 +191,9 @@ class Debrief:
             if saved and (Path(root) / saved[-1]).is_file():
                 rel = saved[-1]
                 mine = [t for t in (rerun or {}).get("tests", []) if t["id"].startswith(rel + "::")]
-                regression = {"path": rel, "fails_on_seed": fails_on_seed(b.scenario.seed_dir, root, rel), "passes_on_main": bool(mine) and all(t["outcome"] == "passed" for t in mine)}
-        return Facts(log, minutes=b.scenario.minutes, old_name_files=old_name_files, rerun=rerun, regression=regression)
+                failed_on_seed, seed_summary = run_on_seed(b.scenario.seed_dir, root, rel)
+                ok_main = sum(1 for t in mine if t["outcome"] == "passed")
+                regression = {"path": rel, "fails_on_seed": failed_on_seed, "passes_on_main": bool(mine) and ok_main == len(mine), "seed_summary": seed_summary or None,
+                              "main_summary": f"{ok_main} passed" + (f", {len(mine) - ok_main} failed" if len(mine) != ok_main else "") if mine else None}
+        scan = (str(rule.params.get("folder", "backend")), str(rule.params.get("old_name", ""))) if rule else ("backend", "slot_time")
+        return Facts(log, minutes=b.scenario.minutes, old_name_files=old_name_files, rerun=rerun, regression=regression, scan=scan)

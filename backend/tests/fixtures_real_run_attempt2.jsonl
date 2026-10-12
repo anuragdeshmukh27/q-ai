@@ -1,0 +1,45 @@
+{"id": "E001", "t": 0.0, "kind": "session_started", "scenario": "opd-bookings-down", "role": "backend"}
+{"id": "E002", "t": 1.8, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E003", "t": 3.0, "kind": "team_message", "message": "C001", "from": "qa", "text": "Booking is down. POST /api/doctors/{id}/appointments returns 500 for every patient. The server log says: TypeError: add_appointment() got an unexpected keyword argument 'slot_time'. Editing an appointment fails the same way, and GET /api/doctors/{id}/slots dies with KeyError: 'slot_time'. Listing and cancelling still work. It started after Monday's deploy.", "source": "scripted", "ref": "qa-report"}
+{"id": "E004", "t": 28.5, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E005", "t": 41.6, "kind": "test_result", "task": "h1", "ok": false, "passed": 89, "failed": ["tests/api/test_booking.py::test_booking_an_appointment_returns_201", "tests/api/test_booking.py::test_editing_an_appointment_moves_its_time", "tests/api/test_booking.py::test_doctor_slots_list_the_booked_times_of_the_day", "tests/api/test_contract_appointments.py::test_put_api_appointments_id_1_rejects_an_unknown_id", "tests/api/test_contract_appointments.py::test_appointments_are_created_and_listed_under_their_doctor", "tests/api/test_contract_appointments.py::test_appointments_belong_to_one_doctor_only", "tests/api/test_contract_appointments.py::test_deleting_a_doctor_deletes_its_appointments", "tests/api/test_contract_appointments.py::test_appointments_blank_required_text_is_a_400_with_a_message", "tests/api/test_contract_appointments.py::test_appointments_complete_sets_status_to_completed", "tests/api/test_contract_appointments.py::test_appointments_cancel_sets_status_to_cancelled", "tests/api/test_contract_appointments.py::test_appointments_rule_values_are_checked_with_a_400_and_a_message", "tests/api/test_contract_appointments.py::test_appointments_status_cannot_leave_completed"], "summary": "12 failed, 89 passed in 12.59s", "trigger": "ide"}
+{"id": "E006", "t": 67.2, "kind": "search", "role": "backend", "query": "slot_time", "matches": 10, "files": 5}
+{"id": "E007", "t": 90.5, "kind": "team_message", "message": "C002", "from": "architect", "text": "Any update on the booking failure? Please post what you have found so far in this channel, even if it is only 'still looking'.", "source": "scripted", "ref": "lead-update"}
+{"id": "E008", "t": 96.7, "kind": "file_opened", "role": "backend", "path": "database/migrations/0007_rename_slot_time_to_slot_at.sql"}
+{"id": "E009", "t": 188.8, "kind": "message_posted", "message": "C003", "text": "Update: bookings fail since migration 0007 renamed slot_time to slot_at. Both route files still use slot_time. Fixing now, next update in 5 minutes.", "to": ["architect"]}
+{"id": "E010", "t": 188.8, "kind": "team_message", "message": "C004", "from": "architect", "text": "Thanks for the update. Keep us posted.", "source": "scripted", "ref": "C003"}
+{"id": "E011", "t": 203.8, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E012", "t": 224.7, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 0, "removed": 0, "size": 0, "created": true}
+{"id": "E013", "t": 224.7, "kind": "file_opened", "role": "backend", "path": "tests/regression/test_regression_slot_at.py"}
+{"id": "E014", "t": 231.2, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 37, "removed": 0, "size": 1605, "created": false}
+{"id": "E015", "t": 233.2, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E016", "t": 234.3, "kind": "test_result", "task": "h1", "ok": false, "passed": 0, "failed": ["tests/regression/test_regression_slot_at.py"], "summary": "1 error in 0.53s", "trigger": "ide"}
+{"id": "E017", "t": 261.0, "kind": "search", "role": "backend", "query": "slot_time", "matches": 14, "files": 6}
+{"id": "E018", "t": 300.1, "kind": "file_saved", "role": "backend", "path": "backend/api/appointments.py", "added": 4, "removed": 4, "size": 6840, "created": false}
+{"id": "E019", "t": 305.8, "kind": "file_opened", "role": "backend", "path": "backend/api/doctors.py"}
+{"id": "E020", "t": 309.6, "kind": "file_saved", "role": "backend", "path": "backend/api/doctors.py", "added": 1, "removed": 1, "size": 5027, "created": false}
+{"id": "E021", "t": 312.6, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E022", "t": 313.6, "kind": "test_result", "task": "h1", "ok": false, "passed": 0, "failed": ["tests/regression/test_regression_slot_at.py"], "summary": "1 error in 0.52s", "trigger": "ide"}
+{"id": "E023", "t": 327.0, "kind": "message_posted", "message": "C005", "text": "Both files fixed, regression test added. Running the full suite now.", "to": ["architect"]}
+{"id": "E024", "t": 327.0, "kind": "team_message", "message": "C006", "from": "architect", "text": "Noted. Tell me if you need anyone.", "source": "scripted", "ref": "C005"}
+{"id": "E025", "t": 333.4, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E026", "t": 346.0, "kind": "file_opened", "role": "backend", "path": "tests/regression/test_regression_slot_at.py"}
+{"id": "E027", "t": 351.1, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 0, "removed": 0, "size": 1605, "created": false}
+{"id": "E028", "t": 353.9, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E029", "t": 354.8, "kind": "test_result", "task": "h1", "ok": false, "passed": 0, "failed": ["tests/regression/test_regression_slot_at.py"], "summary": "1 error in 0.51s", "trigger": "ide"}
+{"id": "E030", "t": 368.8, "kind": "file_opened", "role": "backend", "path": "backend/api/doctors.py"}
+{"id": "E031", "t": 374.5, "kind": "file_opened", "role": "backend", "path": "database/migrations/0007_rename_slot_time_to_slot_at.sql"}
+{"id": "E032", "t": 386.8, "kind": "file_opened", "role": "backend", "path": "tests/api/test_booking.py"}
+{"id": "E033", "t": 393.7, "kind": "file_saved", "role": "backend", "path": "tests/regression/test_regression_slot_at.py", "added": 42, "removed": 26, "size": 2886, "created": false}
+{"id": "E034", "t": 394.3, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E035", "t": 400.4, "kind": "test_result", "task": "h1", "ok": true, "passed": 105, "failed": [], "summary": "105 passed in 5.65s", "trigger": "ide"}
+{"id": "E036", "t": 415.4, "kind": "message_posted", "message": "C007", "text": "Fix is ready: both routes use slot_at, regression test passes, all tests green. Submitting.", "to": ["architect"]}
+{"id": "E037", "t": 415.4, "kind": "team_message", "message": "C008", "from": "architect", "text": "Good, thanks. Is anything blocking you?", "source": "scripted", "ref": "C007"}
+{"id": "E038", "t": 420.1, "kind": "file_opened", "role": "backend", "path": "backend/api/appointments.py", "auto": true}
+{"id": "E039", "t": 422.8, "kind": "submit", "task": "h1"}
+{"id": "E040", "t": 422.9, "kind": "test_run", "task": "h1", "trigger": "submit"}
+{"id": "E041", "t": 428.3, "kind": "test_result", "task": "h1", "ok": true, "passed": 105, "failed": [], "summary": "105 passed in 5.03s", "trigger": "submit"}
+{"id": "E042", "t": 437.6, "kind": "submit_result", "task": "h1", "ok": true, "stage": "accepted", "summary": "105 passed in 5.03s", "failed": [], "review_items": 0}
+{"id": "E043", "t": 437.6, "kind": "team_message", "message": "C009", "from": "architect", "text": "Accepted and merged. Thank you, the desk can book again. Ananya, please run your checks on main.", "source": "scripted", "ref": "react-accepted-lead"}
+{"id": "E044", "t": 443.6, "kind": "team_message", "message": "C010", "from": "qa", "text": "Checked on main: booking, editing and the slot picker all work again.", "source": "scripted", "ref": "react-accepted-qa"}
+{"id": "E045", "t": 449.7, "kind": "session_finished", "ok": true}

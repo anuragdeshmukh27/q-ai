@@ -19,7 +19,6 @@ from ..integrator import Integrator
 from ..memory import MessageBus, ProjectMemory
 from ..orchestrator import Orchestrator
 from ..project import git, slugify
-from ..projectfiles import ProjectFileError, read_project_file
 from ..repo import Repo
 from ..schemas import ArchitectOutput
 from .debrief import Debrief
@@ -69,7 +68,8 @@ class ScenarioBuild(Orchestrator):
     # -- the pipeline -----------------------------------------------------------------
     def run(self):
         self.emit("scenario_started", scenario=self.scenario.id, title=self.scenario.title, role=self.scenario.role, minutes=self.scenario.minutes,
-                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at, attempt=self.attempt)
+                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at, attempt=self.attempt,
+                  scoring=self.debrief.rubric.scoring() if self.debrief else [])
         self.log.add("session_started", scenario=self.scenario.id, role=self.scenario.role)
         self.director.start()
         return super().run()
@@ -153,14 +153,20 @@ class ScenarioBuild(Orchestrator):
     def ide_write(self, role: str, rel: str, content: str) -> dict:
         wt = self._ide_worktree(role)
         created = not (wt / rel).is_file()
-        try:
-            before = "" if created else read_project_file(wt, rel)["content"]
-        except Exception:  # a path the write below will refuse with its own message
-            before = ""
-        out = super().ide_write(role, rel, content)
-        added, removed = diff_stats(before, content)  # a new file has nothing before it: every line is added
+        out = super().ide_write(role, rel, content)  # refuses a path that is not yours before anything is logged
+        added, removed = diff_stats(self._starting_text(rel), content)  # against the file as the incident started: a file you created is all added, and saving it again never adds more
         self.log.add("file_saved", role=role, path=out["path"], added=added, removed=removed, size=out["size"], created=created)
         return out
+
+    def _starting_text(self, rel: str) -> str:
+        """The file as it was in the seed ("" for a file the learner created)."""
+        seed = self.scenario.seed_dir.resolve()
+        target = (seed / rel).resolve()
+        try:
+            target.relative_to(seed)
+            return target.read_text(encoding="utf-8") if target.is_file() else ""
+        except (ValueError, OSError):
+            return ""
 
     def ide_search(self, role: str, query: str) -> dict:
         """A project-wide search: read-only files included. Every search is logged with its query and how much it found (the debrief can use that)."""

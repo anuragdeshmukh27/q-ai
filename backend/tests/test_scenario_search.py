@@ -67,7 +67,7 @@ def test_a_new_file_counts_its_lines_as_added_and_is_marked_created(scenario):
     assert put("tests/regression/test_regression_empty.py", "").status_code == 200
     assert put("tests/regression/test_regression_a.py", "def test_a():\n    assert True\n").status_code == 200  # an edit of a file that exists now
     saved = s.orch.log.events("file_saved")
-    assert [(e["path"].rsplit("/", 1)[1], e["added"], e["removed"], e["created"]) for e in saved] == [("test_regression_a.py", 6, 0, True), ("test_regression_empty.py", 0, 0, True), ("test_regression_a.py", 0, 4, False)]
+    assert [(e["path"].rsplit("/", 1)[1], e["added"], e["removed"], e["created"]) for e in saved] == [("test_regression_a.py", 6, 0, True), ("test_regression_empty.py", 0, 0, True), ("test_regression_a.py", 2, 0, False)]  # a file you created is all added, however often you save it
 
 
 def test_a_status_update_is_acknowledged_once_and_costs_no_hint_but_a_question_does(scenario):
@@ -84,3 +84,4 @@ def test_a_status_update_is_acknowledged_once_and_costs_no_hint_but_a_question_d
     assert llm.chat_calls == 1 and client.get(f"/api/projects/{pid}/session").json()["summary"]["hints"] == 1
     hint = s.orch.log.events("hint_given")[0]
     assert hint["from"] == "database" and hint["text"] == "Migration 0007 renamed the column." and hint["n"] == 1
+

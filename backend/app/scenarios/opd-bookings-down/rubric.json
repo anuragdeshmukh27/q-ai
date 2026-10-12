@@ -20,10 +20,10 @@
       "signals": ["message_posted", "team_message"],
       "keep": "Keep posting a short status as soon as you know something, even when it is only 'still looking'.",
       "rules": [
-        {"id": "first_update", "label": "a first update inside two minutes", "params": {"within": 120}, "advice": "Post a first update in the channel within two minutes, even if it is only what you have seen so far."},
-        {"id": "answered_requests", "label": "the lead's request answered at once", "params": {"within": 60}, "advice": "When the lead asks for an update, answer within a minute, even if nothing has changed."},
-        {"id": "no_nudges", "label": "no quiet stretch of five minutes", "params": {}, "advice": "Set a timer for each promised update: do not let five quiet minutes pass without a post."},
-        {"id": "names_the_cause", "label": "the cause named in the channel", "params": {"pattern": "slot_at|slot_time|migration|0007|renam"}, "advice": "Say what you found, not only that you are working on it: name the column, the migration or the file."}
+        {"id": "first_update", "plain": "Post a first update in #incident-opd within 2 minutes of the start.", "label": "a first update inside two minutes", "params": {"within": 120}, "advice": "Post a first update in the channel within two minutes, even if it is only what you have seen so far."},
+        {"id": "answered_requests", "plain": "When Aarav asks for an update, answer within a minute.", "label": "the lead's request answered at once", "params": {"within": 60}, "advice": "When the lead asks for an update, answer within a minute, even if nothing has changed."},
+        {"id": "no_nudges", "plain": "Never let 5 quiet minutes pass without a post, so Aarav does not have to nudge you.", "label": "no quiet stretch of five minutes", "params": {}, "advice": "Set a timer for each promised update: do not let five quiet minutes pass without a post."},
+        {"id": "names_the_cause", "plain": "Say in the channel what you found: name the column, the migration or the file.", "label": "the cause named in the channel", "params": {"pattern": "slot_at|slot_time|migration|0007|renam"}, "advice": "Say what you found, not only that you are working on it: name the column, the migration or the file."}
       ]
     },
     {
@@ -40,10 +40,10 @@
       "signals": ["test_run", "file_opened", "hint_given"],
       "keep": "Keep reproducing first and reading what changed before you touch a file.",
       "rules": [
-        {"id": "reproduced_first", "label": "the tests run before the first edit", "params": {}, "advice": "Run the tests and read the first error line of each failure before you change anything."},
-        {"id": "read_the_route", "label": "the failing route read before editing", "params": {"pattern": "backend/api/*"}, "advice": "Open the file named in the error and find the failing call before you edit."},
-        {"id": "read_the_migration", "label": "the migration read (or searched for) before editing", "params": {"pattern": "database/migrations/0007*", "search": "slot_time|slot_at|migration|0007"}, "advice": "Something changed on Monday: read the newest migration in database/migrations before you edit."},
-        {"id": "no_pointer_needed", "label": "found without a pointer", "params": {"pattern": "database/migrations/0007*"}, "advice": "Look at what changed in the database yourself before you wait for a teammate to point at it."}
+        {"id": "reproduced_first", "plain": "Run the tests before you save any file, and read why they fail.", "label": "the tests run before the first edit", "params": {}, "advice": "Run the tests and read the first error line of each failure before you change anything."},
+        {"id": "read_the_route", "plain": "Open one of the failing route files (backend/api/appointments.py or doctors.py) before your first save.", "label": "the failing route read before editing", "params": {"pattern": "backend/api/*"}, "advice": "Open the file named in the error and find the failing call before you edit."},
+        {"id": "read_the_migration", "plain": "Open the newest migration, or search the project for the column name, before your first save.", "label": "the migration read (or searched for) before editing", "params": {"pattern": "database/migrations/0007*", "search": "slot_time|slot_at|migration|0007"}, "advice": "Something changed on Monday: read the newest migration in database/migrations before you edit."},
+        {"id": "no_pointer_needed", "plain": "Find the database change yourself, before Karan has to point at it (about 4 minutes in).", "label": "found without a pointer", "params": {"pattern": "database/migrations/0007*"}, "advice": "Look at what changed in the database yourself before you wait for a teammate to point at it."}
       ]
     },
     {
@@ -60,10 +60,10 @@
       "signals": ["file_saved", "submit_result"],
       "keep": "Keep changing only what the problem needs, and searching for every use of a renamed name.",
       "rules": [
-        {"id": "old_name_gone", "label": "every use of the old name changed", "params": {"old_name": "slot_time", "folder": "backend"}, "advice": "Search the whole backend folder for the old name before you submit: the same name can be used in more than one file."},
-        {"id": "suite_green_on_main", "label": "the whole suite green on my re-run", "params": {}, "advice": "Run the whole suite, not only the acceptance tests, before you submit."},
-        {"id": "small_change", "label": "a small change", "params": {"max_lines": 20}, "advice": "Change only the lines the rename needs; a small change is easier to review and safer to ship."},
-        {"id": "review_clean", "label": "no review send-back", "params": {}, "advice": "Read your own diff the way the Reviewer will before you submit, so it does not come back with items."}
+        {"id": "old_name_gone", "plain": "Change every use of the old column name under backend/. A scan after the submit checks it.", "label": "every use of the old name changed", "params": {"old_name": "slot_time", "folder": "backend"}, "advice": "Search the whole backend folder for the old name before you submit: the same name can be used in more than one file."},
+        {"id": "suite_green_on_main", "plain": "The whole test suite passes on the merged project. The debrief re-runs it.", "label": "the whole suite green on my re-run", "params": {}, "advice": "Run the whole suite, not only the acceptance tests, before you submit."},
+        {"id": "small_change", "plain": "Keep the change small: 20 lines or fewer across your files.", "label": "a small change", "params": {"max_lines": 20}, "advice": "Change only the lines the rename needs; a small change is easier to review and safer to ship."},
+        {"id": "review_clean", "plain": "Vikram reads your change and sends nothing back.", "label": "no review send-back", "params": {}, "advice": "Read your own diff the way the Reviewer will before you submit, so it does not come back with items."}
       ]
     },
     {
@@ -80,10 +80,10 @@
       "signals": ["test_run", "test_result", "file_saved", "submit_result"],
       "keep": "Keep adding a regression test with every bug fix: it is the part that outlives the incident.",
       "rules": [
-        {"id": "green_before_submit", "label": "a green run of your own before Submit", "params": {}, "advice": "Run the tests yourself and see them green before you press Submit."},
-        {"id": "no_red_submit", "label": "no red submit", "params": {}, "advice": "Submit only when your own run is green: a red submit costs a round trip."},
-        {"id": "regression_test_added", "label": "a regression test added", "params": {"pattern": "tests/regression/test_*.py"}, "advice": "Add a regression test in tests/regression/ for the bug you fixed."},
-        {"id": "regression_test_proves_fix", "label": "a regression test that fails before the fix and passes after", "params": {}, "advice": "Run your new test before you fix the code: it has to be red then, and green after the fix."}
+        {"id": "green_before_submit", "plain": "Run the tests after your last change and see them green before you press Submit.", "label": "a green run of your own before Submit", "params": {}, "advice": "Run the tests yourself and see them green before you press Submit."},
+        {"id": "no_red_submit", "plain": "Do not submit while tests still fail: a submit that is refused for failing tests counts against you.", "label": "no red submit", "params": {}, "advice": "Submit only when your own run is green: a red submit costs a round trip."},
+        {"id": "regression_test_added", "plain": "Add a regression test in tests/regression/ (test_regression_<what>.py).", "label": "a regression test added", "params": {"pattern": "tests/regression/test_*.py"}, "advice": "Add a regression test in tests/regression/ for the bug you fixed."},
+        {"id": "regression_test_proves_fix", "plain": "Your regression test fails on the broken code and passes on your fix. The debrief runs it both ways.", "label": "a regression test that fails before the fix and passes after", "params": {}, "advice": "Run your new test before you fix the code: it has to be red then, and green after the fix."}
       ]
     },
     {
@@ -100,10 +100,10 @@
       "signals": ["submit_result", "hint_given", "message_posted"],
       "keep": "Keep telling the team when the fix is ready and what you did.",
       "rules": [
-        {"id": "within_time_box", "label": "accepted inside the time box", "params": {}, "advice": "Watch the clock: the clinic opens at 09:00, so aim to have the fix submitted inside the time box."},
-        {"id": "few_hints", "label": "at most one hint", "params": {"max_hints": 1}, "advice": "Try the next step on your own before you ask a teammate; every answer counts as a hint."},
-        {"id": "no_scope_rejection", "label": "inside your own files", "params": {}, "advice": "Read the list of files you may edit in the task document before you change anything outside it."},
-        {"id": "reported_the_outcome", "label": "the team told that the fix was ready", "params": {}, "advice": "When the tests are green, tell the channel the fix is ready and what you changed."}
+        {"id": "within_time_box", "plain": "Get the fix accepted inside the 25 minutes.", "label": "accepted inside the time box", "params": {}, "advice": "Watch the clock: the clinic opens at 09:00, so aim to have the fix submitted inside the time box."},
+        {"id": "few_hints", "plain": "Use at most one hint. Every answer to a question of yours counts, and so does a pointer you needed.", "label": "at most one hint", "params": {"max_hints": 1}, "advice": "Try the next step on your own before you ask a teammate; every answer counts as a hint."},
+        {"id": "no_scope_rejection", "plain": "Only change files your role may edit, so Submit is not refused for scope.", "label": "inside your own files", "params": {}, "advice": "Read the list of files you may edit in the task document before you change anything outside it."},
+        {"id": "reported_the_outcome", "plain": "After your last green run, tell the channel the fix is ready.", "label": "the team told that the fix was ready", "params": {}, "advice": "When the tests are green, tell the channel the fix is ready and what you changed."}
       ]
     }
   ]
