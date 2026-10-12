@@ -26,7 +26,7 @@ export const RUG: Box = { x: 5, y: 8, w: 6, h: 4 }
 export const CHAIRS: Tile[] = [{ x: 5, y: 9 }, { x: 5, y: 10 }, { x: 10, y: 9 }, { x: 10, y: 10 }, { x: 7, y: 11 }, { x: 8, y: 11 }]
 
 // Where the team stands in the debrief: around the meeting table (the chairs, and the two tiles above the table), one tile each, in roster order.
-export const MEETING_SPOTS: Tile[] = [{ x: 5, y: 9 }, { x: 5, y: 10 }, { x: 10, y: 9 }, { x: 10, y: 10 }, { x: 7, y: 11 }, { x: 8, y: 11 }, { x: 7, y: 8 }, { x: 8, y: 8 }]
+export const MEETING_SPOTS: Tile[] = [{ x: 5, y: 9 }, { x: 5, y: 10 }, { x: 10, y: 9 }, { x: 10, y: 10 }, { x: 7, y: 11 }, { x: 8, y: 11 }, { x: 6, y: 8 }, { x: 9, y: 8 }]
 
 // Where employees stand for a coffee break (spaced so name tags do not overlap).
 export const COFFEE_SPOTS: Tile[] = [{ x: 15, y: 9 }, { x: 17, y: 9 }, { x: 15, y: 7 }, { x: 17, y: 7 }, { x: 15, y: 11 }, { x: 17, y: 11 }, { x: 14, y: 8 }, { x: 14, y: 11 }]

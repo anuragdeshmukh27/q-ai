@@ -60,6 +60,8 @@ def run(port: int, serve: bool) -> int:
     assert port not in FORBIDDEN_PORTS, "this check never uses ports 8000 or 5173"
     tmp = Path(tempfile.mkdtemp(prefix="q-scenario-e2e-"))
     settings = make_settings(tmp)
+    if serve:
+        settings.debrief_pace = 3.5  # a person watches the meeting: the judges speak a few seconds apart (the scripted check does not wait)
     llm = ScenarioLLM("That was my migration 0007: slot_time is slot_at now. I did not touch backend/.")
     mgr = SessionManager(settings, ModelRegistry.load(env={}), llm_factory=lambda registry, observer: llm)
     server = uvicorn.Server(uvicorn.Config(create_app(settings, mgr), host="127.0.0.1", port=port, log_level="warning"))

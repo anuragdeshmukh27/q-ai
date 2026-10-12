@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { COLS, MEETING_SPOTS, ROWS, buildBlocked } from '../office/layout'
 import { Dock } from '../components/Dock'
 import { DebriefTab } from '../dock/DebriefTab'
 import { OfficeModel, type AgentInfo, type QEvent, type Visual } from '../model'
@@ -190,5 +191,18 @@ describe('the Debrief tab in the dock', () => {
     expect(dock(m)).toContain('>Debrief')
     m.apply(ev('debrief_report', { report: report() }))
     expect(dock(m)).toMatch(/>Debrief<span[^>]*>1</)
+  })
+})
+
+describe('the meeting room in the office', () => {
+  it('has a free, distinct place to stand for every employee of the roster', () => {
+    const seats = [[3, 2], [6, 2], [9, 2], [12, 2], [3, 6], [6, 6], [9, 6], [12, 6]].map(([x, y]) => ({ x, y }))
+    const blocked = buildBlocked(seats)
+    expect(MEETING_SPOTS.length).toBeGreaterThanOrEqual(8)
+    expect(new Set(MEETING_SPOTS.map((t) => `${t.x},${t.y}`)).size).toBe(MEETING_SPOTS.length)
+    for (const t of MEETING_SPOTS) {
+      expect(t.x >= 0 && t.x < COLS && t.y >= 0 && t.y < ROWS).toBe(true)
+      expect(blocked[t.y][t.x]).toBe(false)
+    }
   })
 })
