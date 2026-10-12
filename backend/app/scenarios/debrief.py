@@ -14,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -22,7 +21,7 @@ from ..humanide import SuiteRun
 from .reports import History, build_report, write_report
 from .rubric import Rubric
 from .scoring import Facts, clock, score
-from .wording import Dropped, Wordsmith, verify_points
+from .wording import Wordsmith, verify_points
 
 if TYPE_CHECKING:
     from .build import ScenarioBuild

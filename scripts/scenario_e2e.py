@@ -5,9 +5,12 @@
 
 The flow: start the scenario, wait for the task and Ananya's report, run the tests (red), open the files, ask Karan something in the channel, apply the reference fix through
 the IDE endpoints (the same calls the editor makes), run the tests (green), submit, and check the fix is accepted, the session log holds every step and the guide is complete.
+Then the debrief: the team meets, five judges post their criterion, and the report (scores, rows that quote the session log, fairness checks, files, attempt history) is checked.
 Ports 8000 and 5173 are never used.
 """
 import argparse
+import json
+import re
 import shutil
 import sys
 import tempfile
@@ -27,7 +30,7 @@ from app.main import create_app  # noqa: E402
 from app.registry import ModelRegistry  # noqa: E402
 from app.session import SessionManager  # noqa: E402
 from api_helpers import make_settings  # noqa: E402
-from scenario_helpers import FIX_FILES, ScenarioLLM, apply_reference_fix  # noqa: E402
+from scenario_helpers import FIX_FILES, REGRESSION_PATH, REGRESSION_TEST, ScenarioLLM, apply_reference_fix  # noqa: E402
 
 SCENARIO = "opd-bookings-down"
 FORBIDDEN_PORTS = {8000, 5173}
@@ -111,12 +114,19 @@ def run(port: int, serve: bool) -> int:
         check(asked.status_code == 200 and asked.json()["to"] == ["database"], "asked Karan in the channel")
         wait(lambda: any(e["from"] == "database" and e.get("reply_to") for e in of("channel_message")), 30, "Karan's reply")
         check(True, "Karan replied")
+        posted = c.post(f"/api/projects/{pid}/channel", json={"text": "Update: the routes still say slot_time but migration 0007 renamed it to slot_at. Fixing now."})
+        check(posted.status_code == 200, "posted an update that names the cause")
+        saved = c.put(f"{ide}/file", json={"path": REGRESSION_PATH, "content": REGRESSION_TEST})
+        check(saved.status_code == 200, "saved a regression test in tests/regression/")
+        red_regression = test_run()
+        check(red_regression["ok"] is False and any(REGRESSION_PATH in t["id"] and t["outcome"] == "failed" for t in red_regression["tests"]), "the regression test is red before the fix")
 
         print("-- the reference fix, saved the way the editor saves")
         for path, text in apply_reference_fix(current).items():
             check(c.put(f"{ide}/file", json={"path": path, "content": text}).status_code == 200, f"saved {path}")
         green = test_run()
         check(green["ok"] is True and green["failed"] == 0, "run tests: green after the fix", green["summary"])
+        c.post(f"/api/projects/{pid}/channel", json={"text": "Fix is ready: both routes use slot_at and a regression test covers it. Submitting."})
         answer: dict = {}
         for attempt in range(1, 5):  # the Reviewer may send green work back (at most twice)
             answer = c.post(f"/api/projects/{pid}/tasks/{tid}/submit").json()
@@ -132,9 +142,34 @@ def run(port: int, serve: bool) -> int:
         kinds = [e["kind"] for e in info["events"]]
         check([e["id"] for e in info["events"]] == [f"E{i:03d}" for i in range(1, len(kinds) + 1)], "events have stable ids E001, E002, ...")
         check(all(k in kinds for k in ("file_opened", "file_saved", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result", "session_finished")), "every kind of step is in the log", str(sorted(set(kinds))))
-        check(info["summary"]["hints"] == 1 and info["summary"]["saves"] == 2, "one hint and two saves were counted", str(info["summary"]))
-        check(info["guide"]["current"] is None and info["guide"]["done"] == 7, "Priya's guide is complete", str(info["guide"]["done"]))
+        check(info["summary"]["hints"] == 1 and info["summary"]["saves"] == 3, "one hint and three saves were counted", str(info["summary"]))
+        check(info["guide"]["current"] is None and info["guide"]["done"] == 8, "Priya's guide is complete", str(info["guide"]["done"]))
         check(any(m.get("ref") == "react-accepted-lead" for m in info["messages"]), "Aarav thanked you for the fix")
+
+        print("-- the debrief")
+        ended = wait(lambda: next(iter(of("debrief_ended")), None), 240, "the debrief to end")
+        check(ended["ok"] is True and not of("debrief_failed"), "the team met and the debrief ended")
+        started = of("debrief_started")[0]
+        check(started["attempt"] == 1 and len(started["judges"]) == 5, "the team went to the meeting room (attempt 1, five judges)")
+        judges = [m for m in of("channel_message") if m.get("criterion")]
+        check([(m["from"], m["criterion"]) for m in judges] == [("architect", "communication"), ("database", "diagnosis"), ("reviewer", "fix_quality"), ("qa", "testing"), ("architect", "ownership")],
+              "each judge posted their criterion in #incident-opd", str([(m["from"], m["criterion"]) for m in judges]))
+        check(all(re.search(r"^[A-Za-z ]+ \d/4\. At \d\d:\d\d: “.+” .+ Tip: .+", m["text"]) for m in judges), "every post has a score, a quoted moment with its timestamp and a tip")
+        rep = c.get(f"/api/projects/{pid}/report").json()
+        check(rep["total"] == 100 and [x["score"] for x in rep["criteria"]] == [4, 4, 4, 4, 4], "the report scores the run 100/100", f"{rep['total']} {[x['score'] for x in rep['criteria']]}")
+        log_ids = {e["id"]: e for e in info["events"]}
+        check(len(rep["rows"]) == 20 and all(r["verified"] and r["event"] in log_ids for r in rep["rows"]), "every point quotes an entry that is in the session log")
+        fair = rep["fairness"]
+        check(fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [] and fair["rubric"] == "v1", "fairness: 20 points quoted, 20 quotes matched, none dropped, rubric v1", str(fair))
+        check(fair["tests_rerun"]["ok"] is True and fair["tests_rerun"]["passed"] == fair["tests_rerun"]["total"], "the suite was re-run on the merged project", str(fair["tests_rerun"]))
+        check(fair["wording"]["source"] == "template", "the stubbed model wrote nothing, so the template wording was used", str(fair["wording"]))
+        md = c.get(f"/api/projects/{pid}/report", params={"format": "md"})
+        check(md.status_code == 200 and md.text.startswith("# Debrief: Production incident") and "**Attempt 1: 100/100**" in md.text, "the markdown report is served")
+        folder = next((tmp / "ws").glob("opd-bookings-down*")) / ".q" / "reports"
+        check((folder / "attempt-1.md").read_text(encoding="utf-8") == md.text and json.loads((folder / "attempt-1.json").read_text(encoding="utf-8")) == rep, ".q/reports/attempt-1.md and .json are in the project and match the endpoint")
+        history = json.loads((tmp / "ws" / ".q-attempts" / f"{SCENARIO}.json").read_text(encoding="utf-8"))
+        check([(a["attempt"], a["total"]) for a in history] == [(1, 100)], "the attempt history has attempt 1 with its score", str(history))
+        check(info["events"][-1]["kind"] == "session_finished", "the debrief added nothing to the session log")
     except (TimeoutError, KeyboardInterrupt) as e:
         print(f"  [FAIL] {e}")
         check.failed.append(str(e))

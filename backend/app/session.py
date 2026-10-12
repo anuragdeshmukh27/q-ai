@@ -623,6 +623,8 @@ class Session:
         self._stop.set()
         if isinstance(self.orch, ScenarioBuild):
             self.orch.director.stop()
+            if self.orch.debrief:
+                self.orch.debrief.stop()
         self.approvals.release_all(False, "shutdown")
 
     def status(self) -> dict:
