@@ -116,6 +116,9 @@ def run(port: int, serve: bool) -> int:
         check(asked.status_code == 200 and asked.json()["to"] == ["database"], "asked Karan in the channel")
         wait(lambda: any(e["from"] == "database" and e.get("reply_to") for e in of("channel_message")), 30, "Karan's reply")
         check(True, "Karan replied")
+        found = c.get(f"{ide}/search", params={"q": "slot_time"}).json()
+        check(found["matches"] >= 6 and any(f["path"].startswith("database/migrations") for f in found["results"]) and any(f["path"] == "backend/api/doctors.py" for f in found["results"]),
+              "a project-wide search finds the old name, in the read-only migration too", str(found["files"]))
         posted = c.post(f"/api/projects/{pid}/channel", json={"text": "Update: the routes still say slot_time but migration 0007 renamed it to slot_at. Fixing now."})
         check(posted.status_code == 200, "posted an update that names the cause")
         saved = c.put(f"{ide}/file", json={"path": REGRESSION_PATH, "content": REGRESSION_TEST})
@@ -144,7 +147,7 @@ def run(port: int, serve: bool) -> int:
         kinds = [e["kind"] for e in info["events"]]
         check([e["id"] for e in info["events"]] == [f"E{i:03d}" for i in range(1, len(kinds) + 1)], "events have stable ids E001, E002, ...")
         check(all(k in kinds for k in ("file_opened", "file_saved", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result", "session_finished")), "every kind of step is in the log", str(sorted(set(kinds))))
-        check(info["summary"]["hints"] == 1 and info["summary"]["saves"] == 3, "one hint and three saves were counted", str(info["summary"]))
+        check(info["summary"]["hints"] == 1 and info["summary"]["saves"] == 3 and info["summary"]["searches"] == 1, "one hint (the question to Karan; the two status updates were only acknowledged), three saves and one search were counted", str(info["summary"]))
         check(info["guide"]["current"] is None and info["guide"]["done"] == 8, "Priya's guide is complete", str(info["guide"]["done"]))
         check(any(m.get("ref") == "react-accepted-lead" for m in info["messages"]), "Aarav thanked you for the fix")
 

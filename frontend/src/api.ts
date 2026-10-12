@@ -234,6 +234,14 @@ export interface IdeFile {
   owner: string // employee id, '' when nobody owns the path
   writable: boolean
 }
+/** The answer of a project-wide search in the IDE: every text file of the folder, read-only ones included. */
+export interface IdeSearch {
+  query: string
+  matches: number // every matching line
+  files: number // every file with a match
+  truncated: boolean // more files matched than are listed
+  results: { path: string; count: number; lines: { line: number; text: string }[] }[]
+}
 export interface IdeTree {
   role: string
   ready: boolean // false until the role's task has started (its folder exists)
@@ -277,6 +285,7 @@ export const api = {
   ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),
   ideRead: (id: string, role: string, path: string, auto = false) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}${auto ? '&auto=1' : ''}`),
   ideWrite: (id: string, role: string, path: string, content: string) => call<{ path: string; size: number; task: string }>(`/api/projects/${id}/ide/${role}/file`, { method: 'PUT', body: JSON.stringify({ path, content }) }),
+  ideSearch: (id: string, role: string, q: string) => call<IdeSearch>(`/api/projects/${id}/ide/${role}/search?q=${encodeURIComponent(q)}`),
   ideTests: (id: string, role: string) => call<{ started: boolean; task: string }>(`/api/projects/${id}/ide/${role}/tests`, { method: 'POST', body: '{}' }),
   escalate: (id: string, action: 'retry' | 'replan' | 'stop', agent: string) => post(`/api/projects/${id}/escalation`, { action, agent }),
   override: (id: string, agent: string, model: string | null) => post(`/api/projects/${id}/agents/${agent}/model`, { model }),

@@ -4,7 +4,7 @@ import { COLS, MEETING_SPOTS, ROWS, buildBlocked } from '../office/layout'
 import { Dock } from '../components/Dock'
 import { DebriefTab } from '../dock/DebriefTab'
 import { OfficeModel, type AgentInfo, type QEvent, type Visual } from '../model'
-import { deltaLabel, eventDetail, previousAttempt, rowsOf, scoreColor, type DebriefReport, type ReportRow } from '../scenario'
+import { deltaLabel, eventDetail, previousAttempt, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
 
 const ROSTER: AgentInfo[] = [['architect', 'Aarav'], ['planner', 'Priya'], ['backend', 'Rohan'], ['database', 'Karan'], ['qa', 'Ananya'], ['reviewer', 'Vikram']].map(([id, name], i) => ({
   id, name, role: id, desk: [3 + i, 2], sprite: { palette: 'teal', accessory: 'none' },
@@ -24,7 +24,7 @@ function report(over: Partial<DebriefReport> = {}): DebriefReport {
   return {
     version: 1, scenario: 'opd-bookings-down', title: 'Production incident: Bookings are down', project: 'opd-bookings-down-2', attempt: 2, total: 80, max: 100, elapsed: 1120, minutes: 25,
     rubric: { id: 'opd-bookings-down-v1', version: 1 },
-    criteria: CRITERIA.map(([id, name, judge, judge_name, score]) => ({ id, name, judge, judge_name, score, max: 4, descriptor: `what ${score} means`, keep: 'Keep going.', rows: [] })),
+    criteria: CRITERIA.map(([id, name, judge, judge_name, score]) => ({ id, name, judge, judge_name, score, max: 4, descriptor: `what ${score} means`, summary: `Held: ${score} of 4 rules. Missed: ${4 - score}.`, keep: 'Keep going.', rows: [] })),
     rows: [
       row('R01', 'communication', 'strength', 'E004', 100, 'Update: bookings fail since the deploy', 'First update at 01:40, inside the first 02:00.'),
       row('R02', 'communication', 'gap', 'E012', 410, "It's been 5 min since your last update", 'The lead had to nudge you 1 time.', 'Set a timer for each promised update.'),
@@ -38,7 +38,7 @@ function report(over: Partial<DebriefReport> = {}): DebriefReport {
       E021: { id: 'E021', t: 878, kind: 'submit', task: 'h1' },
     },
     fairness: { points: 9, quoted: 9, matched: 9, dropped: [{ finding: 'F05', text: 'You never ran the tests.', reason: 'event E999 is not in the session log' }], tests_rerun: { ok: true, passed: 97, total: 97 }, rubric: 'v1',
-                wording: { source: 'model', reason: '', model_points: 9 } },
+                wording: { source: 'mixed', reason: 'the 7b repeated the template sentence word for word for 3 points', model_points: 6, copied: 3 } },
     focus: ['Add a regression test with every bug fix.', 'Search the whole codebase for a renamed name.', 'Send updates on the time you promised.'],
     attempts: [{ attempt: 1, total: 60, scores: {}, project: 'opd-bookings-down', finished_at: '2026-10-12T09:00:00', elapsed: 900 }, { attempt: 2, total: 80, scores: {}, project: 'opd-bookings-down-2', finished_at: '2026-10-12T10:00:00', elapsed: 1120 }],
     files: { md: '.q/reports/attempt-2.md', json: '.q/reports/attempt-2.json' },
@@ -49,6 +49,7 @@ function report(over: Partial<DebriefReport> = {}): DebriefReport {
 function model() {
   const m = new OfficeModel()
   m.setRoster(ROSTER)
+  m.setHumanRoles(['backend'])
   m.apply(ev('scenario_started', { scenario: 'opd-bookings-down', title: 'Production incident: Bookings are down', role: 'backend', minutes: 25, channel: { id: 'incident-opd', name: '#incident-opd' }, teammates: ['qa', 'architect', 'database', 'planner'], started_at: 1000, attempt: 2 }))
   return m
 }
@@ -162,6 +163,24 @@ describe('the Debrief tab', () => {
     expect(html).toContain('Tests re-run, not guessed'); expect(html).toContain('97/97'); expect(html).toContain('Same rubric for every attempt'); expect(html).toContain('v1')
     expect(html).toContain('Dropped:'); expect(html).toContain('You never ran the tests.'); expect(html).toContain('event E999 is not in the session log')
     expect(html).toContain('Focus for your next attempt'); expect(html).toContain('Add a regression test with every bug fix.'); expect(html).toContain('Send updates on the time you promised.')
+  })
+
+  it('says what each score is made of and who wrote each sentence', () => {
+    const r = report()
+    r.rows[0].worded_by = 'model'
+    const html = render(withReport(r))
+    expect(html).toContain('Aarav: Held: 3 of 4 rules. Missed: 1.'); expect(html).toContain('title="what 3 means"') // the summary is built from the rules; the level text is its tooltip
+    expect(html.match(/>AI wording</g)?.length).toBe(1); expect(html.match(/>template</g)?.length).toBe(3)
+    expect(html).toContain('Sentences in the 7b’s own words'); expect(html).toContain('6/9'); expect(html).toContain('Wording: the 7b repeated the template sentence word for word for 3 points.')
+    expect(wordingLabel(r.rows[0])).toBe('AI wording'); expect(wordingLabel(r.rows[1])).toBe('template')
+  })
+
+  it('shows employee names, not role ids, in the detail of an entry', () => {
+    const m = withReport()
+    const detail = eventDetail(m.debrief!.report!, 'E012', (id) => m.name(id))
+    expect(detail).toContainEqual(['from', 'Aarav']); expect(detail.map((x) => x[1])).not.toContain('architect')
+    expect(eventDetail(m.debrief!.report!, 'E006', (id) => m.name(id))).toContainEqual(['role', 'You']) // the role you play reads You
+    expect(render(m, { initiallyOpen: 'R02' })).toContain('Aarav')
   })
 
   it('has a Try again button for the next attempt and a link to the report file', () => {

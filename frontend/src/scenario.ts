@@ -113,7 +113,8 @@ export interface ReportCriterion {
   judge_name: string
   score: number
   max: number
-  descriptor: string
+  descriptor: string // what this score means in general
+  summary: string // what this score is made of here: the rules that held and the ones that did not
   keep: string
   rows: string[]
 }
@@ -152,7 +153,7 @@ export interface DebriefReport {
     dropped: { finding: string; text: string; reason: string }[]
     tests_rerun: { ok: boolean; passed: number; total: number } | null
     rubric: string
-    wording: { source: string; reason: string; model_points: number }
+    wording: { source: 'model' | 'mixed' | 'template'; reason: string; model_points: number; copied: number } // who wrote the sentences of the points
   }
   focus: string[]
   attempts: AttemptRecord[]
@@ -192,14 +193,19 @@ export function rowsOf(report: DebriefReport, criterion: string): ReportRow[] {
 }
 
 /** What the log entry that a point quotes consists of, for the detail that opens when you click its timestamp: [label, value] pairs, the kind and time first. */
-export function eventDetail(report: DebriefReport, id: string): [string, string][] {
+export function eventDetail(report: DebriefReport, id: string, name: (employee: string) => string = (x) => x): [string, string][] {
   const e = report.events[id]
   if (!e) return []
   const { id: _id, t, kind, ...rest } = e
   const out: [string, string][] = [['Entry', id], ['Time', formatClock(t)], ['Kind', kind.replace(/_/g, ' ')]]
+  const who = new Set(['from', 'role', 'to']) // employee ids: shown as the names a learner knows
   for (const [k, v] of Object.entries(rest)) {
     if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) continue
-    out.push([k.replace(/_/g, ' '), Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v)])
+    const show = (x: unknown) => (who.has(k) && typeof x === 'string' ? name(x) : String(x))
+    out.push([k.replace(/_/g, ' '), Array.isArray(v) ? v.map(show).join(', ') : typeof v === 'object' ? JSON.stringify(v) : show(v)])
   }
   return out
 }
+
+/** The label of a point's wording: the 7b's own sentence, or the template's. */
+export const wordingLabel = (r: Pick<ReportRow, 'worded_by'>): string => (r.worded_by === 'model' ? 'AI wording' : 'template')

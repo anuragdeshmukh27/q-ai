@@ -1,6 +1,6 @@
 // State of the in-app IDE (simulation mode): which file is open, what has been edited and not saved, and the saving that Run tests and Submit do first.
 // No React in here: the dock tab reads it through useSyncExternalStore, and the tests drive it with a fake client.
-import type { IdeFile, IdeTree } from './api'
+import type { IdeFile, IdeSearch, IdeTree } from './api'
 import type { IdeTestRun } from './model'
 
 export interface IdeClient {
@@ -8,6 +8,7 @@ export interface IdeClient {
   read(role: string, path: string, auto?: boolean): Promise<{ path: string; content: string }> // auto: the IDE opened it by itself, not the person
   write(role: string, path: string, content: string): Promise<{ path: string }>
   runTests(role: string): Promise<{ started: boolean }>
+  search(role: string, query: string): Promise<IdeSearch> // every file of the folder, read-only ones included; the server logs it
 }
 
 interface Draft {
@@ -18,13 +19,19 @@ interface Draft {
 export class IdeController {
   role = ''
   tree: IdeTree | null = null
-  open = '' // the path in the editor
+  open = '' // the path in the editor (the active tab)
+  tabs: string[] = [] // the files that are open as tabs, in the order they were opened
   loading = false
   saving = false
   private drafts = new Map<string, Draft>()
   private version = 0
   private sinks = new Set<() => void>()
   private gen = 0 // bumped when the role changes, so an answer for the old role is dropped
+  query = '' // the project-wide search: the text, the last answer, whether one is going
+  found: IdeSearch | null = null
+  searching = false
+  reveal: { path: string; line: number; seq: number } | null = null // a search result was clicked: the editor shows this line
+  private revealSeq = 0
 
   private client: IdeClient
   private onError: (e: unknown) => void
@@ -52,7 +59,11 @@ export class IdeController {
     this.gen++
     this.tree = null
     this.open = ''
+    this.tabs = []
     this.drafts = new Map()
+    this.query = ''
+    this.found = null
+    this.reveal = null
     this.touch()
   }
 
@@ -93,6 +104,7 @@ export class IdeController {
   /** Show a file. Edits to the one before stay in their draft (the dot in the tree and the header), so nothing is lost by looking at another file. */
   async openFile(path: string, auto = false): Promise<void> {
     this.open = path
+    if (!this.tabs.includes(path)) this.tabs = [...this.tabs, path]
     if (!this.drafts.has(path)) {
       const gen = this.gen
       this.loading = true
@@ -103,7 +115,8 @@ export class IdeController {
         this.drafts.set(path, { saved: f.content, text: f.content })
       } catch (e) {
         if (gen === this.gen) {
-          this.open = ''
+          this.tabs = this.tabs.filter((p) => p !== path)
+          this.open = this.tabs.includes(this.open) && this.open !== path ? this.open : (this.tabs[this.tabs.length - 1] ?? '')
           this.onError(e)
         }
       } finally {
@@ -111,6 +124,71 @@ export class IdeController {
       }
     }
     this.touch()
+  }
+
+  /** Show a file that is already open as a tab (its draft, edited or not, is still there). */
+  activate(path: string): void {
+    if (!this.tabs.includes(path) || this.open === path) return
+    this.open = path
+    this.touch()
+  }
+
+  /** The file with edits that are not on disk that leaving `from` for another file would leave behind (so the person is asked first), or null. */
+  unsavedBeforeSwitch(target: string, from = this.open): string | null {
+    return from && from !== target && this.isDirty(from) ? from : null
+  }
+
+  /** Close a tab. A tab with unsaved edits is not closed (false): save it, or `discard` it, first. The neighbour on the left (else on the right) becomes the active tab. */
+  closeTab(path: string): boolean {
+    if (this.isDirty(path)) return false
+    this.removeTab(path)
+    return true
+  }
+
+  /** Close a tab and throw its unsaved edits away. */
+  discardTab(path: string): void {
+    this.drafts.delete(path)
+    this.removeTab(path)
+  }
+
+  private removeTab(path: string): void {
+    const i = this.tabs.indexOf(path)
+    if (i < 0) return
+    this.tabs = this.tabs.filter((p) => p !== path)
+    if (this.open === path) this.open = this.tabs[Math.min(i, this.tabs.length - 1)] ?? ''
+    this.touch()
+  }
+
+  /** Project-wide search (Ctrl+Shift+F): the answer lists files and lines; the server logs the query and how much it found. */
+  async search(query: string): Promise<void> {
+    const q = query.trim()
+    this.query = query
+    if (q.length < 2) {
+      this.found = null
+      this.touch()
+      return
+    }
+    const gen = this.gen
+    this.searching = true
+    this.touch()
+    try {
+      const out = await this.client.search(this.role, q)
+      if (gen === this.gen) this.found = out
+    } catch (e) {
+      if (gen === this.gen) this.onError(e)
+    } finally {
+      if (gen === this.gen) this.searching = false
+      this.touch()
+    }
+  }
+
+  /** A search result was clicked: open the file and ask the editor to show the line. */
+  async openAt(path: string, line: number): Promise<void> {
+    await this.openFile(path)
+    if (this.open === path) {
+      this.reveal = { path, line, seq: ++this.revealSeq }
+      this.touch()
+    }
   }
 
   /** The editor changed the open file. A file that may not be edited ignores it. */

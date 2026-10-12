@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { OfficeModel } from '../model'
-import { deltaLabel, eventDetail, formatClock, rowsOf, scoreColor, type DebriefReport, type ReportRow } from '../scenario'
+import { deltaLabel, eventDetail, formatClock, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
 
 const DOT: Record<string, string> = { architect: '#818cf8', planner: '#2dd4bf', backend: '#4ade80', frontend: '#f472b6', database: '#fb923c', integrator: '#94a3b8', qa: '#c084fc', reviewer: '#f87171' }
 
@@ -108,11 +108,11 @@ function Evidence({ report, model, open, onOpen }: { report: DebriefReport; mode
         <section key={c.id} className="border-t border-[var(--line)] py-2.5" aria-label={c.name}>
           <h3 className="text-[14px] font-bold">
             {c.name} <span className="font-normal tabular-nums text-[var(--muted)]">{c.score}/{c.max}</span>
-            <span className="ml-2 text-[12px] font-normal text-[var(--muted)]">{model.name(c.judge) || c.judge_name}: {c.descriptor}</span>
+            <span className="ml-2 text-[12px] font-normal text-[var(--muted)]" title={c.descriptor}>{model.name(c.judge) || c.judge_name}: {c.summary}</span>
           </h3>
           <ul className="mt-1.5 space-y-2">
             {rowsOf(report, c.id).map((r) => (
-              <Row key={r.id} row={r} report={report} open={open === r.id} onOpen={() => onOpen(r.id)} />
+              <Row key={r.id} row={r} report={report} model={model} open={open === r.id} onOpen={() => onOpen(r.id)} />
             ))}
           </ul>
         </section>
@@ -121,7 +121,7 @@ function Evidence({ report, model, open, onOpen }: { report: DebriefReport; mode
   )
 }
 
-function Row({ row, report, open, onOpen }: { row: ReportRow; report: DebriefReport; open: boolean; onOpen: () => void }) {
+function Row({ row, report, model, open, onOpen }: { row: ReportRow; report: DebriefReport; model: OfficeModel; open: boolean; onOpen: () => void }) {
   const strength = row.kind === 'strength'
   return (
     <li className="grid grid-cols-[84px_132px_minmax(0,1fr)_74px] gap-x-3 text-[13.5px] leading-snug" aria-label={`${row.kind} ${row.event}`}>
@@ -139,10 +139,13 @@ function Row({ row, report, open, onOpen }: { row: ReportRow; report: DebriefRep
         <div className="text-[#b9c4e0]">{row.note}</div>
         {row.advice && <div className="mt-0.5 text-[var(--accent)]">Next attempt: {row.advice}</div>}
       </div>
-      <span className="mt-0.5 text-right text-[12px] font-semibold text-[var(--good)]" title="The quote was found in this entry of the session log">{row.verified ? '✓ verified' : ''}</span>
+      <span className="mt-0.5 text-right text-[12px] leading-tight">
+        <span className="block font-semibold text-[var(--good)]" title="The quote was found in this entry of the session log">{row.verified ? '✓ verified' : ''}</span>
+        <span className="block text-[10.5px] uppercase tracking-wide text-[var(--muted)]" title={row.worded_by === 'model' ? 'The sentence was written by the 7b model and checked against the log' : 'The sentence comes from the rule that scored this point'}>{wordingLabel(row)}</span>
+      </span>
       {open && (
         <dl className="col-span-4 mt-1.5 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[12.5px]" aria-label={`Log entry ${row.event}`}>
-          {eventDetail(report, row.event).map(([k, v]) => (
+          {eventDetail(report, row.event, (id) => model.name(id) || id).map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="capitalize text-[var(--muted)]">{k}</dt>
               <dd className="break-words text-[#c9d3ee]">{v}</dd>
@@ -162,6 +165,7 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
     [true, f.dropped.length === 1 ? 'Unbacked claim dropped' : 'Unbacked claims dropped', String(f.dropped.length)],
     [!!f.tests_rerun?.ok, 'Tests re-run, not guessed', f.tests_rerun ? `${f.tests_rerun.passed}/${f.tests_rerun.total}` : 'not run'],
     [true, 'Same rubric for every attempt', f.rubric],
+    [f.wording.source !== 'template', 'Sentences in the 7b’s own words', `${f.wording.model_points}/${f.points}`],
   ]
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-l border-[var(--line)] p-4 max-[1100px]:col-span-2 max-[1100px]:border-l-0 max-[1100px]:border-t" aria-label="Fairness checks">
@@ -175,6 +179,7 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
           </li>
         ))}
       </ul>
+      {f.wording.reason && <div className="mt-1 text-[12px] leading-snug text-[var(--muted)]">Wording: {f.wording.reason}.</div>}
       {f.dropped.length > 0 && (
         <div className="mt-3 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[12.5px] leading-snug text-[#b9c4e0]">
           {f.dropped.map((d, i) => (

@@ -32,6 +32,7 @@ function fake(files: Record<string, string> = { 'database/calculations.py': 'old
       return { path: p }
     },
     runTests: async () => (calls.push('run'), { started: true }),
+    search: async (_r, q) => ({ query: q, matches: 0, files: 0, truncated: false, results: [] }),
   }
   const ctl = new IdeController(client, (e) => errors.push(e))
   ctl.setRole('database')
@@ -47,7 +48,7 @@ async function ready(f = fake()) {
 describe('the IDE: files it opens by itself', () => {
   it('tells the server which open was the IDE itself and which was the person', async () => {
     const seen: (boolean | undefined)[] = []
-    const client: IdeClient = { tree: async () => TREE, read: async (_r, p, auto) => (seen.push(auto), { path: p, content: 'x' }), write: async (_r, p) => ({ path: p }), runTests: async () => ({ started: true }) }
+    const client: IdeClient = { tree: async () => TREE, read: async (_r, p, auto) => (seen.push(auto), { path: p, content: 'x' }), write: async (_r, p) => ({ path: p }), runTests: async () => ({ started: true }), search: async (_r, q) => ({ query: q, matches: 0, files: 0, truncated: false, results: [] }) }
     const ctl = new IdeController(client, () => {})
     ctl.setRole('database')
     await ctl.openFile('database/calculations.py', true) // the first file, shown when the folder is ready

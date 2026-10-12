@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { api, type IdeFile } from '../api'
+import { api, type IdeFile, type IdeTree } from '../api'
 import { acceptanceMark, ideRole, IdeController, otherFailures, type Mark } from '../ide'
 import { parseMarkdown, type Block, type Inline } from '../markdown'
 import type { OfficeModel } from '../model'
@@ -34,6 +34,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
           read: (r, p, a) => api.ideRead(projectId!, r, p, a),
           write: (r, p, c) => api.ideWrite(projectId!, r, p, c),
           runTests: (r) => api.ideTests(projectId!, r),
+          search: (r, q) => api.ideSearch(projectId!, r, q),
         },
         (e) => fail.current(e),
       ),
@@ -43,6 +44,49 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const [checking, setChecking] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState<string | null>(null)
+  const [left, setLeft] = useState<'files' | 'search'>('files') // the left column: the file tree, or the project-wide search (Ctrl+Shift+F)
+  const [pending, setPending] = useState<Pending | null>(null) // a switch or a close that waits for the answer about unsaved edits
+  const searchBox = useRef<HTMLInputElement>(null)
+
+  // leaving the page with edits that are not saved: the browser asks first
+  const unsaved = ctl.dirty.length
+  useEffect(() => {
+    if (!unsaved) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unsaved])
+
+  /** Show a file (and a line of it). Leaving a file with unsaved edits asks first: save, switch and keep the edits unsaved, or stay. */
+  const go = (target: string, line?: number) => {
+    const from = ctl.unsavedBeforeSwitch(target)
+    if (from) {
+      setPending({ kind: 'switch', from, target, line })
+      return
+    }
+    void show(target, line)
+  }
+  const show = async (target: string, line?: number) => {
+    setPending(null)
+    if (line) await ctl.openAt(target, line)
+    else if (ctl.tabs.includes(target)) ctl.activate(target)
+    else await ctl.openFile(target)
+  }
+  const askClose = (path: string) => {
+    if (ctl.isDirty(path)) setPending({ kind: 'close', path })
+    else ctl.closeTab(path)
+  }
+  const answer = async (choice: 'save' | 'keep' | 'discard' | 'cancel') => {
+    const p = pending
+    setPending(null)
+    if (!p || choice === 'cancel') return
+    if (p.kind === 'switch') {
+      if (choice === 'save' && !(await ctl.save(p.from))) return
+      await show(p.target, p.line)
+    } else if (choice === 'save') {
+      if (await ctl.save(p.path)) ctl.closeTab(p.path)
+    } else if (choice === 'discard') ctl.discardTab(p.path)
+  }
 
   // reload the tree when the role, the project, the files of the build or the state of the tasks change
   const taskKey = model.tasks.map((t) => `${t.id}${t.status}`).join()
@@ -123,7 +167,12 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
     <div
       className="flex h-full min-h-0"
       onKeyDown={(e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+          e.preventDefault()
+          setLeft('search')
+          searchBox.current?.focus()
+          searchBox.current?.select()
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
           e.preventDefault()
           void ctl.save()
         }
@@ -137,9 +186,11 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
                 <button key={r} aria-pressed={role === r} onClick={() => setPickRole(r)}>{r}</button>
               ))}
             </div>
-          ) : (
-            <span className="text-[12px] font-bold uppercase tracking-wide text-[var(--muted)]">Your folder · {role}</span>
-          )}
+          ) : null}
+          <div className="seg" role="group" aria-label="Left panel">
+            <button aria-pressed={left === 'files'} onClick={() => setLeft('files')} title={`Your folder · ${role}`}>Files</button>
+            <button aria-pressed={left === 'search'} onClick={() => setLeft('search')} title="Search every file of the project (Ctrl+Shift+F)">Search</button>
+          </div>
           <button onClick={() => setAdding(adding === null ? '' : null)} disabled={!tree.task} title="New file" aria-label="New file" className="ml-auto rounded px-1.5 text-[16px] leading-none text-[var(--muted)] hover:bg-[#1a2033] hover:text-white disabled:opacity-30">+</button>
         </div>
         {adding !== null && (
@@ -155,6 +206,9 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
             className="m-2 rounded border border-[var(--accent)] bg-[#0b0e17] px-2 py-1 font-mono text-[12.5px] outline-none"
           />
         )}
+        {left === 'search' ? (
+          <SearchPanel ctl={ctl} tree={tree} box={searchBox} onPick={(p, l) => go(p, l)} />
+        ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <Branch
             node={root}
@@ -162,14 +216,17 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
             open={open}
             toggle={(p) => setClosed((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n })}
             selected={ctl.open}
-            onPick={(p) => void ctl.openFile(p)}
+            onPick={(p) => go(p)}
             changed={new Set()}
             decor={decor}
           />
         </div>
+        )}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <Tabs ctl={ctl} tree={tree} onPick={(p) => go(p)} onClose={askClose} />
+        {pending && <Unsaved pending={pending} onAnswer={(c) => void answer(c)} />}
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--line)] px-3 py-1.5 text-[13px]">
           {ctl.open ? (
             <>
@@ -198,7 +255,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
         </div>
         <div className="min-h-0 flex-1">
           {ctl.open && ctl.loaded ? (
-            <LazyEdit path={ctl.open} value={ctl.text} readOnly={!writable} onChange={(t) => ctl.edit(t)} onSave={() => void ctl.save()} />
+            <LazyEdit path={ctl.open} value={ctl.text} readOnly={!writable} onChange={(t) => ctl.edit(t)} onSave={() => void ctl.save()} reveal={ctl.reveal?.path === ctl.open ? ctl.reveal : null} />
           ) : (
             <Empty text={ctl.loading ? 'Loading…' : tree.task ? 'Pick a file to edit it. The files of other roles are there to read.' : 'Waiting for your next task.'} />
           )}
@@ -212,6 +269,109 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
         </div>
         {model.guide && <GuidePanel guide={model.guide} />}
         {task && <Acceptance model={model} entries={task.tests ?? []} />}
+      </div>
+    </div>
+  )
+}
+
+type Pending = { kind: 'switch'; from: string; target: string; line?: number } | { kind: 'close'; path: string }
+
+const base = (p: string) => p.split('/').pop() ?? p
+
+/** The open files as tabs: a dot for unsaved edits, a lock for files you may not edit, a cross to close. */
+export function Tabs({ ctl, tree, onPick, onClose }: { ctl: IdeController; tree: IdeTree; onPick: (p: string) => void; onClose: (p: string) => void }) {
+  if (ctl.tabs.length === 0) return null
+  return (
+    <div className="flex shrink-0 overflow-x-auto border-b border-[var(--line)] bg-[#0b0e17]" role="tablist" aria-label="Open files">
+      {ctl.tabs.map((p) => {
+        const active = p === ctl.open
+        const dirty = ctl.isDirty(p)
+        const locked = !!tree.task && !ctl.writable(p)
+        return (
+          <div key={p} role="presentation" className={`group flex shrink-0 items-center gap-1.5 border-r border-[var(--line)] px-2.5 py-1.5 text-[12.5px] ${active ? 'bg-[var(--panel)] text-white' : 'text-[var(--muted)] hover:text-white'}`} style={active ? { boxShadow: 'inset 0 -2px 0 var(--accent)' } : undefined}>
+            <button role="tab" aria-selected={active} title={p} onClick={() => onPick(p)} className="flex items-center gap-1.5 font-mono">
+              {locked && <span aria-label="read-only" title="read-only">🔒</span>}
+              <span>{base(p)}</span>
+              {dirty && <span className="text-[11px] text-[var(--warn)]" title="Unsaved changes" aria-label="Unsaved changes">●</span>}
+            </button>
+            <button onClick={() => onClose(p)} aria-label={`Close ${base(p)}`} title="Close" className="rounded px-1 text-[14px] leading-none text-[var(--muted)] hover:bg-[#1a2033] hover:text-white">×</button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The question when leaving or closing a file whose edits are not saved. */
+export function Unsaved({ pending, onAnswer }: { pending: Pending; onAnswer: (c: 'save' | 'keep' | 'discard' | 'cancel') => void }) {
+  const path = pending.kind === 'switch' ? pending.from : pending.path
+  const B = 'rounded-md border px-2.5 py-1 text-[12.5px] font-semibold'
+  return (
+    <div role="alertdialog" aria-label="Unsaved changes" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--warn)] bg-[#2a210a] px-3 py-1.5 text-[13px] text-[var(--warn)]">
+      <span><b className="font-mono">{base(path)}</b> has changes that are not saved.</span>
+      <div className="ml-auto flex gap-2">
+        <button onClick={() => onAnswer('save')} className={`${B} border-transparent bg-[#2f9e5f] text-white hover:bg-[#38b36e]`}>{pending.kind === 'switch' ? 'Save and switch' : 'Save and close'}</button>
+        {pending.kind === 'switch' ? (
+          <button onClick={() => onAnswer('keep')} className={`${B} border-[var(--line)] text-[var(--text)] hover:border-[var(--accent)]`} title="The edits stay in their tab, with the dot">Switch, keep unsaved</button>
+        ) : (
+          <button onClick={() => onAnswer('discard')} className={`${B} border-[var(--bad)] text-[var(--bad)] hover:bg-[#2a1013]`}>Discard changes</button>
+        )}
+        <button onClick={() => onAnswer('cancel')} className={`${B} border-[var(--line)] text-[var(--text)] hover:border-[var(--accent)]`}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+/** Project-wide search (Ctrl+Shift+F): every file of the folder, the ones you may not edit included; results by file and line, a click opens the line. */
+export function SearchPanel({ ctl, tree, box, onPick }: { ctl: IdeController; tree: IdeTree; box: React.RefObject<HTMLInputElement | null>; onPick: (path: string, line: number) => void }) {
+  const [text, setText] = useState(ctl.query)
+  const found = ctl.found
+  const locked = (p: string) => !!tree.files.find((f) => f.path === p && !f.writable)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" aria-label="Search">
+      <form
+        className="shrink-0 p-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void ctl.search(text)
+        }}
+      >
+        <input
+          ref={box}
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Search all files…"
+          aria-label="Search all files"
+          maxLength={200}
+          className="w-full rounded border border-[var(--line)] bg-[#0b0e17] px-2 py-1 font-mono text-[12.5px] outline-none focus:border-[var(--accent)]"
+        />
+      </form>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 text-[12.5px]" aria-label="Search results">
+        {ctl.searching && <div className="text-[var(--muted)]">Searching…</div>}
+        {!ctl.searching && !found && <div className="text-[var(--muted)]">Press Enter to search every file of the project, the read-only ones too.</div>}
+        {!ctl.searching && found && (
+          <div className="mb-1.5 text-[var(--muted)]" aria-live="polite">
+            {found.matches === 0 ? `No match for “${found.query}”.` : `${found.matches} match${found.matches === 1 ? '' : 'es'} in ${found.files} file${found.files === 1 ? '' : 's'}`}
+            {found.truncated && ' (the first files are listed)'}
+          </div>
+        )}
+        {found?.results.map((f) => (
+          <div key={f.path} className="mb-2">
+            <div className="flex items-center gap-1.5 font-mono font-semibold text-[#b9c4e0]" title={f.path}>
+              {locked(f.path) && <span aria-label="read-only">🔒</span>}
+              <span className="truncate">{f.path}</span>
+              <span className="ml-auto shrink-0 rounded-full bg-[#1a2033] px-1.5 text-[11px] text-[var(--muted)]">{f.count}</span>
+            </div>
+            {f.lines.map((l) => (
+              <button key={l.line} onClick={() => onPick(f.path, l.line)} className="flex w-full gap-2 rounded px-1 py-[1px] text-left font-mono hover:bg-[#1a2033]" title={`${f.path}:${l.line}`}>
+                <span className="w-8 shrink-0 text-right tabular-nums text-[var(--muted)]">{l.line}</span>
+                <span className="truncate text-[#c9d3ee]">{l.text}</span>
+              </button>
+            ))}
+            {f.count > f.lines.length && <div className="pl-10 text-[var(--muted)]">… {f.count - f.lines.length} more in this file</div>}
+          </div>
+        ))}
       </div>
     </div>
   )

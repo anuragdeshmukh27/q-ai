@@ -31,11 +31,24 @@ function Loading() {
 }
 
 /** The IDE's editor: the same Monaco and theme, editable when the file is the person's. `onSave` is Ctrl+S inside the editor. */
-export function EditView({ path, value, readOnly, onChange, onSave }: { path: string; value: string; readOnly: boolean; onChange: (text: string) => void; onSave: () => void }) {
+export function EditView({ path, value, readOnly, onChange, onSave, reveal }: { path: string; value: string; readOnly: boolean; onChange: (text: string) => void; onSave: () => void; reveal?: { line: number; seq: number } | null }) {
   const save = useRef(onSave)
+  const ed = useRef<{ revealLineInCenter(n: number): void; setPosition(p: { lineNumber: number; column: number }): void; focus(): void } | null>(null)
   useEffect(() => {
     save.current = onSave
   }, [onSave])
+  // a search result was clicked: show its line (a moment later, so a file that was just switched to is in the editor)
+  const seq = reveal?.seq
+  const line = reveal?.line
+  useEffect(() => {
+    if (!seq || !line) return
+    const t = window.setTimeout(() => {
+      ed.current?.revealLineInCenter(line)
+      ed.current?.setPosition({ lineNumber: line, column: 1 })
+      ed.current?.focus()
+    }, 60)
+    return () => window.clearTimeout(t)
+  }, [seq, line, path])
   return (
     <Editor
       height="100%"
@@ -44,7 +57,10 @@ export function EditView({ path, value, readOnly, onChange, onSave }: { path: st
       language={languageFor(path)}
       value={value}
       onChange={(v) => onChange(v ?? '')}
-      onMount={(editor, monaco) => editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save.current())}
+      onMount={(editor, monaco) => {
+        ed.current = editor
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save.current())
+      }}
       options={{ ...BASE, readOnly, renderLineHighlight: 'line', domReadOnly: readOnly }}
       loading={<Loading />}
     />
