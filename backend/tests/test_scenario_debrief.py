@@ -171,12 +171,13 @@ def weak_attempt(client, s, pid):
 
 def test_a_weak_attempt_gets_gaps_with_advice_and_the_model_only_speaks(tmp_path):
     def speak(prompt: str):
-        said = {m.group(1): (m.group(2), m.group(3)) for m in re.finditer(r'criterion "(\w+)": [^\n]*?score (\d/4)\. Moment at (\d\d:\d\d)', prompt)}
-        line = lambda cid, tail: VoiceLine(criterion=cid, line=f"I give you {said[cid][0]}. At {said[cid][1]} {tail}")  # noqa: E731
+        said = {m.group(1): m.group(2) for m in re.finditer(r'criterion "(\w+)": [^\n]*?Moment at (\d\d:\d\d)', prompt)}
+        strength, gap = re.search(r"the strength at (\d\d:\d\d)", prompt).group(1), re.search(r"the gap at (\d\d:\d\d)", prompt).group(1)
+        line = lambda cid, tail: VoiceLine(criterion=cid, line=f"at {said[cid]} {tail}")  # noqa: E731  (no criterion and no score: they are put in front in code)
         return VoiceOutput(lines=[line("communication", "your update was not what the team needed, so say what you found."), line("diagnosis", "you started to edit first, so run the tests and read before you change anything."),
-                                  VoiceLine(criterion="testing", line=f"I give you {said['testing'][0]}. At 99:59 you did something nobody logged, so be careful."),  # an invented time
+                                  VoiceLine(criterion="testing", line="at 99:59 you did something nobody logged, so be careful next time."),  # an invented time
                                   line("ownership", "you leaned on a hint, so try the next step alone first.")],  # nothing for fix_quality
-                           coach=f"You scored {re.search(r'total score is (.+?)/100', prompt).group(1)} out of 100. You fixed the code but did not run the tests first and wrote no test of your own, so start with the tests next time.")
+                           coach=f"At {strength} you kept the change small. At {gap} you were late with an update or a test, so start with the tests and post early next time.")
 
     llm = ScenarioLLM(wording=speak)
     client, mgr, settings = manager(tmp_path, llm)
@@ -197,16 +198,17 @@ def test_a_weak_attempt_gets_gaps_with_advice_and_the_model_only_speaks(tmp_path
         # the model spoke: three lines held, two were dropped and recorded, the coach paragraph held; the score did not move
         lines = report["judge_lines"]
         assert {c: v["source"] for c, v in lines.items()} == {"communication": "model", "diagnosis": "model", "fix_quality": "template", "testing": "template", "ownership": "model"}
-        dropped = {d["finding"]: d["reason"] for d in report["fairness"]["dropped"]}
-        assert "no line" in dropped["fix_quality"] and "99:59" in dropped["testing"] and set(dropped) == {"fix_quality", "testing"}
-        assert report["coach"]["source"] == "model" and report["coach"]["text"].startswith(f"You scored {report['total']} out of 100.")
+        rejected = {d["finding"]: d["reason"] for d in report["fairness"]["ai_rejected"]}
+        assert "no line" in rejected["fix_quality"] and "99:59" in rejected["testing"] and set(rejected) == {"fix_quality", "testing"}
+        assert report["fairness"]["dropped"] == []  # unbacked claims are about the evidence points only: all of them are backed
+        assert report["coach"]["source"] == "model" and "you kept the change small" in report["coach"]["text"]
         assert report["fairness"]["voices"] == {"judges": "mixed", "coach": "model", "reason": ""}
         posts = {e["criterion"]: e for e in events(s, "channel_message") if e.get("criterion")}
         assert {c: e["voice"] for c, e in posts.items()} == {c: v["source"] for c, v in lines.items()} and posts["communication"]["text"] == lines["communication"]["text"]
-        assert posts["testing"]["text"].startswith("Testing 0/4.") and len(posts["communication"]["bubble"]) <= 78  # the template post for the line that was dropped
+        assert posts["testing"]["text"].startswith("Testing 0/4.") and posts["communication"]["text"].startswith("Communication 4/4: at ") and len(posts["communication"]["bubble"]) <= 78  # the template post for the line that was dropped
         assert len(report["focus"]) == 3 and all(f for f in report["focus"])
         md = client.get(f"/api/projects/{pid}/report", params={"format": "md"}).text
-        assert "**GAP**" in md and "Claims dropped: 2" in md and "AI coach" in md
+        assert "**GAP**" in md and "Unbacked claims dropped: 0" in md and "AI lines not used: 2" in md and "AI coach" in md
     finally:
         s.orch.stop()
         mgr.shutdown()

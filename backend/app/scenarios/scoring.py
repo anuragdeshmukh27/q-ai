@@ -244,6 +244,23 @@ class Facts:
 RULES: dict[str, Callable[[Facts, dict], Outcome]] = {}
 
 
+def _by(e: dict) -> str:
+    """"By your first edit at 01:31", "By your submit at 03:00", ...: how a gap about something never done names the moment it quotes (always the quoted entry's own time)."""
+    kind = e.get("kind")
+    when = clock(e["t"])
+    if kind == "file_saved":
+        return f"By your first edit at {when}"
+    if kind == "submit":
+        return f"By your submit at {when}"
+    if kind == "submit_result":
+        return f"By the accepted submit at {when}" if e.get("ok") else f"By the refused submit at {when}"
+    if kind == "test_result":
+        return f"After your green run at {when}"
+    if kind == "team_message":
+        return f"By the lead's request at {when}"
+    return f"By the end of the session at {when}"
+
+
 def rule(fn: Callable[[Facts, dict], Outcome]) -> Callable[[Facts, dict], Outcome]:
     RULES[fn.__name__] = fn
     return fn
@@ -264,7 +281,8 @@ def first_update(f: Facts, p: dict) -> Outcome:
     within = float(p.get("within", 120))
     post = f.first("message_posted")
     if post is None:
-        return Outcome(False, _ids(f.team("lead-update"), f.anchor), "You never posted an update in the channel.")
+        ask = f.team("lead-update")
+        return Outcome(False, _ids(ask, f.anchor), f"{_by(ask or f.anchor)} you had not posted any update in the channel.")
     if post["t"] <= within:
         return Outcome(True, _ids(post), f"First update at {clock(post['t'])}, inside the first {int(within // 60)} minutes.")
     return Outcome(False, _ids(post), f"Your first update came at {clock(post['t'])}, later than the {int(within // 60)} minutes asked.")
@@ -299,7 +317,9 @@ def names_the_cause(f: Facts, p: dict) -> Outcome:
     hits = [e for e in posts if pattern.search(str(e.get("text", "")))]
     if hits:
         return Outcome(True, _ids(*hits), f"At {clock(hits[0]['t'])} you told the team what you had found.")
-    return Outcome(False, _ids(posts[-1] if posts else None, f.anchor), "None of your posts says what was broken." if posts else "You never said what was broken.")
+    if posts:
+        return Outcome(False, _ids(posts[-1], f.anchor), f"Your last post, at {clock(posts[-1]['t'])}, does not say what was broken.")
+    return Outcome(False, _ids(f.anchor), f"{_by(f.anchor)} you had not said in the channel what was broken.")
 
 
 # -- Diagnosis --------------------------------------------------------------------------------------------
@@ -314,8 +334,8 @@ def reproduced_first(f: Facts, p: dict) -> Outcome:
             return Outcome(True, _ids(result, run), f"Your first test run finished at {clock(result['t'])} ({result.get('summary', '')}), before the first edit.")
         return Outcome(True, _ids(run), f"You ran the tests at {clock(run['t'])}, before the first edit.")
     if edit is None:
-        return Outcome(False, _ids(f.anchor), "You never ran the tests before submitting.")
-    return Outcome(False, _ids(edit, run), f"You started editing at {clock(edit['t'])} before you had run the tests.")
+        return Outcome(False, _ids(f.anchor), f"{_by(f.anchor)} you had not run the tests.")
+    return Outcome(False, _ids(edit, run), f"{_by(edit)} you had not run the tests.")
 
 
 def _read_before_edit(f: Facts, pattern: str, what: str, search: str = "") -> Outcome:
@@ -329,7 +349,7 @@ def _read_before_edit(f: Facts, pattern: str, what: str, search: str = "") -> Ou
         return Outcome(True, _ids(found), f"You searched the project for “{found.get('query', '')}” at {clock(found['t'])}, before the first edit.")
     if opened:
         return Outcome(False, _ids(opened[0], edit), f"You opened {what} ({opened[0]['path']}) at {clock(opened[0]['t'])}, after you had started editing.")
-    return Outcome(False, _ids(edit, f.anchor), f"You never opened {what}.")
+    return Outcome(False, _ids(edit or f.anchor, f.anchor), f"{_by(edit or f.anchor)} you had not opened {what}.")
 
 
 @rule
@@ -411,7 +431,7 @@ def green_before_submit(f: Facts, p: dict) -> Outcome:
         return Outcome(True, _ids(green), f"Your own run at {clock(green['t'])} was green, after your last change and before you submitted.")
     if green is not None:
         return Outcome(False, _ids(last_save, green), f"You changed {last_save['path']} at {clock(last_save['t'])}, after your last green run, so the final code was not tested before you submitted.")
-    return Outcome(False, _ids(submit, f.anchor), "You submitted without a green run of your own first.")
+    return Outcome(False, _ids(submit, f.anchor), f"{_by(submit or f.anchor)} you had no green run of your own.")
 
 
 @rule
@@ -432,7 +452,7 @@ def regression_test_added(f: Facts, p: dict) -> Outcome:
     saves = _regression_saves(f, str(p.get("pattern", "tests/regression/test_*.py")))
     if saves:
         return Outcome(True, _ids(*saves), f"You added a regression test ({saves[0]['path']}) at {clock(saves[0]['t'])}.")
-    return Outcome(False, _ids(f.first("submit"), f.anchor), "No new test covers the bug you fixed.")
+    return Outcome(False, _ids(f.first("submit"), f.anchor), f"{_by(f.first('submit') or f.anchor)} you had not added a test of your own for the bug.")
 
 
 @rule
@@ -440,7 +460,7 @@ def regression_test_proves_fix(f: Facts, p: dict) -> Outcome:
     r = f.regression
     saves = _regression_saves(f, "tests/regression/test_*.py")
     if r is None or not saves:
-        return Outcome(False, _ids(f.first("submit"), f.anchor), "Without a new test, nothing shows the bug cannot come back unnoticed.")
+        return Outcome(False, _ids(f.first("submit"), f.anchor), f"{_by(f.first('submit') or f.anchor)} no new test of yours showed that the bug cannot come back unnoticed.")
     check = f.check("regression")
     if r.get("fails_on_seed") and r.get("passes_on_main"):
         return Outcome(True, _ids(check), "I ran your new test on the broken code and on your fix: it fails before and passes after.")
@@ -486,7 +506,7 @@ def reported_the_outcome(f: Facts, p: dict) -> Outcome:
     post = f.first("message_posted", lambda e: green is not None and f.after(e, green) and (done is None or f.before(e, done)))
     if post is not None:
         return Outcome(True, _ids(post), f"At {clock(post['t'])} you told the team the fix was ready.")
-    return Outcome(False, _ids(green, f.anchor), "You never told the channel that the fix was ready.")
+    return Outcome(False, _ids(green, f.anchor), f"{_by(green or f.anchor)} you never told the channel that the fix was ready.")
 
 
 def score(rubric: Rubric, facts: Facts) -> list[CriterionResult]:

@@ -118,7 +118,7 @@ def test_each_rule_cites_the_entries_that_prove_it():
     # the gaps point at the moment that shows them
     assert finding(weak, "first_update").events[0] == ev(weak, "message_posted")["id"] and "05:30" in finding(weak, "first_update").text
     assert finding(weak, "no_nudges").events[0] == ev(weak, "team_message", ref="lead-nudge")["id"]
-    assert finding(weak, "reproduced_first").events[0] == ev(weak, "file_saved", path=APPT)["id"] and "You started editing at 01:00 before you had run the tests." == finding(weak, "reproduced_first").text
+    assert finding(weak, "reproduced_first").events[0] == ev(weak, "file_saved", path=APPT)["id"] and "By your first edit at 01:00 you had not run the tests." == finding(weak, "reproduced_first").text
     assert finding(weak, "no_pointer_needed").events[0] == ev(weak, "hint_given", n=1)["id"]
     assert finding(weak, "no_red_submit").events[0] == ev(weak, "submit_result", stage="tests")["id"]
     assert finding(weak, "review_clean").events[0] == ev(weak, "submit_result", stage="review")["id"]

@@ -241,7 +241,7 @@ def test_the_hand_test_log_scored_as_it_was_and_after_the_fixes():
     assert finding(before, "few_hints").kind == "gap" and finding(after, "few_hints").kind == "strength" and finding(after, "no_pointer_needed").kind == "strength"
     # the first save of any file (08:38, the empty regression test) comes before the first run of the tests (17:55): the tests were not run first
     gap = finding(after, "reproduced_first")
-    assert gap.kind == "gap" and gap.text == "You started editing at 08:38 before you had run the tests."
+    assert gap.kind == "gap" and gap.text == "By your first edit at 08:38 you had not run the tests."
     assert finding(after, "no_nudges").kind == "gap" and "3 times" in finding(after, "no_nudges").text
 
 

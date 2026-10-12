@@ -107,7 +107,7 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
         "rubric": {"id": rubric.id, "version": rubric.version}, "criteria": criteria, "rows": rows, "events": {i: events[i] for i in {e for r in rows for e in r["events"]}},
         "fairness": {"points": len(rows), "quoted": sum(1 for r in rows if r["quote"]), "matched": sum(1 for r in rows if r["verified"]), "dropped": [d.as_dict() for d in dropped],
                      "tests_rerun": {"ok": bool(rerun and rerun.get("ok")), "passed": rerun.get("passed", 0), "total": rerun.get("passed", 0) + rerun.get("failed", 0)} if rerun else None,
-                     "rubric": f"v{rubric.version}", "voices": {"judges": "template", "coach": "template", "reason": ""}},
+                     "rubric": f"v{rubric.version}", "voices": {"judges": "template", "coach": "template", "reason": ""}, "ai_rejected": []},
         "focus": focus[:3] or [f"A full-marks run. Try to beat your time of {clock(record['elapsed'])}, or keep these habits in the next scenario."],
         "coach": {"text": template_coach(total, rubric.max_total, criteria, rows, focus), "source": "template"},
         "judge_lines": {}, "attempts": [*prior, record], "files": {"md": f".q/reports/attempt-{attempt}.md", "json": f".q/reports/attempt-{attempt}.json"},
@@ -128,10 +128,11 @@ def template_coach(total: int, top: int, criteria: list[dict], rows: list[dict],
 
 
 def attach_voices(report: dict, judge_lines: dict[str, dict], coach: dict, dropped: list[Dropped], reason: str = "") -> dict:
-    """Add what the model said (when it passed the verifier) to the report: each judge's spoken line and the coach paragraph, with who wrote each, and the claims dropped."""
+    """Add what the model said (when it passed the verifier) to the report: each judge's spoken line and the coach paragraph, with who wrote each. The AI texts the verifier rejected
+    are listed apart (`fairness.ai_rejected`, with the reason): `fairness.dropped` is for the evidence points only."""
     report["judge_lines"] = judge_lines
     report["coach"] = coach
-    report["fairness"]["dropped"] += [d.as_dict() for d in dropped]
+    report["fairness"]["ai_rejected"] = [d.as_dict() for d in dropped]
     sources = {v["source"] for v in judge_lines.values()}
     report["fairness"]["voices"] = {"judges": "model" if sources == {"model"} else "template" if "model" not in sources else "mixed", "coach": coach["source"], "reason": reason}
     return report
@@ -149,7 +150,8 @@ def render_markdown(report: dict, names: dict[str, str]) -> str:
     f = report["fairness"]
     rerun = f["tests_rerun"]
     lines += ["## Fairness checks", "", f"- Points that quote a moment: {f['quoted']}/{f['points']}", f"- Quotes matched to the session log: {f['matched']}/{f['points']}",
-              f"- Claims dropped: {len(f['dropped'])}", *[f"  - dropped: “{d['text']}” ({d['reason']})" for d in f["dropped"]],
+              f"- Unbacked claims dropped: {len(f['dropped'])}", *[f"  - dropped: “{d['text']}” ({d['reason']})" for d in f["dropped"]],
+              f"- AI lines not used: {len(f['ai_rejected'])}", *[f"  - {d['finding']}: “{d['text']}” ({d['reason']})" for d in f["ai_rejected"]],
               f"- Tests re-run, not guessed: {(str(rerun['passed']) + '/' + str(rerun['total'])) if rerun else 'could not be re-run'}",
               f"- Same rubric for every attempt: {f['rubric']}", f"- Judges' lines: {f['voices']['judges']}; coach paragraph: {f['voices']['coach']}" + (f" ({f['voices']['reason']})" if f["voices"]["reason"] else ""), ""]
     lines += ["## Focus for the next attempt", "", *[f"{i}. {x}" for i, x in enumerate(report["focus"], 1)], ""]
