@@ -286,7 +286,7 @@ def test_the_guide_advances_on_what_you_do_and_never_on_a_timer():
     guide = GuideTracker(SCN, lambda type, **d: out.append({"type": type, **d}), log.events)
     log.subscribe(guide.on_event)
     guide.start("h1")
-    assert out[-1]["type"] == "guide_progress" and out[-1]["current"] == "run-tests" and out[-1]["done"] == 0 and len(out[-1]["steps"]) == 7
+    assert out[-1]["type"] == "guide_progress" and out[-1]["current"] == "run-tests" and out[-1]["done"] == 0 and len(out[-1]["steps"]) == 8
     clock.advance(3600)
     log.add("message_posted", message="C001", text="hello", to=[])  # an hour later and nothing moved, then a post: it counts only when the guide reaches that step
     assert out[-1]["current"] == "run-tests"
@@ -297,7 +297,11 @@ def test_the_guide_advances_on_what_you_do_and_never_on_a_timer():
     log.add("file_opened", role="backend", path="backend/api/appointments.py", auto=True)  # the IDE showed its first file by itself: not the learner's choice
     assert out[-1]["current"] == "open-route"
     log.add("file_opened", role="backend", path="backend/api/appointments.py")
-    assert out[-1]["current"] == "fix" and [s["state"] for s in out[-1]["steps"]][:5] == ["done", "done", "done", "done", "current"]  # the migration and the post were already done
+    assert out[-1]["current"] == "regression-test" and [s["state"] for s in out[-1]["steps"]][:5] == ["done", "done", "done", "done", "current"]  # the migration and the post were already done
+    log.add("file_saved", role="backend", path="tests/regression/README.md", added=1, removed=0, size=1)  # only a test file counts
+    assert out[-1]["current"] == "regression-test"
+    log.add("file_saved", role="backend", path="tests/regression/test_regression_slot_at.py", added=9, removed=0, size=300)
+    assert out[-1]["current"] == "fix"
     log.add("file_saved", role="backend", path="tests/api/test_x.py", added=1, removed=0, size=1)  # not a backend file: no
     assert out[-1]["current"] == "fix"
     log.add("file_saved", role="backend", path="backend/api/doctors.py", added=1, removed=1, size=10)
@@ -308,10 +312,10 @@ def test_the_guide_advances_on_what_you_do_and_never_on_a_timer():
     log.add("test_result", task="h1", ok=True, passed=2, failed=[], summary="2 passed", trigger="ide")
     assert out[-1]["current"] == "submit"
     log.add("submit", task="h1")
-    assert out[-1]["current"] is None and out[-1]["done"] == 7 and all(s["state"] == "done" for s in out[-1]["steps"])
+    assert out[-1]["current"] is None and out[-1]["done"] == 8 and all(s["state"] == "done" for s in out[-1]["steps"])
 
 
 def test_the_guide_file_lists_every_step():
     md = guide_markdown(SCN, "h1", "Fix: booking an appointment returns 500")
-    assert md.startswith("# Priya's guide: h1 Fix: booking") and md.count("\n1. **Reproduce it**") == 1 and "7. **Submit for review**" in md
+    assert md.startswith("# Priya's guide: h1 Fix: booking") and md.count("\n1. **Reproduce it**") == 1 and "8. **Submit for review**" in md
     assert "0007" not in md.split("\n", 3)[3].split("Find what changed")[0]  # the steps point at where to look, not at the answer

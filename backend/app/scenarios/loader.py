@@ -8,7 +8,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -209,7 +209,8 @@ def _check(s: Scenario, folder: Path) -> list[str]:
             problems.append(f"guide step {g.id}: unknown event kind {a.kind!r}")
         if a.path is not None and not a.kind.startswith("file_"):
             problems.append(f"guide step {g.id}: `path` only belongs to file events")
-        if a.path is not None and not any(fnmatch.fnmatch(p.relative_to(seed).as_posix(), a.path) for p in seed.rglob("*") if p.is_file()):
+        new_file_folder = a.kind == "file_saved" and a.path is not None and (seed / PurePosixPath(a.path).parent).is_dir()  # a file the learner will create in a folder the seed has
+        if a.path is not None and not new_file_folder and not any(fnmatch.fnmatch(p.relative_to(seed).as_posix(), a.path) for p in seed.rglob("*") if p.is_file()):
             problems.append(f"guide step {g.id}: no file of the seed matches {a.path!r}")
     return problems
 

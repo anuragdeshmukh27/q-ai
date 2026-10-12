@@ -27,6 +27,9 @@ from .loader import Scenario
 from .sessionlog import SessionLog
 
 
+REGRESSION_TESTS = "tests/regression/**"  # where the learner's own tests go (the folder is in the seed)
+
+
 def diff_stats(before: str, after: str) -> tuple[int, int]:
     """(lines added, lines removed) going from `before` to `after`."""
     added = removed = 0
@@ -100,6 +103,13 @@ class ScenarioBuild(Orchestrator):
         self.add_human_task(s.role, s.task.title, s.task.files, s.task.acceptance_tests)
         self._commit("[q] scenario task")
 
+    def _engineer(self, owner: str):
+        """The learner may also add tests of their own for the incident (a regression test); the generated and QA's tests stay read-only."""
+        a = super()._engineer(owner)
+        if owner == self.scenario.role:
+            a = a.model_copy(update={"owned_paths": [*a.owned_paths, REGRESSION_TESTS]})
+        return a
+
     # -- what a person's task needs here ------------------------------------------------------
     def _scaffold(self, t: dict, agent, wt: Path):
         return None  # the app is finished: there is no stub to generate and no contract to generate tests from
@@ -107,6 +117,7 @@ class ScenarioBuild(Orchestrator):
     def _human_doc(self, t: dict, wt: Path, stub, tests: list[str]) -> str:
         base = super()._human_doc(t, wt, stub, tests)
         head = [f"# {t['id']}: {t['title']}", "", self.scenario.brief, "", "## What to do", *[f"- {c}" for c in t["acceptance"]],
+                "- add a regression test in `tests/regression/` (a file named `test_regression_<what>.py`) that fails on the code as it is now and passes after your fix",
                 "- the whole test suite passes: `python -m pytest -q`", ""]
         return "\n".join(head) + "\n" + base[base.index("## Files you may edit"):]
 

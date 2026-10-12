@@ -12,7 +12,7 @@ from app.registry import ModelRegistry
 from app.session import SessionManager
 
 from api_helpers import make_client, make_settings, wait_for
-from scenario_helpers import FIX_FILES, ScenarioLLM, apply_reference_fix
+from scenario_helpers import FIX_FILES, REGRESSION_PATH, ScenarioLLM, apply_reference_fix
 
 ID = "opd-bookings-down"
 
@@ -120,6 +120,18 @@ def test_the_ide_shows_the_app_with_the_migrations_readable_and_only_backend_wri
     assert denied.status_code == 403
 
 
+def test_the_learner_may_add_a_regression_test_and_nothing_else_under_tests(scenario):
+    client, s, pid, task, llm = scenario
+    tree = {f["path"]: f for f in client.get(f"/api/projects/{pid}/ide/backend/tree").json()["files"]}
+    assert tree["tests/regression/README.md"]["writable"] and tree["tests/regression/README.md"]["owner"] == "backend"
+    put = lambda path: client.put(f"/api/projects/{pid}/ide/backend/file", json={"path": path, "content": "def test_x():\n    assert True\n"})  # noqa: E731
+    assert put(REGRESSION_PATH).status_code == 200
+    assert put("tests/api/test_mine.py").status_code == 403 and put("tests/test_mine.py").status_code == 403
+    doc = client.get(f"/api/projects/{pid}/tasks/h1/doc").text
+    assert "tests/regression/**" in doc and "regression test" in doc
+    assert [x["state"] for x in s.orch.guide.state()["steps"]][4] == "done"
+
+
 # -- the channel -------------------------------------------------------------------------------------------
 
 def test_the_channel_endpoint_validates_and_a_teammate_answers(scenario):
@@ -207,7 +219,7 @@ def test_the_reference_fix_through_the_ide_is_accepted_and_every_step_is_in_the_
     assert [e["id"] for e in events(s, "session_event")] == [e["id"] for e in log]
     assert [json.loads(x) for x in (Path(s.root) / ".q" / "session" / "log.jsonl").read_text(encoding="utf-8").splitlines()] == log
     # the guide is complete and the team reacted to the accepted fix
-    assert info["guide"]["current"] is None and info["guide"]["done"] == 7 and events(s, "guide_progress")[-1]["done"] == 7
+    assert info["guide"]["current"] == "regression-test" and info["guide"]["done"] == 7 and events(s, "guide_progress")[-1]["done"] == 7  # the regression test is the one step this fix did not do
     said = [(m["from"], m.get("ref")) for m in info["messages"]]
     assert ("qa", "qa-report") in said and ("architect", "react-accepted-lead") in said
     assert (Path(s.root) / "backend" / "api" / "doctors.py").read_text(encoding="utf-8").count("slot_time") == 0 and "[human] Fix: booking an appointment returns 500" in subprocess.run(

@@ -36,7 +36,7 @@ def test_the_shipped_scenario_loads_with_everything_the_session_needs():
     assert s.channel.name == "#incident-opd" and s.seed_dir.joinpath("pytest.ini").is_file()
     assert s.task.files == ["backend/api/appointments.py", "backend/api/doctors.py"]
     assert set(s.characters) == {"qa", "architect", "database", "planner"} and s.role not in s.characters
-    assert [i.id for i in s.timeline][:2] == ["qa-report", "lead-update"] and len(s.guide) == 7
+    assert [i.id for i in s.timeline][:2] == ["qa-report", "lead-update"] and len(s.guide) == 8
     assert [s.id for s in list_scenarios()] == [ID]
 
 
@@ -77,6 +77,7 @@ BREAKS = [
     ("a skip_if that names nobody", lambda r: r["timeline"][3].update(skip_if="asked:ghost"), "skip_if names a character"),
     ("a guide step with an unknown event", lambda r: r["guide"][0]["advance_on"].update(kind="coffee"), "advance_on.kind"),
     ("a guide path that matches nothing", lambda r: r["guide"][1]["advance_on"].update(path="backend/api/ghost.py"), "no file of the seed matches"),
+    ("a guide path for a new file in a folder the seed lacks", lambda r: r["guide"][4]["advance_on"].update(path="nowhere/test_*.py"), "no file of the seed matches"),
     ("a path on an event that is not about files", lambda r: r["guide"][0]["advance_on"].update(path="x"), "only belongs to file events"),
     ("a guide step id used twice", lambda r: r["guide"][1].update(id="run-tests"), "used twice"),
     ("a rubric that is not an id", lambda r: r.update(rubric="Rubric One"), "rubric"),

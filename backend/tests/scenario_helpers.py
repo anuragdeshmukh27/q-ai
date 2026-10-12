@@ -68,3 +68,21 @@ def apply_reference_fix(files: dict[str, str]) -> dict[str, str]:
 
 
 FIX_FILES = ("backend/api/appointments.py", "backend/api/doctors.py")
+
+REGRESSION_PATH = "tests/regression/test_regression_slot_at.py"
+REGRESSION_TEST = '''"""The booking route must write the appointment's time with the column's new name."""
+from fastapi.testclient import TestClient
+
+from backend.main import app
+
+client = TestClient(app)
+
+
+def test_booking_an_appointment_still_works_after_the_column_rename():
+    doctor = client.post("/api/doctors", json={"name": "Dr. Test", "department": "General Medicine", "phone": "9876500001", "room": "OPD 1", "consultation_fee": 300,
+                                               "availability": "Available", "email": "regression@example.com"})
+    assert doctor.status_code == 201, doctor.text
+    booked = client.post(f"/api/doctors/{doctor.json()['id']}/appointments", json={"patient_name": "A", "patient_phone": "9876511112", "date": "2026-10-12", "time": "09:15",
+                                                                                   "reason": "Check", "status": "Booked"})
+    assert booked.status_code == 201, booked.text
+'''
