@@ -163,7 +163,8 @@ export interface DebriefReport {
     points: number
     quoted: number
     matched: number
-    dropped: { finding: string; text: string; reason: string }[]
+    dropped: { finding: string; text: string; reason: string }[] // unbacked claims: evidence points that failed the check (a clean run has none)
+    ai_rejected: { finding: string; text: string; reason: string }[] // judge lines and coach paragraphs of the 7b that were not used, with why (finding: the criterion, or "coach")
     tests_rerun: { ok: boolean; passed: number; total: number } | null
     rubric: string
     voices: { judges: 'model' | 'mixed' | 'template'; coach: 'model' | 'template'; reason: string } // who wrote the judges' lines and the coach paragraph, and why not the 7b

@@ -192,6 +192,18 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
           ))}
         </div>
       )}
+      {f.ai_rejected.length > 0 && (
+        <details className="mt-3 rounded-lg border border-[var(--line)] bg-[#0b0e17] px-3 py-2 text-[12.5px] leading-snug text-[#b9c4e0]" aria-label="AI lines not used">
+          <summary className="cursor-pointer font-semibold text-[var(--muted)] hover:text-white" title="Texts the 7b wrote that said something the report does not back; the template text is shown instead. They do not touch your score or your evidence.">
+            AI lines not used ({f.ai_rejected.length})
+          </summary>
+          {f.ai_rejected.map((d, i) => (
+            <p key={i} className="mt-1.5">
+              <b className="text-[var(--text)]">{d.finding === 'coach' ? 'Coach' : (report.criteria.find((c) => c.id === d.finding)?.name ?? d.finding)}:</b> “{d.text}” <span className="text-[var(--muted)]">{d.reason}.</span>
+            </p>
+          ))}
+        </details>
+      )}
       <div className="mt-4">
         <Heading>Focus for your next attempt</Heading>
         <ol className="list-decimal space-y-1 pl-5 text-[13.5px] leading-snug">

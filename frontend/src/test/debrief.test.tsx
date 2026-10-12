@@ -38,7 +38,7 @@ function report(over: Partial<DebriefReport> = {}): DebriefReport {
       E006: { id: 'E006', t: 175, kind: 'file_opened', role: 'backend', path: 'database/migrations/0007_rename_slot_time_to_slot_at.sql' },
       E021: { id: 'E021', t: 878, kind: 'submit', task: 'h1' },
     },
-    fairness: { points: 9, quoted: 9, matched: 9, dropped: [{ finding: 'F05', text: 'You never ran the tests.', reason: 'event E999 is not in the session log' }], tests_rerun: { ok: true, passed: 97, total: 97 }, rubric: 'v1',
+    fairness: { points: 9, quoted: 9, matched: 9, dropped: [{ finding: 'F05', text: 'You never ran the tests.', reason: 'event E999 is not in the session log' }], ai_rejected: [], tests_rerun: { ok: true, passed: 97, total: 97 }, rubric: 'v1',
                 voices: { judges: 'mixed', coach: 'model', reason: '' } },
     coach: { text: 'You scored 80 out of 100. Your fix was small and tested; the next step is to post your first update sooner.', source: 'model' },
     judge_lines: {},
@@ -278,5 +278,44 @@ describe('the IDE stays in the dock while another tab shows', () => {
     const other = new OfficeModel()
     other.setRoster(ROSTER)
     expect(dock(other)).not.toContain('ide-host')
+  })
+})
+
+describe('unbacked claims and AI lines not used are separate', () => {
+  const clean = () => {
+    const r = report()
+    r.fairness.dropped = []
+    return r
+  }
+  const withReport = (r: DebriefReport) => {
+    const m = model()
+    m.apply(ev('debrief_started', { attempt: r.attempt, judges: [] }))
+    m.apply(ev('debrief_report', { report: r }))
+    return m
+  }
+  const render = (m: OfficeModel) => renderToStaticMarkup(<DebriefTab model={m} projectId="p1" onTryAgain={() => {}} />)
+
+  it('shows 0 unbacked claims for a clean run, whatever the 7b wrote', () => {
+    const r = clean()
+    r.fairness.ai_rejected = [{ finding: 'communication', text: 'Update: bookings fail (00:43) Keep posting.', reason: 'the time 09:09 is not the time of any point' }, { finding: 'coach', text: 'You did a great job.', reason: 'it uses generic praise (“great job”)' }]
+    const html = render(withReport(r))
+    expect(html).toMatch(/Unbacked claims dropped<\/span><span[^>]*>0</); expect(html).not.toContain('Dropped:')
+    expect(html).toContain('aria-label="AI lines not used"'); expect(html).toContain('AI lines not used (2)')
+    expect(html).toContain('<b class="text-[var(--text)]">Communication:</b>'); expect(html).toContain('<b class="text-[var(--text)]">Coach:</b>'); expect(html).toContain('it uses generic praise')
+  })
+
+  it('keeps the rejected AI lines collapsed, and shows nothing when none were rejected', () => {
+    const r = clean()
+    r.fairness.ai_rejected = [{ finding: 'testing', text: 'x', reason: 'y' }]
+    const html = render(withReport(r))
+    expect(html).toMatch(/<details class="[^"]*" aria-label="AI lines not used"><summary/); expect(html).not.toMatch(/<details[^>]* open/)
+    expect(render(withReport(clean()))).not.toContain('AI lines not used')
+  })
+
+  it('lists the evidence points that were dropped as unbacked claims, apart from the AI lines', () => {
+    const r = report()
+    r.fairness.ai_rejected = [{ finding: 'diagnosis', text: 'z', reason: 'q' }]
+    const html = render(withReport(r))
+    expect(html).toMatch(/Unbacked claim dropped<\/span><span[^>]*>1</); expect(html).toContain('Dropped:'); expect(html).toContain('AI lines not used (1)')
   })
 })

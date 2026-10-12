@@ -167,6 +167,7 @@ def run(port: int, serve: bool) -> int:
         fair = rep["fairness"]
         check(fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [] and fair["rubric"] == "v1", "fairness: 20 points quoted, 20 quotes matched, none dropped, rubric v1", str(fair))
         check(fair["tests_rerun"]["ok"] is True and fair["tests_rerun"]["passed"] == fair["tests_rerun"]["total"], "the suite was re-run on the merged project", str(fair["tests_rerun"]))
+        check(fair["dropped"] == [] and fair["ai_rejected"] == [], "a clean run shows 0 unbacked claims and no AI line rejected")
         check(fair["voices"] == {"judges": "template", "coach": "template", "reason": "error"} and {r["worded_by"] for r in rep["rows"]} == {"rule"},
               "every point is its rule's; the stubbed model wrote no line and no paragraph, so the template ones were used", str(fair["voices"]))
         by = {**log_ids, **rep["events"]}
