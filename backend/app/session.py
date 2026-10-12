@@ -28,9 +28,13 @@ from .recording import Recorder, RecordingError, check_name, load_recording, res
 from .leaderboard import SHIPPED_RESULTS, Leaderboard
 from .registry import ModelRegistry, ollama_installed_probe
 from .router import Router
+from .scenarios.build import ScenarioBuild
+from .scenarios.director import Replier
+from .scenarios.loader import Scenario, ScenarioError, load_scenario
 from .scheduler import MetricsSampler, ModelScheduler
 from .scope import classify_goal
 
+REPLY_MODEL = "qwen25-coder-7b"  # the teammates of a scenario answer the learner with this local model (qwen2.5-coder:7b)
 MODES = ("assisted", "supervised", "autonomous", "simulation")  # simulation: the AI employees work as in supervised, and the human takes the roles in `human_roles`
 
 
@@ -183,6 +187,7 @@ class Session:
         self.chats: dict[str, list[dict]] = {}
         self.sampler: MetricsSampler | None = None
         self.fast_live = False
+        self.scenario: Scenario | None = None  # a scenario session (Simulation mode, step 4): the channel, the guide and the session log belong to it
         self.record_info = req.record_info
         self.then_ask = req.then_ask or []
         self._thread: threading.Thread | None = None
@@ -223,6 +228,22 @@ class Session:
             mgr.scheduler.emit = self.bus.emit
             self.sampler = MetricsSampler(mgr.scheduler, self.bus.emit, lambda: llm.tokens_per_s).start()
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
+        self._thread.start()
+
+    def start_scenario(self, scn: Scenario) -> None:
+        """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls)."""
+        mgr = self.mgr
+        llm = mgr.make_llm(None)
+        fast = mgr.settings.fast_live
+        self.scenario = scn
+        replier = Replier(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
+        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
+                                  local_only=True, ports=mgr.ports, max_parallel=1, fast_live=fast, router=mgr.router)
+        self.fast_live = fast
+        if mgr.scheduler is not None:
+            mgr.scheduler.emit = self.bus.emit
+            self.sampler = MetricsSampler(mgr.scheduler, self.bus.emit, lambda: llm.tokens_per_s).start()
+        self._thread = threading.Thread(target=self._run_live, name=f"scenario-{self.id}", daemon=True)
         self._thread.start()
 
     def _run_live(self) -> None:
@@ -452,6 +473,37 @@ class Session:
     def ide_run_tests(self, role: str) -> dict:
         return self._ide("ide_run_tests", role)
 
+    # -- a scenario: the incident channel, the guide, the session log ----------------------------------
+    def _scenario_build(self) -> ScenarioBuild:
+        if self.scenario is None or not isinstance(self.orch, ScenarioBuild):
+            raise SessionError("This project is not a scenario.", 409)
+        return self.orch
+
+    def channel_post(self, text: str, to: str | None) -> dict:
+        orch = self._scenario_build()
+        if to and to not in orch.scenario.characters:
+            raise SessionError("That teammate is not on this incident.", 400)
+        try:
+            return orch.director.post(text, to or None)
+        except ValueError as e:
+            raise SessionError(str(e), 409) from None
+
+    def session_info(self) -> dict:
+        """The whole session so far: the scenario, the clock, every logged event (quotable by id), the guide and the channel."""
+        orch = self._scenario_build()
+        return {"scenario": orch.scenario.public(), "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
+                "summary": orch.log.summary(), "events": orch.log.events(), "guide": orch.guide.state(), "messages": list(orch.director.messages)}
+
+    def guide_doc(self, tid: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
+            raise SessionError("unknown task", 404)
+        if not self.root:
+            raise SessionError("The project has no files yet.", 409)
+        doc = self.root / ".q" / "guides" / f"{tid}.md"
+        if not doc.is_file():
+            raise SessionError("There is no guide for that task.", 404)
+        return doc.read_text(encoding="utf-8")
+
     def task_doc(self, tid: str) -> str:
         """The markdown the human reads for one of their tasks (written when the task was handed over)."""
         if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
@@ -547,13 +599,16 @@ class Session:
 
     def stop(self) -> None:
         self._stop.set()
+        if isinstance(self.orch, ScenarioBuild):
+            self.orch.director.stop()
         self.approvals.release_all(False, "shutdown")
 
     def status(self) -> dict:
         snap = self.tracker.snapshot()
         return {"id": self.id, "goal": self.goal, "kind": self.kind, "state": self.state, "mode": self.mode, "speed": self.speed,
                 "created": self.created, "events": len(self.bus.history), "overrides": dict(self.overrides), "recording": self.recording, "fast_live": self.fast_live,
-                "pending_approvals": self.approvals.pending(), "app": self.app(), **snap}
+                "pending_approvals": self.approvals.pending(), "app": self.app(), **snap,
+                **({"scenario": {**self.scenario.public(), "started_at": self.orch.log.started_at, "summary": self.orch.log.summary()}} if self.scenario and isinstance(self.orch, ScenarioBuild) else {})}
 
 
 # -- all sessions -----------------------------------------------------------------------------------
@@ -623,6 +678,24 @@ class SessionManager:
             self.sessions[s.id] = s
             try:
                 s.start_replay(req) if demo else s.start_live(req)
+            except Exception:
+                del self.sessions[s.id]
+                raise
+        return s
+
+    def start_scenario(self, scenario_id: str) -> Session:
+        try:
+            scn = load_scenario(scenario_id)
+        except ScenarioError as e:
+            unknown = str(e).startswith("unknown")
+            raise SessionError(str(e) if unknown else "That scenario is not available.", 404 if unknown else 500) from None
+        with self._lock:
+            if any(s.kind == "live" and s.state in ("starting", "running") for s in self.sessions.values()):
+                raise SessionError("A build is already running; the GPU runs one build at a time.", 409)
+            s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
+            self.sessions[s.id] = s
+            try:
+                s.start_scenario(scn)
             except Exception:
                 del self.sessions[s.id]
                 raise

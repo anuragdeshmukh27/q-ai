@@ -20,6 +20,7 @@ from .cost import load_pricing
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
 from .recording import RecordingError, list_recordings, load_recording
+from .scenarios.loader import ScenarioError, list_scenarios
 from .session import CreateRequest, Session, SessionError, SessionManager, Settings
 
 ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -49,6 +50,11 @@ class EscalationBody(BaseModel):
 class FileBody(BaseModel):
     path: str
     content: str
+
+
+class ChannelBody(BaseModel):
+    text: str
+    to: str | None = None
 
 
 class AskBody(BaseModel):
@@ -231,6 +237,37 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     def task_doc(pid: str, tid: str):
         """The task document as markdown source (served as plain text so a browser tab shows it instead of downloading it)."""
         return PlainTextResponse(session(pid).task_doc(tid), media_type="text/plain; charset=utf-8")
+
+    # -- simulation scenarios: a ready-made incident, its channel, guide and session log --------------------
+    @app.get("/api/scenarios")
+    def scenarios():
+        """The scenario cards for the picker (the script, the facts and the guide stay on the server)."""
+        try:
+            return [s.public() for s in list_scenarios()]
+        except ScenarioError:
+            raise SessionError("The scenarios could not be loaded.", 500) from None
+
+    @app.post("/api/scenarios/{sid}/start", status_code=201)
+    def start_scenario(sid: str):
+        """A project from the scenario's seed: no design or planning calls, one human task for the scenario's role, the AI team on call."""
+        return mgr.start_scenario(sid).status()
+
+    @app.post("/api/projects/{pid}/channel")
+    def channel_post(pid: str, body: ChannelBody):
+        """The learner posts in the incident channel. Answers at once; a teammate who was asked replies as a `channel_message` event."""
+        text = body.text.strip()
+        if not text or len(text) > 1000:
+            raise SessionError("write a message of 1 to 1000 characters")
+        return session(pid).channel_post(text, body.to)
+
+    @app.get("/api/projects/{pid}/session")
+    def session_info(pid: str):
+        """The scenario session so far: clock, logged events with their ids, hints, guide, channel."""
+        return session(pid).session_info()
+
+    @app.get("/api/projects/{pid}/tasks/{tid}/guide")
+    def task_guide(pid: str, tid: str):
+        return PlainTextResponse(session(pid).guide_doc(tid), media_type="text/plain; charset=utf-8")
 
     # -- simulation: the in-app IDE for the role the human plays -------------------------------
     @app.get("/api/projects/{pid}/ide/{role}/tree")

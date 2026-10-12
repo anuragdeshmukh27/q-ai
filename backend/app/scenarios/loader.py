@@ -121,6 +121,7 @@ class Scenario(BaseModel):
     task: TaskInfo
     channel: ChannelInfo
     evidence: dict[str, str] = Field(default_factory=dict)
+    acks: list[str] = Field(default_factory=lambda: ["Thanks for the update.", "Noted. Keep us posted."], min_length=1)  # the lead's answer to a post that asks nobody
     characters: dict[str, Character]
     timeline: list[TimelineItem]
     guide: list[GuideStep] = Field(min_length=1)

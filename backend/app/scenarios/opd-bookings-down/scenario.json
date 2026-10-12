@@ -19,6 +19,7 @@
     ]
   },
   "channel": {"id": "incident-opd", "name": "#incident-opd"},
+  "acks": ["Thanks for the update. Keep us posted.", "Noted. Tell me if you need anyone.", "Good, thanks. Is anything blocking you?"],
   "evidence": {
     "booking_error": "TypeError: add_appointment() got an unexpected keyword argument 'slot_time'",
     "slots_error": "KeyError: 'slot_time'"
