@@ -42,8 +42,8 @@ def test_the_shipped_scenario_loads_with_everything_the_session_needs():
 
 def test_the_picker_data_leaves_the_script_on_the_server():
     card = load_scenario(ID).public()
-    assert set(card) == {"id", "title", "summary", "role", "minutes", "level", "channel", "tests"}
-    assert "Karan" not in json.dumps(card) and "0007" not in json.dumps(card)
+    assert set(card) == {"id", "title", "summary", "role", "minutes", "level", "channel", "tests", "teammates"}
+    assert card["teammates"] == ["qa", "architect", "database", "planner"] and "Karan" not in json.dumps(card) and "0007" not in json.dumps(card)
 
 
 def test_placeholders_are_filled_and_route_templates_are_left_alone():

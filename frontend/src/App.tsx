@@ -38,6 +38,7 @@ export default function App() {
         cost={model.cost}
         connected={q.connected}
         done={model.finished ? model.finished.ok : null}
+        session={model.scenario}
       />
       <div className="flex min-h-0 flex-1">
         <LeftPanel
@@ -62,6 +63,8 @@ export default function App() {
           onHumanRoles={q.setHumanRoles}
           onSubmit={q.submitTask}
           onCopyPath={q.copyPath}
+          scenarios={q.scenarios}
+          onScenario={q.startScenario}
         />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>
           <OfficeCanvas model={model} selected={selected} tempo={q.demo ? q.speed : 1} onSelect={setSelected} />
@@ -74,7 +77,7 @@ export default function App() {
         </main>
         {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} onEscalate={q.escalate} />}
       </div>
-      <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} onSubmit={q.submitTask} onError={q.fail} />
+      <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} onSubmit={q.submitTask} onError={q.fail} onPost={q.postChannel} />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 // Thin client for the Q backend (see backend/app/main.py). Errors are plain-language messages, never stack traces.
 import type { AgentInfo, QEvent } from './model'
+import type { ScenarioInfo } from './scenario'
 
 export class ApiError extends Error {}
 
@@ -270,6 +271,9 @@ export const api = {
   decide: (id: string, aid: string, approve: boolean) => post(`/api/projects/${id}/approvals/${aid}`, { approve }),
   submitTask: (id: string, task: string) => call<SubmitResult>(`/api/projects/${id}/tasks/${task}/submit`, { method: 'POST', body: '{}' }),
   taskDoc: (id: string, task: string) => callText(`/api/projects/${id}/tasks/${task}/doc`),
+  scenarios: () => call<ScenarioInfo[]>('/api/scenarios'),
+  startScenario: (sid: string) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/start`, { method: 'POST', body: '{}' }),
+  postChannel: (id: string, text: string, to?: string) => call<{ to: string[]; pending: string[] }>(`/api/projects/${id}/channel`, { method: 'POST', body: JSON.stringify({ text, to: to || null }) }),
   ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),
   ideRead: (id: string, role: string, path: string) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}`),
   ideWrite: (id: string, role: string, path: string, content: string) => call<{ path: string; size: number; task: string }>(`/api/projects/${id}/ide/${role}/file`, { method: 'PUT', body: JSON.stringify({ path, content }) }),

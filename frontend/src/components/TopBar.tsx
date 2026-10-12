@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { MODES } from '../model'
 import type { CostReport, Metrics } from '../api'
+import { formatClock, sessionSeconds, type ScenarioSession } from '../scenario'
 
 interface Props {
   title: string
@@ -19,6 +21,7 @@ interface Props {
   cost: CostReport | null
   connected: boolean
   done: boolean | null
+  session?: ScenarioSession | null // a scenario session: its timer runs from the start of the incident to the end of the session
 }
 
 function Gauge({ label, used, total }: { label: string; used?: number; total?: number }) {
@@ -78,6 +81,27 @@ function CostChip({ cost }: { cost: CostReport }) {
   )
 }
 
+/** The session timer of a scenario: mm:ss since the incident started, stopped when the session ends. */
+export function SessionTimer({ session, nowMs }: { session: ScenarioSession; nowMs?: number }) {
+  const [now, setNow] = useState(() => nowMs ?? Date.now())
+  const running = session.endedAt === null && nowMs === undefined
+  useEffect(() => {
+    if (!running) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [running])
+  const secs = sessionSeconds(session, nowMs ?? now)
+  return (
+    <div className="text-[13px]" title={`${session.title}: the clock runs from the start of the incident to the end of the session`}>
+      <div className="text-[11px] font-semibold tracking-wide text-[var(--muted)]">SESSION</div>
+      <div className="font-bold tabular-nums" style={{ color: session.endedAt === null ? 'var(--text)' : 'var(--muted)' }} aria-label="Session time">
+        {formatClock(secs)}
+        {session.endedAt !== null && <span className="ml-1.5 text-[11px] font-normal">ended</span>}
+      </div>
+    </div>
+  )
+}
+
 export function TopBar(p: Props) {
   const status = p.done === true ? 'Complete' : p.done === false ? 'Stopped' : p.hasProject ? (p.connected ? 'Building' : 'Reconnecting…') : 'Ready'
   const statusColor = p.done === true ? 'var(--good)' : p.done === false ? 'var(--bad)' : p.hasProject ? 'var(--accent)' : 'var(--muted)'
@@ -111,6 +135,8 @@ export function TopBar(p: Props) {
           {p.active} <span className="font-normal text-[var(--muted)]">of {p.total}</span>
         </div>
       </div>
+
+      {p.session && <SessionTimer session={p.session} />}
 
       <div className="ml-auto flex items-center gap-5">
         <div className="flex flex-col gap-1">

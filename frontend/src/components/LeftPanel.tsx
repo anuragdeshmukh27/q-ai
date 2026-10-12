@@ -4,6 +4,8 @@ import { HUMAN_ROLES, type BoardArea, type OfficeModel } from '../model'
 
 import { card, orderDemos } from '../demos'
 import { EXAMPLES, FAMOUS } from '../examples'
+import type { ScenarioInfo } from '../scenario'
+import { ScenarioPicker } from './ScenarioPicker'
 
 // The stack presets Q knows about. Only the ones the backend lists can be built today; the rest are shown as planned.
 const PRESET_INFO: Record<string, { label: string; stack: string }> = {
@@ -33,6 +35,8 @@ interface Props {
   onHumanRoles: (roles: string[]) => void
   onSubmit: (task: string) => Promise<void>
   onCopyPath: (path: string) => void
+  scenarios: ScenarioInfo[]
+  onScenario: (id: string) => void
 }
 
 const ROLE_LABEL: Record<string, string> = { backend: 'Backend', frontend: 'Frontend', database: 'Database' }
@@ -78,7 +82,7 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null)
   const rolesLocked = hasProject && !replay && !model.finished // the roles of a running simulation are fixed
   const submit1 = async (task: string) => {
@@ -99,6 +103,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   const board = model.board
   return (
     <aside className="flex w-[318px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--line)] bg-[var(--panel)] p-3">
+      {!demo && mode === 'simulation' && !rolesLocked && <ScenarioPicker scenarios={scenarios} busy={busy} onStart={onScenario} />}
       <div>
         <Heading>GOAL</Heading>
         <textarea

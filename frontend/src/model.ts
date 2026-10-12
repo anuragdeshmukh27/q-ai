@@ -2,6 +2,7 @@
 import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
 import type { CostReport, GapInfo, Metrics } from './api'
+import type { ChannelMsg, GuideView, ScenarioSession } from './scenario'
 
 export interface QEvent {
   seq: number
@@ -124,6 +125,7 @@ export const YOU = 'You'
 
 const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d = 0) => (typeof v === 'number' ? v : d)
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 export interface FinishFile {
@@ -179,6 +181,10 @@ export class OfficeModel {
   version = 0 // bumped on every change; React re-renders on it
 
   ide: IdeOutput = { task: '', running: false, lines: [], cut: false, result: null }
+  scenario: ScenarioSession | null = null // a scenario session (Simulation mode, step 4): its channel, its guide and its hints belong to it
+  channel: ChannelMsg[] = []
+  guide: GuideView | null = null
+  hints = 0
   humanRoles = new Set<string>() // simulation: the employees the person plays; their desks read "You"
   private realNames = new Map<string, string>() // their names from the roster, kept to restore them
   private owners = new Map<string, string>()
@@ -239,6 +245,10 @@ export class OfficeModel {
   reset() {
     this.humanRoles = new Set()
     this.ide = { task: '', running: false, lines: [], cut: false, result: null }
+    this.scenario = null
+    this.channel = []
+    this.guide = null
+    this.hints = 0
     this.applyHumanNames()
     this.setRoster(this.order.map((id) => this.agents.get(id)!).map(({ id, name, role, desk, sprite }) => ({ id, name, role, desk, sprite })), false)
     this.tasks = []
@@ -487,6 +497,35 @@ export class OfficeModel {
         this.applyHumanNames()
         this.say(this.humanRoles.size ? `Simulation: you play ${[...this.humanRoles].map((r) => (this.realNames.get(r) ?? r)).join(', ')}` : 'Simulation: the team is waiting for a task for you')
         break
+      case 'scenario_started': {
+        const ch = (e.channel ?? {}) as { id?: string; name?: string }
+        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), startedAt: num(e.started_at), endedAt: null }
+        this.say(`Incident: ${str(e.title)}`)
+        break
+      }
+      case 'channel_message': {
+        const id = str(e.id)
+        if (this.channel.some((m) => m.id === id)) break // a reconnect never shows a message twice
+        const source = str(e.source) as ChannelMsg['source']
+        const m: ChannelMsg = { id, from: str(e.from), text: str(e.text), source, t: num(e.t), to: strs(e.to), replyTo: str(e.reply_to), hint: e.hint === true }
+        this.channel = [...this.channel, m].slice(-500)
+        if (m.source !== 'learner') {
+          const who = this.name(m.from)
+          if (this.agents.has(m.from)) this.show({ kind: 'say', agent: m.from, text: clip(m.text, 70), tone: 'info' }, visuals)
+          this.show({ kind: 'toast', level: 'info', title: `${who} in ${this.scenario?.channelName ?? 'the channel'}`, text: clip(m.text, 140) }, visuals)
+          this.say(`${who}: ${clip(m.text, 80)}`)
+        }
+        break
+      }
+      case 'guide_progress': {
+        this.guide = { task: str(e.task), current: typeof e.current === 'string' ? e.current : null, done: num(e.done), steps: Array.isArray(e.steps) ? (e.steps as GuideView['steps']) : [] }
+        break
+      }
+      case 'session_event': {
+        if (e.kind === 'hint_given') this.hints = Math.max(this.hints, num(e.n))
+        if (e.kind === 'session_finished' && this.scenario) this.scenario = { ...this.scenario, endedAt: e.ts }
+        break
+      }
       case 'human_task_assigned': {
         const id = str(e.task)
         this.tasks = this.tasks.map((t) => (t.id === id ? { ...t, assignee: 'human', worktree: str(e.worktree), doc: str(e.doc), tests: Array.isArray(e.tests) ? (e.tests as string[]) : [] } : t))
@@ -667,6 +706,7 @@ export class OfficeModel {
       case 'project_done': {
         this.filesVersion++
         this.finished = { ok: e.ok === true, seconds: num(e.seconds) }
+        if (this.scenario && this.scenario.endedAt === null) this.scenario = { ...this.scenario, endedAt: e.ts }
         this.appUrl = str(e.app_url) || this.appUrl
         const involved = Array.isArray(e.involved) ? (e.involved as string[]) : null // set for an Ask-employee request: only they did the work
         if (e.ok === true) {

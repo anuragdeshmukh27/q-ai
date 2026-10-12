@@ -4,6 +4,7 @@ import { pickDefault } from './demos'
 import { ApiError, api, openStream, type ConfigInfo, type Metrics, type RecordingMeta } from './api'
 import type { EscalationAction } from './escalation'
 import { OfficeModel, type ToastAction, type Tone } from './model'
+import type { ScenarioInfo } from './scenario'
 
 export interface Toast {
   id: number
@@ -26,6 +27,7 @@ export function useQ() {
   const [mode, setModeState] = useState('supervised')
   const [humanRoles, setHumanRolesState] = useState<string[]>(['backend']) // simulation: the engineers the person plays
   const [recordings, setRecordings] = useState<RecordingMeta[]>([])
+  const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]) // the cards of the scenario picker (Simulation mode)
   const [recording, setRecording] = useState('')
   const [config, setConfig] = useState<ConfigInfo | null>(null)
   const [preset, setPreset] = useState('fastapi-vanilla')
@@ -69,11 +71,12 @@ export function useQ() {
     let timer: number | undefined
     const load = async () => {
       try {
-        const [agents, recs, cfg] = await Promise.all([api.agents(), api.recordings(), api.config()])
+        const [agents, recs, cfg, cards] = await Promise.all([api.agents(), api.recordings(), api.config(), api.scenarios().catch(() => [] as ScenarioInfo[])])
         if (stop) return
         model.setRoster(agents)
         setConfig(cfg)
         setRecordings(recs)
+        setScenarios(cards)
         setRecording((cur) => cur || pickDefault(recs))
         setBackend('ok')
       } catch {
@@ -132,6 +135,37 @@ export function useQ() {
       }
     },
     [mode, humanRoles, demo, recording, speed, preset, fast, model, fail, builds],
+  )
+
+  /** A scenario: a finished app with a planted problem, one task for the role it names, the AI team on call. */
+  const startScenario = useCallback(
+    async (id: string) => {
+      setBusy(true)
+      try {
+        const card = scenarios.find((c) => c.id === id)
+        const s = await api.startScenario(id)
+        model.reset()
+        model.setGoal(card?.title ?? s.goal)
+        model.setMode(s.mode)
+        model.setHumanRoles(card ? [card.role] : ['backend'])
+        setProjectId(s.id)
+        setReplay(false)
+        setBuilds((await api.projects().catch(() => [])).length || builds + 1)
+      } catch (e) {
+        fail(e)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [scenarios, model, fail, builds],
+  )
+
+  /** A post in the incident channel; the answer of a teammate arrives as a `channel_message` event. */
+  const postChannel = useCallback(
+    async (text: string, to?: string) => {
+      if (projectId) await api.postChannel(projectId, text, to).catch(fail)
+    },
+    [projectId, fail],
   )
 
   const startImport = useCallback(
@@ -222,7 +256,7 @@ export function useQ() {
   )
 
   return {
-    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail, humanRoles, setHumanRoles, submitTask, copyPath,
+    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail, humanRoles, setHumanRoles, submitTask, copyPath, scenarios, startScenario, postChannel,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
     metrics, builds, busy, start, startImport, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }

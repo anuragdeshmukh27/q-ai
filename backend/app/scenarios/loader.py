@@ -136,9 +136,9 @@ class Scenario(BaseModel):
         return self.folder / self.seed.dir
 
     def public(self) -> dict:
-        """What the picker needs. The script, the facts and the guide stay on the server."""
+        """What the picker and the channel need (the teammates' ids: who can be asked). The script, the facts and the guide stay on the server."""
         return {"id": self.id, "title": self.title, "summary": self.summary, "role": self.role, "minutes": self.minutes, "level": self.level,
-                "channel": self.channel.name, "tests": len(self.task.acceptance_tests)}
+                "channel": self.channel.name, "tests": len(self.task.acceptance_tests), "teammates": list(self.characters)}
 
     def fill(self, text: str, extra: dict[str, str] | None = None) -> str:
         """The text with `{booking_error}`-style placeholders replaced (route templates such as `{id}` are left alone)."""

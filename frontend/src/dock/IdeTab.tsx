@@ -5,6 +5,7 @@ import { parseMarkdown, type Block, type Inline } from '../markdown'
 import type { OfficeModel } from '../model'
 import { Branch, buildTree, Empty, type Decor, type Node } from './Explorer'
 import { useRefetch } from './hooks'
+import { GuidePanel } from './GuidePanel'
 import { LazyEdit } from './lazy'
 
 interface Props {
@@ -209,6 +210,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {taskId ? (doc.data ? <Doc blocks={blocks} /> : <div className="text-[13px] text-[var(--muted)]">{doc.error || 'Loading the task document…'}</div>) : <div className="text-[13px] text-[var(--muted)]">No open task. When the tasks before yours are merged, the task document appears here.</div>}
         </div>
+        {model.guide && <GuidePanel guide={model.guide} />}
         {task && <Acceptance model={model} entries={task.tests ?? []} />}
       </div>
     </div>

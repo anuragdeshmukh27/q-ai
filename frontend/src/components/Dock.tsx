@@ -9,6 +9,7 @@ import { IdeTab } from '../dock/IdeTab'
 import { LeaderboardTab } from '../dock/LeaderboardTab'
 import { Terminal } from '../dock/Terminal'
 import type { OfficeModel } from '../model'
+import { unreadCount } from '../scenario'
 
 const TABS = ['IDE', 'Explorer', 'Terminal', 'Agent Chat', 'Approvals', 'Git', 'Leaderboard', 'Contract', 'Gap report'] as const
 type Tab = (typeof TABS)[number]
@@ -23,9 +24,10 @@ interface Props {
   ticker: string
   onSubmit: (task: string) => Promise<void>
   onError: (e: unknown) => void
+  onPost: (text: string, to?: string) => Promise<void>
 }
 
-export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError }: Props) {
+export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError, onPost }: Props) {
   const [tab, setTab] = useState<Tab>('Explorer')
   const ide = model.humanRoles.size > 0 && !replay // the IDE tab exists while the person plays a role in a live Simulation build
   const [open, setOpen] = useState(true)
@@ -67,7 +69,18 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
     if (!ide && tab === 'IDE') setTab('Explorer')
   }, [ide, tab])
 
-  const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' && model.messages.length ? model.messages.length : 0)
+  // an incident session: the Agent Chat tab counts the channel messages you have not seen yet
+  const [seen, setSeen] = useState(0)
+  const viewing = open && tab === 'Agent Chat'
+  const channelSize = model.channel.length
+  const startedAt = model.scenario?.startedAt
+  useEffect(() => setSeen(0), [startedAt])
+  useEffect(() => {
+    if (viewing) setSeen(channelSize)
+  }, [viewing, channelSize])
+  const unread = model.scenario ? unreadCount(model.channel, seen) : 0
+
+  const badge = (t: Tab) => (t === 'Approvals' && pending ? pending : t === 'Agent Chat' ? (model.scenario ? unread : model.messages.length) : 0)
 
   return (
     <section className="flex shrink-0 flex-col border-t border-[var(--line)] bg-[var(--panel)]" style={{ height: open ? (tab === 'IDE' ? 'min(560px, 62vh)' : 'min(300px, 36vh)') : 44 }}>
@@ -84,7 +97,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
           >
             {t}
             {badge(t) > 0 && (
-              <span className="ml-1.5 rounded-full px-1.5 py-[1px] text-[11px] font-bold text-[#0b0d12]" style={{ background: t === 'Approvals' ? 'var(--warn)' : '#6ea8ff' }}>
+              <span className="ml-1.5 rounded-full px-1.5 py-[1px] text-[11px] font-bold text-[#0b0d12]" style={{ background: t === 'Approvals' || (t === 'Agent Chat' && model.scenario) ? 'var(--warn)' : '#6ea8ff' }}>
                 {badge(t)}
               </span>
             )}
@@ -103,7 +116,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
           {tab === 'IDE' && <IdeTab projectId={projectId} model={model} replay={replay} onSubmit={onSubmit} onError={onError} />}
           {tab === 'Explorer' && <Explorer projectId={projectId} model={model} />}
           {tab === 'Terminal' && <Terminal model={model} />}
-          {tab === 'Agent Chat' && <AgentChat model={model} />}
+          {tab === 'Agent Chat' && <AgentChat model={model} onPost={onPost} replay={replay} />}
           {tab === 'Approvals' && <Approvals model={model} replay={replay} onDecide={onDecide} />}
           {tab === 'Git' && <GitGraph projectId={projectId} model={model} />}
           {tab === 'Leaderboard' && <LeaderboardTab />}

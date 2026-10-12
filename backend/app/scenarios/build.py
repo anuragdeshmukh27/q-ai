@@ -57,7 +57,7 @@ class ScenarioBuild(Orchestrator):
     # -- the pipeline -----------------------------------------------------------------
     def run(self):
         self.emit("scenario_started", scenario=self.scenario.id, title=self.scenario.title, role=self.scenario.role, minutes=self.scenario.minutes,
-                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, started_at=self.log.started_at)
+                  channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at)
         self.log.add("session_started", scenario=self.scenario.id, role=self.scenario.role)
         self.director.start()
         return super().run()
