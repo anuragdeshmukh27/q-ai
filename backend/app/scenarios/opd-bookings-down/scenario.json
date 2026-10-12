@@ -1,0 +1,122 @@
+{
+  "id": "opd-bookings-down",
+  "title": "Production incident: Bookings are down",
+  "summary": "The front desk of a hospital OPD cannot book appointments. You are the Backend engineer: find the cause in a finished app and ship the fix while the team watches.",
+  "role": "backend",
+  "minutes": 25,
+  "level": "Intermediate",
+  "rubric": "opd-bookings-down-v1",
+  "goal": "Hospital OPD: appointment booking returns 500 in production",
+  "brief": "It is 08:40 and the morning clinic opens at 09:00. Since Monday's deploy the front desk of the Hospital OPD cannot book an appointment: the booking request fails with a server error and the desk is writing patients on paper.\n\nYou are the Backend engineer on call. The app is finished and its tests are in the repo; something that changed on Monday broke it. Find out what, fix it in the files your role owns, and submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-opd. Ananya (QA) has the report, Aarav (lead) wants updates, Karan owns the database layer. Ask them when you need to; every question you ask is counted.",
+  "seed": {"dir": "seed", "preset": "fastapi-vanilla"},
+  "task": {
+    "title": "Fix: booking an appointment returns 500",
+    "files": ["backend/api/appointments.py", "backend/api/doctors.py"],
+    "acceptance_tests": [
+      "tests/api/test_booking.py::test_booking_an_appointment_returns_201",
+      "tests/api/test_booking.py::test_editing_an_appointment_moves_its_time",
+      "tests/api/test_booking.py::test_doctor_slots_list_the_booked_times_of_the_day"
+    ]
+  },
+  "channel": {"id": "incident-opd", "name": "#incident-opd"},
+  "evidence": {
+    "booking_error": "TypeError: add_appointment() got an unexpected keyword argument 'slot_time'",
+    "slots_error": "KeyError: 'slot_time'"
+  },
+  "characters": {
+    "qa": {
+      "persona": "Ananya, QA engineer. Precise, a little tired, reports what she saw and never guesses at the cause. She cannot edit backend code.",
+      "facts": [
+        "Booking a new appointment (POST /api/doctors/{id}/appointments) returns 500 for every patient and doctor. The server log says: {booking_error}.",
+        "Editing an appointment (PUT /api/appointments/{id}) fails the same way.",
+        "GET /api/doctors/{id}/slots, the call behind the front desk's slot picker, fails with: {slots_error}.",
+        "Listing, completing, cancelling and deleting appointments still work.",
+        "Everything worked on Friday. The failures started with Monday's deploy.",
+        "The tests in tests/api/test_booking.py reproduce all of it; run the tests in your folder to see them."
+      ],
+      "fallbacks": [
+        {"match": ["slot", "picker", "doctor"], "text": "The slot picker (GET /api/doctors/{id}/slots) dies with {slots_error}. Booking itself dies with {booking_error}."},
+        {"match": [], "text": "What I saw: booking returns 500 with {booking_error}, editing fails the same way, and the slots call fails with {slots_error}. Listing and cancelling still work. It started with Monday's deploy."}
+      ]
+    },
+    "architect": {
+      "persona": "Aarav, the lead. Calm, wants a status update every few minutes, cares about the morning clinic and about doing this through review. He does not know the code in detail.",
+      "facts": [
+        "The morning clinic opens at 09:00 and the front desk is writing bookings on paper until this is fixed.",
+        "Monday's deploy included a database change by Karan. Aarav does not know the details; Karan does.",
+        "The fix has to go through Submit: all tests green, the Reviewer reads it, then the Integrator merges. No shortcuts.",
+        "The migration has already run in production, so it cannot be rolled back; the code has to follow the database.",
+        "The backend engineer may only change files under backend/. The database/ folder and tests belong to other people."
+      ],
+      "fallbacks": [
+        {"match": ["rollback", "revert", "undo"], "text": "We cannot roll the migration back: it already ran in production. The code has to follow the database."},
+        {"match": [], "text": "The clinic opens at 09:00 and the desk is on paper. Find where it breaks, fix it in backend/, and submit; I will watch for the review."}
+      ]
+    },
+    "database": {
+      "persona": "Karan, database engineer. Friendly, a bit defensive about Monday's change, answers only about the database layer.",
+      "facts": [
+        "On Monday Karan merged migration 0007_rename_slot_time_to_slot_at.sql: the column appointments.slot_time is now appointments.slot_at. The file is in database/migrations/.",
+        "He updated database/appointments.py in the same change: its functions take and return slot_at, and its rows also carry a 'time' key because the API contract still says time.",
+        "He did not touch anything under backend/.",
+        "Nothing else was renamed: doctors, prescriptions and lab_tests are unchanged."
+      ],
+      "fallbacks": [
+        {"match": [], "text": "That was my change on Monday: migration 0007 renamed appointments.slot_time to slot_at, and database/appointments.py already uses slot_at. I did not touch backend/. Have a look at database/migrations/0007."}
+      ]
+    },
+    "planner": {
+      "persona": "Priya, project manager. Keeps the guide of the incident and points to the next step, never to the answer.",
+      "facts": [
+        "Her guide for this incident is in the panel next to the task: run the tests, read the error, open the failing file, read migration 0007, tell the channel what you found, fix, run the tests again, submit.",
+        "The acceptance tests are in tests/api/test_booking.py and the whole suite has to pass."
+      ],
+      "fallbacks": [
+        {"match": [], "text": "Follow the guide next to your task: it moves to the next step by itself when you run the tests, open a file, post here or submit."}
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "id": "qa-report", "at": 3, "from": "qa",
+      "text": "Booking is down. POST /api/doctors/{id}/appointments returns 500 for every patient. The server log says: {booking_error}. Editing an appointment fails the same way, and GET /api/doctors/{id}/slots dies with {slots_error}. Listing and cancelling still work. It started after Monday's deploy."
+    },
+    {
+      "id": "lead-update", "at": 90, "from": "architect", "skip_if": "learner_posted",
+      "text": "Any update on the booking failure? Please post what you have found so far in this channel, even if it is only 'still looking'."
+    },
+    {
+      "id": "lead-nudge", "idle": 300, "max": 3, "from": "architect",
+      "texts": [
+        "No update from you for 5 minutes. Where are we on the booking fix? The desk is still on paper.",
+        "Still nothing in the channel. Tell me where it breaks and what you are doing about it.",
+        "10 more minutes and the whole morning list is on paper. What is the status?"
+      ]
+    },
+    {
+      "id": "db-pointer", "at": 240, "from": "database", "hint": true, "skip_if": "asked:database",
+      "text": "Heads up from me: Monday's migration 0007 renamed appointments.slot_time to slot_at, and database/appointments.py already uses slot_at. I did not touch backend/. Check database/migrations/0007 if it helps."
+    },
+    {
+      "id": "react-tests-failed", "on": "submit_result", "where": {"ok": false, "stage": "tests"}, "from": "qa",
+      "text": "Your submit did not go through: these tests still fail: {failed}."
+    },
+    {
+      "id": "react-accepted-lead", "on": "submit_result", "where": {"ok": true}, "from": "architect",
+      "text": "Accepted and merged. Thank you, the desk can book again. Ananya, please run your checks on main."
+    },
+    {
+      "id": "react-accepted-qa", "on": "submit_result", "where": {"ok": true}, "from": "qa", "delay": 5,
+      "text": "Checked on main: booking, editing and the slot picker all work again."
+    }
+  ],
+  "guide": [
+    {"id": "run-tests", "title": "Reproduce it", "text": "Press Run tests and read which tests fail and the first error line of each. That is your starting point.", "advance_on": {"kind": "test_run"}},
+    {"id": "open-route", "title": "Open the failing route", "text": "The error names a function and a file under backend/api/. Open backend/api/appointments.py and find the call that fails.", "advance_on": {"kind": "file_opened", "path": "backend/api/appointments.py"}},
+    {"id": "open-migration", "title": "Find what changed", "text": "Something changed on Monday. The database/migrations folder is read-only for you but you can read it: open the newest migration.", "advance_on": {"kind": "file_opened", "path": "database/migrations/0007*"}},
+    {"id": "tell-channel", "title": "Tell the team", "text": "Post what you found in #incident-opd (Agent Chat tab). Aarav is waiting for an update; you can also ask Karan or Ananya.", "advance_on": {"kind": "message_posted"}},
+    {"id": "fix", "title": "Fix it in your files", "text": "Change the files you own so that every caller says what the database layer says now. The same name is used in two files under backend/api/.", "advance_on": {"kind": "file_saved", "path": "backend/api/*"}},
+    {"id": "tests-green", "title": "Run the tests again", "text": "Run tests. The whole suite has to be green, not only the three acceptance tests.", "advance_on": {"kind": "test_result", "ok": true}},
+    {"id": "submit", "title": "Submit for review", "text": "Press Submit for review. The Reviewer reads your change and may send it back up to twice.", "advance_on": {"kind": "submit"}}
+  ]
+}
