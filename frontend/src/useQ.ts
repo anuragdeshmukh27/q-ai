@@ -1,6 +1,6 @@
 // The one hook the UI uses: backend connection, the current project's event stream, and the controls.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { pickDefault } from './demos'
+import { demosFor, pickDefault } from './demos'
 import { ApiError, api, openStream, type ConfigInfo, type Metrics, type RecordingMeta } from './api'
 import type { EscalationAction } from './escalation'
 import { OfficeModel, type ToastAction, type Tone } from './model'
@@ -91,6 +91,12 @@ export function useQ() {
       if (timer) clearTimeout(timer)
     }
   }, [model])
+
+  // Demo mode lists the recordings of the chosen mode (simulations, or builds): a pick that is not in that list moves to the mode's default.
+  useEffect(() => {
+    if (!demo || !recordings.length) return
+    setRecording((cur) => (demosFor(recordings, mode).some((r) => r.name === cur) ? cur : pickDefault(recordings, mode)))
+  }, [demo, mode, recordings])
 
   // Machine gauges.
   useEffect(() => {

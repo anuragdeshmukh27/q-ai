@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ConfigInfo, RecordingMeta } from '../api'
 import { HUMAN_ROLES, type BoardArea, type OfficeModel } from '../model'
 
-import { card, orderDemos } from '../demos'
+import { card, demosFor } from '../demos'
 import { EXAMPLES, FAMOUS } from '../examples'
 import type { ScenarioInfo } from '../scenario'
 import { ScenarioPicker } from './ScenarioPicker'
@@ -97,7 +97,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   const [goal, setGoal] = useState(EXAMPLES[0].goal)
   const [source, setSource] = useState('')
   const [autoFix, setAutoFix] = useState(false)
-  const cards = orderDemos(recordings).map(card)
+  const cards = demosFor(recordings, mode).map(card) // Demo mode: the autonomy switch picks the recorded simulations or the recorded builds
   const shown = demo ? (cards.find((c) => c.name === recording)?.goal ?? '') : goal
   const submit = () => shown.trim() && !busy && onStart(shown.trim())
   const byId = new Map(model.tasks.map((t) => [t.id, t]))
@@ -201,7 +201,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
       {demo && (
         <div>
           <Heading>CHOOSE A RECORDED BUILD</Heading>
-          {cards.length === 0 && <div className="text-[13px] text-[var(--muted)]">No recordings yet</div>}
+          {cards.length === 0 && <div className="text-[13px] text-[var(--muted)]">{mode === 'simulation' ? 'No recorded simulations yet' : 'No recordings yet'}</div>}
           <div role="radiogroup" aria-label="Recorded build" className="flex flex-col gap-1.5">
             {cards.map((c) => {
               const on = c.name === recording
@@ -222,6 +222,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
                   {c.stats && <div className="ml-5 mt-0.5 text-[11.5px] leading-snug text-[#9fb0d4]" data-testid="demo-stats">{c.stats}</div>}
                   <div className="ml-5 mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--muted)]">
                     {c.app && <span>{c.app}</span>}
+                    {c.simulation && <span className="rounded bg-[#3a2f12] px-1.5 py-[1px] text-[10.5px] font-bold tracking-wide text-[#fbbf24]">SIMULATION</span>}
                     {c.feature && <span className="rounded bg-[#243055] px-1.5 py-[1px] text-[10.5px] font-bold tracking-wide text-[#a9c1ff]">{c.feature.toUpperCase()}</span>}
                   </div>
                 </button>

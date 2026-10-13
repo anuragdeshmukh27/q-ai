@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MODES } from '../model'
-import type { CostReport, Metrics } from '../api'
+import type { CostReport, Metrics, RecordingMeta } from '../api'
+import { demoModeTip, modeIdleReason } from '../demos'
 import { formatClock, sessionSeconds, type ScenarioSession } from '../scenario'
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
   mode: string
   onMode: (m: string) => void
   demo: boolean
+  recordings?: RecordingMeta[] // Demo mode: the autonomy switch picks which recordings are listed, so a mode with none is disabled
   onDemo: (v: boolean) => void
   speed: number
   onSpeed: (s: number) => void
@@ -143,11 +145,15 @@ export function TopBar(p: Props) {
         <div className="flex flex-col gap-1">
           <div className="text-[11px] font-semibold tracking-wide text-[var(--muted)]">AUTONOMY</div>
           <div className="seg" role="group" aria-label="Autonomy mode">
-            {MODES.map((m) => (
-              <button key={m} aria-pressed={p.mode === m} onClick={() => p.onMode(m)}>
-                {m[0].toUpperCase() + m.slice(1)}
-              </button>
-            ))}
+            {MODES.map((m) => {
+              const recs = p.recordings ?? []
+              const idle = p.demo && !!p.recordings && !!modeIdleReason(recs, m) // in Demo mode a mode with no recording to show would change nothing
+              return (
+                <button key={m} aria-pressed={p.mode === m} disabled={idle} title={p.demo && p.recordings ? demoModeTip(recs, m) : undefined} onClick={() => p.onMode(m)}>
+                  {m[0].toUpperCase() + m.slice(1)}
+                </button>
+              )
+            })}
           </div>
         </div>
 

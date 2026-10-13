@@ -31,6 +31,7 @@ export default function App() {
         mode={q.mode}
         onMode={q.setMode}
         demo={q.demo}
+        recordings={q.recordings}
         onDemo={q.setDemo}
         speed={q.speed}
         onSpeed={q.setSpeed}
