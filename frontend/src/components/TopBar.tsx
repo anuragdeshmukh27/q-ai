@@ -115,6 +115,7 @@ export function TopBar(p: Props) {
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: statusColor }} />
             {status}
             {p.build > 0 && <span>· build #{p.build}</span>}
+            {p.session?.kind === 'demo' && <span className="rounded border border-[var(--warn)] px-1 text-[10.5px] font-bold uppercase text-[var(--warn)]" title="An autoplay run: not one of your attempts">demo</span>}
           </div>
         </div>
       </div>

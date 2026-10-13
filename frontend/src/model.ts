@@ -2,6 +2,7 @@
 import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
 import type { CostReport, GapInfo, Metrics } from './api'
+import { autoplayReduce, type AutoplayState } from './autoplay'
 import type { ChannelMsg, DebriefReport, DebriefState, GuideView, ScenarioSession } from './scenario'
 
 export interface QEvent {
@@ -187,6 +188,7 @@ export class OfficeModel {
   guide: GuideView | null = null
   hints = 0
   debrief: DebriefState | null = null // the meeting and the report after an accepted fix (step 5)
+  autoplay: AutoplayState | null = null // "Watch a run": the script that plays the scenario, and the mirror of its IDE (live, or replayed from a recording)
   humanRoles = new Set<string>() // simulation: the employees the person plays; their desks read "You"
   private realNames = new Map<string, string>() // their names from the roster, kept to restore them
   private owners = new Map<string, string>()
@@ -252,6 +254,7 @@ export class OfficeModel {
     this.guide = null
     this.hints = 0
     this.debrief = null
+    this.autoplay = null
     this.applyHumanNames()
     this.setRoster(this.order.map((id) => this.agents.get(id)!).map(({ id, name, role, desk, sprite }) => ({ id, name, role, desk, sprite })), false)
     this.tasks = []
@@ -345,10 +348,18 @@ export class OfficeModel {
     this.ticker = text
   }
 
+  /** The autoplay events (and the session log's saves) move the mirror of the script's IDE; the session clock of the run is anchored on every event that tells its time. */
+  private foldAutoplay(e: QEvent) {
+    this.autoplay = autoplayReduce(this.autoplay, e)
+    const known = e.type === 'autoplay_started' || e.type === 'autoplay_speed' || (e.type === 'session_event' && typeof e.t === 'number')
+    if (known && this.autoplay && this.scenario) this.scenario = { ...this.scenario, clock: { t: num(e.t), atMs: Date.now(), rate: this.autoplay.rate } }
+  }
+
   apply(e: QEvent, visuals = true) {
     this.eventCount++
     this.cur = e.seq
     const a = e.agent ? this.agents.get(e.agent) : undefined
+    if (e.type.startsWith('autoplay_') || e.type === 'session_event') this.foldAutoplay(e)
     switch (e.type) {
       case 'agent_state':
         if (a) {
@@ -502,7 +513,7 @@ export class OfficeModel {
         break
       case 'scenario_started': {
         const ch = (e.channel ?? {}) as { id?: string; name?: string }
-        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), scoring: Array.isArray(e.scoring) ? (e.scoring as ScenarioSession['scoring']) : [], attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null }
+        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), scoring: Array.isArray(e.scoring) ? (e.scoring as ScenarioSession['scoring']) : [], attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null, ...(e.kind === 'demo' ? { kind: 'demo' as const, variant: str(e.variant), clock: null, finishedT: null } : {}) }
         this.say(`Incident: ${str(e.title)}`)
         break
       }
@@ -549,7 +560,7 @@ export class OfficeModel {
       }
       case 'session_event': {
         if (e.kind === 'hint_given') this.hints = Math.max(this.hints, num(e.n))
-        if (e.kind === 'session_finished' && this.scenario) this.scenario = { ...this.scenario, endedAt: e.ts }
+        if (e.kind === 'session_finished' && this.scenario) this.scenario = { ...this.scenario, endedAt: e.ts, finishedT: num(e.t) }
         break
       }
       case 'human_task_assigned': {

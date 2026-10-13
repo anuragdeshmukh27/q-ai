@@ -35,6 +35,17 @@ export interface ScenarioSession {
   attempt: number // 1 for the first try, 2 for the next, ...
   startedAt: number // server clock, seconds since 1970
   endedAt: number | null // set when the session ends (fixed, stopped or failed): the timer stops
+  kind?: 'learner' | 'demo' // a demo is an autoplay run: marked in its report, never part of the learner's attempts
+  variant?: string // an autoplay run: "strong" or "weak"
+  clock?: ClockAnchor | null // an autoplay run keeps its own (faster) session clock: the timer follows it instead of the wall clock
+  finishedT?: number | null // the session time at which the session ended (fixes the timer of an autoplay run)
+}
+
+/** The session clock of an autoplay run at one moment: `t` session seconds when the browser's clock read `atMs`, running `rate` session seconds per real second. */
+export interface ClockAnchor {
+  t: number
+  atMs: number
+  rate: number
 }
 
 /** One message of the incident channel. `source`: who produced it (the learner, the script, the live model, or the scripted fallback when the model could not answer). */
@@ -76,8 +87,12 @@ export function formatClock(totalSeconds: number): string {
 }
 
 /** Seconds on the session timer: it runs from the start to the end of the session, or to now while the session is going. */
-export function sessionSeconds(s: Pick<ScenarioSession, 'startedAt' | 'endedAt'> | null, nowMs: number): number {
+export function sessionSeconds(s: Pick<ScenarioSession, 'startedAt' | 'endedAt' | 'clock' | 'finishedT'> | null, nowMs: number): number {
   if (!s) return 0
+  if (s.clock) {
+    if (s.endedAt !== null && s.finishedT != null) return s.finishedT
+    return s.clock.t + (Math.max(0, nowMs - s.clock.atMs) / 1000) * s.clock.rate
+  }
   return Math.max(0, (s.endedAt ?? nowMs / 1000) - s.startedAt)
 }
 
@@ -132,6 +147,8 @@ export interface ReportCriterion {
   rows: string[]
 }
 export interface AttemptRecord {
+  kind?: 'demo' // a demo run's record (the report of a demo lists only demos)
+  variant?: string
   attempt: number
   total: number
   scores: Record<string, number>
@@ -151,6 +168,8 @@ export interface DebriefReport {
   title: string
   project: string
   attempt: number
+  kind?: 'learner' | 'demo' // an autoplay run is a demo: its report says so and it is no attempt of the learner's
+  variant?: string
   total: number
   max: number
   elapsed: number
@@ -185,7 +204,8 @@ export interface DebriefState {
 
 /** The attempt before this one in the history, if there is one. */
 export function previousAttempt(report: DebriefReport): AttemptRecord | null {
-  const before = report.attempts.filter((a) => a.attempt < report.attempt)
+  if (report.kind === 'demo') return null // a demo is compared with nothing: it is not an attempt of the learner's
+  const before = report.attempts.filter((a) => a.attempt < report.attempt && a.kind !== 'demo')
   return before.length ? before[before.length - 1] : null
 }
 

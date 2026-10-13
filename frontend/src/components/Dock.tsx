@@ -33,7 +33,8 @@ interface Props {
 
 export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onError, onPost, onTryAgain, busy }: Props) {
   const [tab, setTab] = useState<Tab>('Explorer')
-  const ide = model.humanRoles.size > 0 && !replay // the IDE tab exists while the person plays a role in a live Simulation build
+  const auto = model.autoplay // "Watch a run": a script plays the scenario, live or from a recording (its IDE, chat, meeting and report come from events, so a replay shows them too)
+  const ide = !!auto || (model.humanRoles.size > 0 && !replay) // the IDE tab exists while the person plays a role in a live Simulation build, or a script does
   const [open, setOpen] = useState(true)
   const pending = model.approvals.filter((a) => a.state === 'pending').length
 
@@ -73,6 +74,16 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
     if (!ide && tab === 'IDE') setTab('Explorer')
   }, [ide, tab])
 
+  // an autoplay script says where to look: the editor while it works in the IDE, the channel while it talks to the team (the meeting and the report bring their own tabs forward)
+  const focus = auto?.focus
+  const step = auto?.step ?? 0
+  const hasAuto = !!auto
+  useEffect(() => {
+    if (!hasAuto || !step || focus === 'debrief') return
+    setTab(focus === 'chat' ? 'Agent Chat' : 'IDE')
+    setOpen(true)
+  }, [step, focus, hasAuto])
+
   // an incident session: the Agent Chat tab counts the channel messages you have not seen yet
   const [seen, setSeen] = useState(0)
   const viewing = open && tab === 'Agent Chat'
@@ -87,7 +98,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
   // the debrief: the meeting brings the channel forward, the report brings the Debrief tab forward (once each)
   const debriefPhase = model.debrief?.phase
   const hasReport = !!model.debrief?.report
-  const debrief = !!model.debrief && !replay // the Debrief tab exists from the meeting on
+  const debrief = !!model.debrief && (!replay || !!auto) // the Debrief tab exists from the meeting on
   const [reportSeen, setReportSeen] = useState(false)
   useEffect(() => {
     if (debriefPhase === 'meeting') {

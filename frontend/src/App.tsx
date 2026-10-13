@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type ModelInfo } from './api'
+import { AutoplayBanner } from './components/AutoplayBanner'
 import { Dock } from './components/Dock'
 import { Inspector } from './components/Inspector'
 import { LeftPanel } from './components/LeftPanel'
@@ -40,6 +41,7 @@ export default function App() {
         done={model.finished ? model.finished.ok : null}
         session={model.scenario}
       />
+      {model.autoplay && <AutoplayBanner auto={model.autoplay} replay={q.replay} onStop={() => void q.stopAutoplay()} onSpeed={(s) => void q.setAutoplaySpeed(s)} />}
       <div className="flex min-h-0 flex-1">
         <LeftPanel
           model={model}
@@ -65,6 +67,7 @@ export default function App() {
           onCopyPath={q.copyPath}
           scenarios={q.scenarios}
           onScenario={q.startScenario}
+          onWatch={q.startAutoplay}
         />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>
           <OfficeCanvas model={model} selected={selected} tempo={q.demo ? q.speed : 1} onSelect={setSelected} />

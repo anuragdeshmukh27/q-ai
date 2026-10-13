@@ -160,6 +160,51 @@ export function useQ() {
     [scenarios, model, fail, builds],
   )
 
+  /** "Watch a run": a script plays the scenario on the server (variant strong or weak); the screen follows it through its events. */
+  const startAutoplay = useCallback(
+    async (id: string, variant: string) => {
+      setBusy(true)
+      try {
+        const card = scenarios.find((c) => c.id === id)
+        const s = await api.startAutoplay(id, variant, 1)
+        model.reset()
+        model.setGoal(`${card?.title ?? s.goal} · ${variant === 'weak' ? 'weak' : 'strong'} run`)
+        model.setMode(s.mode)
+        model.setHumanRoles(card ? [card.role] : ['backend'])
+        setProjectId(s.id)
+        setReplay(false)
+        setBuilds((await api.projects().catch(() => [])).length || builds + 1)
+      } catch (e) {
+        fail(e)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [scenarios, model, fail, builds],
+  )
+
+  const setAutoplaySpeed = useCallback(
+    async (s: number) => {
+      if (projectId) await api.autoplaySpeed(projectId, s).catch(fail)
+    },
+    [projectId, fail],
+  )
+
+  /** Stop the scripted run: the server ends the script, the team and the debrief and removes the demo's project; the screen goes back to the start. */
+  const stopAutoplay = useCallback(async () => {
+    if (!projectId) return
+    try {
+      await api.autoplayStop(projectId)
+    } catch (e) {
+      fail(e)
+      return
+    }
+    model.reset()
+    setProjectId(null)
+    setReplay(false)
+    toast('info', 'Autoplay stopped', 'The scripted run was stopped and nothing of it was kept.')
+  }, [projectId, model, fail, toast])
+
   /** A post in the incident channel; the answer of a teammate arrives as a `channel_message` event. */
   const postChannel = useCallback(
     async (text: string, to?: string) => {
@@ -256,7 +301,7 @@ export function useQ() {
   )
 
   return {
-    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail, humanRoles, setHumanRoles, submitTask, copyPath, scenarios, startScenario, postChannel,
+    config, preset, setPreset, fast, setFast, replay, decide, escalate, toast, fail, humanRoles, setHumanRoles, submitTask, copyPath, scenarios, startScenario, startAutoplay, setAutoplaySpeed, stopAutoplay, postChannel,
     model, backend, projectId, connected, demo, setDemo, speed, setSpeed, mode, setMode, recordings, recording, setRecording,
     metrics, builds, busy, start, startImport, toasts, dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
   }

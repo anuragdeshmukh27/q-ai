@@ -21,8 +21,9 @@ const BTN = 'rounded-md border px-3 py-1 text-[12.5px] font-semibold disabled:op
 
 /** The in-app IDE of Simulation mode: the files of your folder, an editor, the tests and the task document. No shell: the test panel is the terminal. */
 export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
+  const auto = model.autoplay // a script is playing the scenario (live, or replayed from a recording): the IDE shows what the script does and nothing here is the viewer's to change
   const [pickRole, setPickRole] = useState('')
-  const role = pickRole && model.humanRoles.has(pickRole) ? pickRole : ideRole(model.tasks, model.humanRoles)
+  const role = auto?.ide.tree?.role || (pickRole && model.humanRoles.has(pickRole) ? pickRole : ideRole(model.tasks, model.humanRoles))
   const fail = useRef(onError)
   useEffect(() => {
     fail.current = onError
@@ -51,7 +52,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const [scoringChoice, setScoringChoice] = useState<boolean | null>(null) // "How you are scored": open until your first test run, unless you opened or closed it yourself
 
   // leaving the page with edits that are not saved: the browser asks first
-  const unsaved = ctl.dirty.length
+  const unsaved = auto ? 0 : ctl.dirty.length
   useEffect(() => {
     if (!unsaved) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -61,6 +62,10 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
 
   /** Show a file (and a line of it). Leaving a file with unsaved edits asks first: save, switch and keep the edits unsaved, or stay. */
   const go = (target: string, line?: number) => {
+    if (auto) {
+      ctl.activate(target) // the viewer may look at a tab that is open; the script decides what is open
+      return
+    }
     const from = ctl.unsavedBeforeSwitch(target)
     if (from) {
       setPending({ kind: 'switch', from, target, line })
@@ -92,19 +97,27 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
   const taskKey = model.tasks.map((t) => `${t.id}${t.status}`).join()
   useEffect(() => {
     ctl.setRole(role)
-    if (projectId && role && !replay) void ctl.refresh()
-  }, [ctl, projectId, role, replay, model.filesVersion, taskKey])
+    if (projectId && role && !replay && !auto) void ctl.refresh()
+  }, [ctl, projectId, role, replay, auto, model.filesVersion, taskKey])
 
-  const tree = ctl.tree
+  // an autoplay script: show its IDE (after the role is set, so the role's reset does not undo it)
+  const mirror = auto?.ide
+  useEffect(() => {
+    if (!mirror) return
+    ctl.follow(mirror)
+    setLeft(mirror.panel)
+  }, [ctl, mirror, role])
+
+  const tree = ctl.tree ?? mirror?.tree ?? null
   const taskId = tree?.task ?? null
   const task = model.tasks.find((t) => t.id === taskId)
 
   // show a first file when the folder is ready: the first one that is yours and is not a test
   useEffect(() => {
-    if (!tree?.ready || ctl.open) return
+    if (auto || !tree?.ready || ctl.open) return
     const first = tree.files.find((f) => f.writable && !f.path.startsWith('tests/') && !f.path.endsWith('__init__.py')) ?? tree.files.find((f) => f.writable)
     if (first) void ctl.openFile(first.path, true) // the IDE's own first file: logged as automatic, so it is not the guide's "open the failing route"
-  }, [ctl, tree, ctl.open])
+  }, [ctl, tree, ctl.open, auto])
 
   const root = useMemo(() => buildTree(tree?.files ?? []), [tree])
   const info = useMemo(() => {
@@ -137,16 +150,18 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
     return { dim: true, lock: owner ? (tree.names[owner] ?? owner) : 'read-only' }
   }
 
-  const doc = useRefetch(projectId && taskId && !replay ? () => api.taskDoc(projectId, taskId) : null, `${projectId}:${taskId}`, 0, 50)
-  const blocks = useMemo(() => (doc.data ? parseMarkdown(doc.data) : []), [doc.data])
+  const doc = useRefetch(projectId && taskId && !replay && !auto ? () => api.taskDoc(projectId, taskId) : null, `${projectId}:${taskId}`, 0, 50)
+  const docText = auto ? auto.doc : doc.data
+  const blocks = useMemo(() => (docText ? parseMarkdown(docText) : []), [docText])
 
-  if (replay) return <Empty text="The IDE is for a live Simulation build. Turn Demo mode off to play a role yourself." />
+  if (replay && !auto) return <Empty text="The IDE is for a live Simulation build. Turn Demo mode off to play a role yourself." />
   if (!projectId) return <Empty text="Start the build: your task and your folder appear here when it is your turn." />
   if (!role) return <Empty text="In Simulation mode you play one or more engineers. Pick the roles in the left panel before the build starts." />
   if (!tree) return <Empty text="Loading your folder…" />
   if (!tree.ready) return <Empty text="Your task has not started yet. Your folder appears when the tasks it waits for have been merged." />
 
   const writable = !!tree.task && ctl.writable(ctl.open)
+  const watching = !!auto
   const dirty = ctl.open ? ctl.isDirty(ctl.open) : false
   const busy = model.ide.running || checking || ctl.saving
   const owner = ctl.file(ctl.open)?.owner
@@ -174,7 +189,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
           searchBox.current?.select()
         } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
           e.preventDefault()
-          void ctl.save()
+          if (!watching) void ctl.save()
         }
       }}
     >
@@ -191,7 +206,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
             <button aria-pressed={left === 'files'} onClick={() => setLeft('files')} title={`Your folder · ${role}`}>Files</button>
             <button aria-pressed={left === 'search'} onClick={() => setLeft('search')} title="Search every file of the project (Ctrl+Shift+F)">Search</button>
           </div>
-          <button onClick={() => setAdding(adding === null ? '' : null)} disabled={!tree.task} title="New file" aria-label="New file" className="ml-auto rounded px-1.5 text-[16px] leading-none text-[var(--muted)] hover:bg-[#1a2033] hover:text-white disabled:opacity-30">+</button>
+          <button onClick={() => setAdding(adding === null ? '' : null)} disabled={!tree.task || watching} title="New file" aria-label="New file" className="ml-auto rounded px-1.5 text-[16px] leading-none text-[var(--muted)] hover:bg-[#1a2033] hover:text-white disabled:opacity-30">+</button>
         </div>
         {adding !== null && (
           <input
@@ -207,7 +222,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
           />
         )}
         {left === 'search' ? (
-          <SearchPanel ctl={ctl} tree={tree} box={searchBox} onPick={(p, l) => go(p, l)} />
+          <SearchPanel ctl={ctl} tree={tree} box={searchBox} onPick={(p, l) => go(p, l)} follow={watching} />
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <Branch
@@ -225,7 +240,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Tabs ctl={ctl} tree={tree} onPick={(p) => go(p)} onClose={askClose} />
+        <Tabs ctl={ctl} tree={tree} onPick={(p) => go(p)} onClose={watching ? () => {} : askClose} />
         {pending && <Unsaved pending={pending} onAnswer={(c) => void answer(c)} />}
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--line)] px-3 py-1.5 text-[13px]">
           {ctl.open ? (
@@ -242,20 +257,20 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
             <span className="text-[var(--muted)]">{tree.task ? 'Pick a file from your folder.' : 'You have no open task right now.'}</span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <button onClick={() => void ctl.save()} disabled={!dirty || !writable || ctl.saving} title="Save (Ctrl+S)" className={`${BTN} border-[var(--line)] text-[var(--text)] hover:border-[var(--accent)]`}>
+            <button onClick={() => void ctl.save()} disabled={!dirty || !writable || ctl.saving || watching} title="Save (Ctrl+S)" className={`${BTN} border-[var(--line)] text-[var(--text)] hover:border-[var(--accent)]`}>
               Save
             </button>
-            <button onClick={run} disabled={!tree.task || busy} className={`${BTN} border-[var(--accent)] text-[var(--text)]`}>
+            <button onClick={run} disabled={!tree.task || busy || watching} className={`${BTN} border-[var(--accent)] text-[var(--text)]`}>
               {model.ide.running && !checking ? 'Running…' : 'Run tests'}
             </button>
-            <button onClick={submit} disabled={!tree.task || busy} className={`${BTN} border-transparent bg-[#2f9e5f] text-white hover:bg-[#38b36e]`}>
+            <button onClick={submit} disabled={!tree.task || busy || watching} className={`${BTN} border-transparent bg-[#2f9e5f] text-white hover:bg-[#38b36e]`}>
               {checking ? 'Checking…' : 'Submit for review'}
             </button>
           </div>
         </div>
         <div className="min-h-0 flex-1">
           {ctl.open && ctl.loaded ? (
-            <LazyEdit path={ctl.open} value={ctl.text} readOnly={!writable} onChange={(t) => ctl.edit(t)} onSave={() => void ctl.save()} reveal={ctl.reveal?.path === ctl.open ? ctl.reveal : null} />
+            <LazyEdit path={ctl.open} value={ctl.text} readOnly={!writable || watching} onChange={(t) => ctl.edit(t)} onSave={() => void ctl.save()} reveal={ctl.reveal?.path === ctl.open ? ctl.reveal : null} />
           ) : (
             <Empty text={ctl.loading ? 'Loading…' : tree.task ? 'Pick a file to edit it. The files of other roles are there to read.' : 'Waiting for your next task.'} />
           )}
@@ -266,7 +281,7 @@ export function IdeTab({ projectId, model, replay, onSubmit, onError }: Props) {
       <div className="flex w-[300px] shrink-0 flex-col border-l border-[var(--line)]">
         <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="p-3">
-          {taskId ? (doc.data ? <Doc blocks={blocks} /> : <div className="text-[13px] text-[var(--muted)]">{doc.error || 'Loading the task document…'}</div>) : <div className="text-[13px] text-[var(--muted)]">No open task. When the tasks before yours are merged, the task document appears here.</div>}
+          {taskId || auto ? (docText ? <Doc blocks={blocks} /> : <div className="text-[13px] text-[var(--muted)]">{doc.error || 'Loading the task document…'}</div>) : <div className="text-[13px] text-[var(--muted)]">No open task. When the tasks before yours are merged, the task document appears here.</div>}
           {model.scenario && model.scenario.scoring.length > 0 && (
             <ScoringPanel scoring={model.scenario.scoring} name={(id) => model.name(id) || id} open={scoringChoice ?? model.ide.result === null} onToggle={setScoringChoice} />
           )}
@@ -328,8 +343,11 @@ export function Unsaved({ pending, onAnswer }: { pending: Pending; onAnswer: (c:
 }
 
 /** Project-wide search (Ctrl+Shift+F): every file of the folder, the ones you may not edit included; results by file and line, a click opens the line. */
-export function SearchPanel({ ctl, tree, box, onPick }: { ctl: IdeController; tree: IdeTree; box: React.RefObject<HTMLInputElement | null>; onPick: (path: string, line: number) => void }) {
+export function SearchPanel({ ctl, tree, box, onPick, follow = false }: { ctl: IdeController; tree: IdeTree; box: React.RefObject<HTMLInputElement | null>; onPick: (path: string, line: number) => void; follow?: boolean }) {
   const [text, setText] = useState(ctl.query)
+  useEffect(() => {
+    if (follow) setText(ctl.query) // an autoplay script searches: its query shows in the box
+  }, [follow, ctl.query])
   const found = ctl.found
   const locked = (p: string) => !!tree.files.find((f) => f.path === p && !f.writable)
   return (
@@ -338,13 +356,14 @@ export function SearchPanel({ ctl, tree, box, onPick }: { ctl: IdeController; tr
         className="shrink-0 p-2"
         onSubmit={(e) => {
           e.preventDefault()
-          void ctl.search(text)
+          if (!follow) void ctl.search(text)
         }}
       >
         <input
           ref={box}
           autoFocus
           value={text}
+          readOnly={follow}
           onChange={(e) => setText(e.target.value)}
           placeholder="Search all files…"
           aria-label="Search all files"

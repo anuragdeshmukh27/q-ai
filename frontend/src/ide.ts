@@ -1,6 +1,7 @@
 // State of the in-app IDE (simulation mode): which file is open, what has been edited and not saved, and the saving that Run tests and Submit do first.
 // No React in here: the dock tab reads it through useSyncExternalStore, and the tests drive it with a fake client.
 import type { IdeFile, IdeSearch, IdeTree } from './api'
+import type { AutoplayIde } from './autoplay'
 import type { IdeTestRun } from './model'
 
 export interface IdeClient {
@@ -52,6 +53,20 @@ export class IdeController {
   private touch() {
     this.version++
     this.sinks.forEach((f) => f())
+  }
+
+  /** An autoplay script is playing: show what its IDE shows (tabs, the open file, unsaved text, the search) without asking the server for anything. Idempotent. */
+  follow(m: AutoplayIde): void {
+    this.tree = m.tree
+    this.tabs = [...m.tabs]
+    this.open = m.open
+    this.drafts = new Map(Object.entries(m.files).map(([path, f]) => [path, { saved: f.saved, text: f.text }]))
+    this.query = m.query
+    this.found = m.found
+    this.searching = false
+    this.loading = false
+    this.reveal = m.reveal
+    this.touch()
   }
 
   setRole(role: string) {

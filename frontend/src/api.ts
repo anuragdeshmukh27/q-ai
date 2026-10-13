@@ -34,6 +34,9 @@ export interface RecordingMeta {
   title?: string
   app?: string
   feature?: string
+  /** "scenario": a recorded autoplay run of a simulation scenario (it replays with its IDE, chat, meeting and Debrief tab). */
+  kind?: string
+  variant?: string
   /** What the build is made of (modules, tables, endpoints, pages, functions, lines, the agents' share); absent in older recordings. */
   stats?: { modules: number; tables: number; endpoints: number; pages: number; functions?: number; lines?: number; agent_share_functions?: number; agent_share_lines?: number; functions_repair?: number; finish?: boolean; gaps?: number; fixed?: number; files?: number; insertions?: number; deletions?: number }
 }
@@ -280,6 +283,9 @@ export const api = {
   submitTask: (id: string, task: string) => call<SubmitResult>(`/api/projects/${id}/tasks/${task}/submit`, { method: 'POST', body: '{}' }),
   taskDoc: (id: string, task: string) => callText(`/api/projects/${id}/tasks/${task}/doc`),
   scenarios: () => call<ScenarioInfo[]>('/api/scenarios'),
+  startAutoplay: (sid: string, variant: string, speed: number) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/autoplay`, { method: 'POST', body: JSON.stringify({ variant, speed }) }),
+  autoplaySpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/autoplay/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),
+  autoplayStop: (id: string) => call<unknown>(`/api/projects/${id}/autoplay/stop`, { method: 'POST', body: '{}' }),
   startScenario: (sid: string) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/start`, { method: 'POST', body: '{}' }),
   postChannel: (id: string, text: string, to?: string) => call<{ to: string[]; pending: string[] }>(`/api/projects/${id}/channel`, { method: 'POST', body: JSON.stringify({ text, to: to || null }) }),
   ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),

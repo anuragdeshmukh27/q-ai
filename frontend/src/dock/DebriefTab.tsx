@@ -50,7 +50,16 @@ function Scores({ report, model }: { report: DebriefReport; model: OfficeModel }
         <span className="text-[20px] text-[var(--muted)]">/{report.max}</span>
         {delta && <span className="ml-3 text-[13.5px] font-bold" style={{ color: delta.startsWith('+') ? 'var(--good)' : delta.startsWith('−') ? 'var(--bad)' : 'var(--muted)' }}>{delta}</span>}
       </div>
-      <div className="mt-1 text-[12.5px] text-[var(--muted)]">attempt {report.attempt} · {formatMinutes(report.elapsed)} on the clock</div>
+      <div className="mt-1 text-[12.5px] text-[var(--muted)]">
+        {report.kind === 'demo' ? (
+          <>
+            <span className="mr-1.5 rounded border border-[var(--warn)] px-1.5 py-[1px] text-[11px] font-bold uppercase text-[var(--warn)]" title="An autoplay run: a script played it. It is not one of your attempts.">demo · {report.variant || 'autoplay'} run</span>
+            {formatMinutes(report.elapsed)} on the clock
+          </>
+        ) : (
+          <>attempt {report.attempt} · {formatMinutes(report.elapsed)} on the clock</>
+        )}
+      </div>
       <div className="mt-4">
         <Heading>Rubric (0 to 4 each)</Heading>
         <ul className="space-y-2.5">
@@ -77,11 +86,11 @@ function Scores({ report, model }: { report: DebriefReport; model: OfficeModel }
         <Heading>Attempts</Heading>
         <div className="flex items-end gap-2" aria-label="Attempt history">
           {report.attempts.map((a) => (
-            <div key={a.attempt} className="flex w-[54px] flex-col items-center gap-1" aria-label={`Attempt ${a.attempt}: ${a.total}`}>
+            <div key={a.attempt} className="flex w-[54px] flex-col items-center gap-1" aria-label={`${a.kind === 'demo' ? 'Demo' : 'Attempt'} ${a.attempt}: ${a.total}`}>
               <div className="flex h-[72px] w-full items-end rounded-md bg-[#151a2b]">
                 <div className="w-full rounded-md" style={{ height: `${Math.max(4, (a.total / top) * 100)}%`, background: a.attempt === report.attempt ? 'var(--accent)' : '#2f3a5c' }} />
               </div>
-              <div className="text-[11.5px] tabular-nums text-[var(--muted)]">#{a.attempt} · {a.total}</div>
+              <div className="text-[11.5px] tabular-nums text-[var(--muted)]">{a.kind === 'demo' ? 'demo ' : ''}#{a.attempt} · {a.total}</div>
             </div>
           ))}
           <div className="ml-1 pb-5 text-[12px] leading-tight text-[var(--muted)]">Same rubric every attempt</div>
@@ -213,9 +222,9 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
         </ol>
       </div>
       <div className="mt-auto flex flex-col gap-2 pt-4">
-        <button onClick={() => void onTryAgain(report.scenario)} disabled={busy} className="rounded-lg bg-[#2f5bd6] px-3 py-2.5 text-[14px] font-bold text-white hover:bg-[#3b6af0] disabled:opacity-40">
+        {report.kind !== 'demo' && <button onClick={() => void onTryAgain(report.scenario)} disabled={busy} className="rounded-lg bg-[#2f5bd6] px-3 py-2.5 text-[14px] font-bold text-white hover:bg-[#3b6af0] disabled:opacity-40">
           ↻ Try again (attempt {Math.max(...report.attempts.map((a) => a.attempt)) + 1})
-        </button>
+        </button>}
         <a
           href={projectId ? `/api/projects/${projectId}/report?format=md` : undefined}
           target="_blank"

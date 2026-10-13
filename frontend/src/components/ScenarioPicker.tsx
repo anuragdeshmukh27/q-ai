@@ -6,10 +6,12 @@ interface Props {
   scenarios: ScenarioInfo[]
   busy: boolean
   onStart: (id: string) => void
+  /** "Watch a run": a script plays the scenario (variant "strong" or "weak"), nobody types. */
+  onWatch?: (id: string, variant: 'strong' | 'weak') => void
 }
 
 /** The scenarios of Simulation mode: a finished app with a planted problem and a scripted team. One card for now. */
-export function ScenarioPicker({ scenarios, busy, onStart }: Props) {
+export function ScenarioPicker({ scenarios, busy, onStart, onWatch }: Props) {
   if (scenarios.length === 0) return null
   return (
     <div aria-label="Scenarios">
@@ -33,6 +35,30 @@ export function ScenarioPicker({ scenarios, busy, onStart }: Props) {
             >
               {busy ? 'Starting…' : 'Start the incident'}
             </button>
+            {onWatch && (
+              <div className="mt-2.5 border-t border-[var(--line)] pt-2" aria-label="Watch a run">
+                <div className="text-[11px] font-semibold tracking-wider text-[var(--muted)]">WATCH A RUN · about 3 minutes, nobody types</div>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onWatch(s.id, 'strong')}
+                    disabled={busy}
+                    title="A scripted engineer: tests first, searches for the old name, the first update inside two minutes, a regression test, both fixes. Scores 100."
+                    className="rounded-md border border-[var(--good)] px-2 py-1.5 text-[13px] font-bold text-[var(--good)] hover:bg-[#10281a] disabled:opacity-40"
+                  >
+                    Strong run
+                  </button>
+                  <button
+                    onClick={() => onWatch(s.id, 'weak')}
+                    disabled={busy}
+                    title="A scripted engineer: edits first, no update until nudged, a red submit, asks for help. Scores clearly lower."
+                    className="rounded-md border border-[var(--warn)] px-2 py-1.5 text-[13px] font-bold text-[var(--warn)] hover:bg-[#2a210a] disabled:opacity-40"
+                  >
+                    Weak run
+                  </button>
+                </div>
+                <div className="mt-1 text-[11.5px] leading-tight text-[var(--muted)]">The real scoring and debrief. Marked demo: it does not count in your attempts.</div>
+              </div>
+            )}
           </div>
         ))}
       </div>
