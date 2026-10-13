@@ -253,10 +253,17 @@ class Session:
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
         self._thread.start()
 
-    def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int, kind: str = "learner", variant: str = "", clock=None) -> None:
-        """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls). `attempt`: the number of this try (1 for the first)."""
+    def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int, kind: str = "learner", variant: str = "", clock=None,
+                       record_as: str | None = None, record_info: dict | None = None) -> None:
+        """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls). `attempt`: the number of this try (1 for the first).
+        `record_as`: an autoplay run is recorded under that name (the demo recordings folder) and the recording is closed when the run ends."""
         mgr = self.mgr
-        llm = mgr.make_llm(None)
+        if record_as:
+            self.recorder = Recorder(mgr.settings.recordings, record_as, scn.goal, overwrite=True)
+            self.bus.subscribe(self.recorder.on_event)
+            self.record_info = {**(record_info or {}), "kind": "scenario", "variant": variant}
+            self.bus.subscribe(self._close_recording)
+        llm = mgr.make_llm(self.recorder.on_llm if self.recorder else None)
         fast = mgr.settings.fast_live
         self.scenario = scn
         replier = Replier(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
@@ -269,6 +276,16 @@ class Session:
             self.sampler = MetricsSampler(mgr.scheduler, self.bus.emit, lambda: llm.tokens_per_s).start()
         self._thread = threading.Thread(target=self._run_live, name=f"scenario-{self.id}", daemon=True)
         self._thread.start()
+
+    def _close_recording(self, e: dict) -> None:
+        """A recorded autoplay run ends with `autoplay_ended` (the debrief has finished by then): the recording is written, with the project's git history as its snapshot."""
+        if e["type"] != "autoplay_ended" or self.recorder is None:
+            return
+        recorder, self.recorder = self.recorder, None
+        try:
+            recorder.finalize(self.root, e.get("reason") == "done", [e["error"]] if e.get("error") else [], self.record_info)
+        except Exception as err:  # a recording that cannot be written must not take the session down
+            self.bus.emit("error", agent="orchestrator", message=f"the recording could not be written: {err}"[:200])
 
     def _run_live(self) -> None:
         self.state = "running"
@@ -291,7 +308,7 @@ class Session:
         self.state = "done" if ok else "failed"
         if self.sampler:
             self.sampler.stop()
-        if self.recorder:
+        if self.recorder and self.scenario is None:  # a scenario's recording is closed when its run ends (`_close_recording`): the debrief comes after project_done
             try:
                 self.recorder.finalize(self.root, ok, problems, self.record_info)
             except (RecordingError, OSError) as e:
@@ -762,7 +779,7 @@ class SessionManager:
                 raise
         return s
 
-    def start_scenario(self, scenario_id: str, kind: str = "learner", variant: str = "", clock=None) -> Session:
+    def start_scenario(self, scenario_id: str, kind: str = "learner", variant: str = "", clock=None, record_as: str | None = None, record_info: dict | None = None) -> Session:
         try:
             scn = load_scenario(scenario_id)
             rubric = load_rubric(scn)
@@ -778,20 +795,20 @@ class SessionManager:
             s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
             self.sessions[s.id] = s
             try:
-                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id, kind).next_number(), kind, variant, clock)
+                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id, kind).next_number(), kind, variant, clock, record_as, record_info)
             except Exception:
                 del self.sessions[s.id]
                 raise
         return s
 
-    def start_autoplay(self, scenario_id: str, variant: str, speed: int = 1) -> Session:
+    def start_autoplay(self, scenario_id: str, variant: str, speed: int = 1, record_as: str | None = None, record_info: dict | None = None) -> Session:
         """"Watch a run": a demo session of the scenario played by a script. Its session clock runs faster than real time (the weak run waits five quiet minutes for Aarav's nudge)."""
         if variant not in VARIANTS:
             raise SessionError("The run is strong or weak.", 400)
         if speed not in SPEEDS:
             raise SessionError("The speed is 1 or 2.", 400)
         clock = VirtualClock() if self.settings.autoplay_virtual else ScaledClock(speed, CLOCK_FACTOR[variant])
-        s = self.start_scenario(scenario_id, "demo", variant, clock)
+        s = self.start_scenario(scenario_id, "demo", variant, clock, record_as, record_info)
         s.autoplay = AutoplayRunner(s, variant, clock, speed).start()
         return s
 

@@ -90,7 +90,7 @@ class Recorder:
         meta = {"name": self.name, "goal": self.goal, "ok": ok, "problems": problems or [], "preset": self.preset,
                 "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - self.started),
                 "events": self.n_events, "llm_calls": self.n_llm, "models": sorted(m for m in self.models if m), "snapshot": snapshot,
-                **{k: str(v)[:120] for k, v in (info or {}).items() if k in ("title", "app", "feature")}}
+                **{k: str(v)[:120] for k, v in (info or {}).items() if k in ("title", "app", "feature", "kind", "variant")}}
         if self.finish:
             meta["stats"] = {"finish": True, **self.finish}
         elif project_root:
@@ -167,7 +167,8 @@ def load_recording(base: Path, name: str | None = None) -> Recording:
         events = rec.events()
     except (OSError, ValueError):
         raise RecordingError(f"recording '{name}' was not found or is damaged") from None
-    if not events or events[-1]["type"] != "project_done":
+    ends = ("project_done", "autoplay_ended") if meta.get("kind") == "scenario" else ("project_done",)  # a scenario's debrief goes on after project_done: its recording ends with the run
+    if not events or events[-1]["type"] not in ends:
         raise RecordingError(f"recording '{name}' is incomplete")
     return rec
 

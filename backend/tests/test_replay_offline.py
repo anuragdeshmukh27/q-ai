@@ -136,7 +136,15 @@ def test_full_replayed_build_over_http_and_websocket_with_the_network_blocked(fa
         server.stop()
 
 
-SHIPPED = sorted(d.name for d in REPO_RECORDINGS.glob("*") if (d / "meta.json").is_file() and not d.name.startswith("."))
+def _is_build(d: Path) -> bool:
+    """A recording of a generated app. A recorded simulation scenario (meta kind "scenario") has no spec, no contract and no app of its own: test_replay_scenario.py plays it."""
+    try:
+        return json.loads((d / "meta.json").read_text(encoding="utf-8")).get("kind") != "scenario"
+    except (OSError, ValueError):
+        return False
+
+
+SHIPPED = sorted(d.name for d in REPO_RECORDINGS.glob("*") if (d / "meta.json").is_file() and not d.name.startswith(".") and _is_build(d))
 
 
 def test_the_demo_set_is_complete():
