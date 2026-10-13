@@ -52,6 +52,15 @@ class FileBody(BaseModel):
     content: str
 
 
+class AutoplayBody(BaseModel):
+    variant: str
+    speed: int = 1
+
+
+class AutoplaySpeedBody(BaseModel):
+    speed: int
+
+
 class ChannelBody(BaseModel):
     text: str
     to: str | None = None
@@ -251,6 +260,20 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
     def start_scenario(sid: str):
         """A project from the scenario's seed: no design or planning calls, one human task for the scenario's role, the AI team on call."""
         return mgr.start_scenario(sid).status()
+
+    @app.post("/api/scenarios/{sid}/autoplay", status_code=201)
+    def start_autoplay(sid: str, body: AutoplayBody):
+        """"Watch a run": a scripted learner (variant strong or weak) plays the scenario through the same calls a person makes. The attempt is a demo: marked in its report, not in the learner's history."""
+        return mgr.start_autoplay(sid, body.variant, body.speed).status()
+
+    @app.post("/api/projects/{pid}/autoplay/speed")
+    def autoplay_speed(pid: str, body: AutoplaySpeedBody):
+        return session(pid).set_autoplay_speed(body.speed)
+
+    @app.post("/api/projects/{pid}/autoplay/stop")
+    def autoplay_stop(pid: str):
+        """Stop the scripted run and the session with it; nothing of a demo is kept."""
+        return session(pid).stop_autoplay()
 
     @app.post("/api/projects/{pid}/channel")
     def channel_post(pid: str, body: ChannelBody):

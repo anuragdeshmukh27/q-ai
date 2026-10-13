@@ -9,12 +9,12 @@ from pathlib import Path
 
 from app.llm import StructuredResult
 from app.providers.base import ProviderError
+from app.scenarios.autoplay import FIX_FILES as FIX_PATHS, REGRESSION_PATH as REGRESSION_FILE, reference_fix, regression_test
 from app.scenarios.director import ChatReply
 from app.scenarios.wording import VoiceOutput
 
 from test_orchestrator import FakeLLM
 
-PATCH = Path(__file__).parent / "scenario_fixes" / "opd-bookings-down.patch"
 
 
 class FakeClock:
@@ -63,34 +63,10 @@ class ScenarioLLM(FakeLLM):
 
 def apply_reference_fix(files: dict[str, str]) -> dict[str, str]:
     """The files of the reference fix: `files` are the current contents of the files the patch touches (path -> text); the result is what they must become."""
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        for rel, text in files.items():
-            p = root / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text.replace("\r\n", "\n"), encoding="utf-8", newline="\n")
-        r = subprocess.run(["git", "apply", str(PATCH)], cwd=root, capture_output=True, text=True)
-        if r.returncode != 0:
-            raise AssertionError(f"the reference fix does not apply: {r.stderr}")
-        return {rel: (root / rel).read_text(encoding="utf-8") for rel in files}
+    return reference_fix(files)
 
 
-FIX_FILES = ("backend/api/appointments.py", "backend/api/doctors.py")
+FIX_FILES = FIX_PATHS
 
-REGRESSION_PATH = "tests/regression/test_regression_slot_at.py"
-REGRESSION_TEST = '''"""The booking route must write the appointment's time with the column's new name."""
-from fastapi.testclient import TestClient
-
-from backend.main import app
-
-client = TestClient(app)
-
-
-def test_booking_an_appointment_still_works_after_the_column_rename():
-    doctor = client.post("/api/doctors", json={"name": "Dr. Test", "department": "General Medicine", "phone": "9876500001", "room": "OPD 1", "consultation_fee": 300,
-                                               "availability": "Available", "email": "regression@example.com"})
-    assert doctor.status_code == 201, doctor.text
-    booked = client.post(f"/api/doctors/{doctor.json()['id']}/appointments", json={"patient_name": "A", "patient_phone": "9876511112", "date": "2026-10-12", "time": "09:15",
-                                                                                   "reason": "Check", "status": "Booked"})
-    assert booked.status_code == 201, booked.text
-'''
+REGRESSION_PATH = REGRESSION_FILE
+REGRESSION_TEST = regression_test()

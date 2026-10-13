@@ -11,7 +11,7 @@ import pytest
 from app.scenarios.loader import SCENARIOS_DIR, ScenarioError, list_scenarios, load_scenario
 
 ID = "opd-bookings-down"
-PATCH = Path(__file__).parent / "scenario_fixes" / f"{ID}.patch"
+PATCH = Path(__file__).parent.parent / "app" / "scenarios" / ID / "autoplay" / "fix.patch"
 
 
 def copy_scenario(tmp_path) -> Path:

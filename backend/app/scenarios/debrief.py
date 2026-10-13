@@ -143,7 +143,7 @@ class Debrief:
         facts = self.measure()
         results = score(self.rubric, facts)
         report = build_report(scenario=b.scenario, rubric=self.rubric, attempt=self.attempt, project=b.root.name if b.root else "", facts=facts, results=results, names=names,
-                              history=self.history.attempts())
+                              history=self.history.attempts(), kind=b.kind, variant=b.variant)
         # the points are final: the model only says them aloud (each judge's line, the coach paragraph), and a line that says anything else is dropped
         moments = {c["id"]: m for c in report["criteria"] if (m := moment_of(c, report["rows"]))}
         lines, coach, dropped, reason = build_voices(report, self.wordsmith, moments, lambda c: judge_post(c, report["rows"]))

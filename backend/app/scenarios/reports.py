@@ -24,8 +24,9 @@ _lock = threading.Lock()
 class History:
     """The finished attempts of one scenario, oldest first: [{attempt, total, scores, project, finished_at, elapsed}]."""
 
-    def __init__(self, base: Path, scenario_id: str):
-        self.path = Path(base) / ".q-attempts" / f"{scenario_id}.json"
+    def __init__(self, base: Path, scenario_id: str, kind: str = "learner"):
+        # an autoplay demo keeps its own file, so it never takes a number from the learner's attempts nor shows in their list
+        self.path = Path(base) / ".q-attempts" / f"{scenario_id}{'-demo' if kind == 'demo' else ''}.json"
 
     def attempts(self) -> list[dict]:
         try:
@@ -67,7 +68,7 @@ def criterion_summary(res: CriterionResult) -> str:
 
 
 def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts: Facts, results: list[CriterionResult], names: dict[str, str],
-                 history: list[dict] | None = None, finished_at: float | None = None) -> dict:
+                 history: list[dict] | None = None, finished_at: float | None = None, kind: str = "learner", variant: str = "") -> dict:
     """The report of one attempt. Every sentence of a point is its rule's; a point is shown only when its quote is in the entry it cites and every time, file and test count
     of its sentence is that entry's (a point that fails is dropped and recorded under `fairness.dropped`). The coach paragraph and the judges' lines are added by `attach_voices`."""
     dropped: list[Dropped] = []
@@ -99,10 +100,10 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
     accepted = facts.accepted
     rerun = facts.rerun
     prior = [a for a in (history or []) if a["attempt"] != attempt]
-    record = {"attempt": attempt, "total": total, "scores": {c["id"]: c["score"] for c in criteria}, "project": project,
+    record = {"attempt": attempt, **({"kind": "demo", "variant": variant} if kind == "demo" else {}), "total": total, "scores": {c["id"]: c["score"] for c in criteria}, "project": project,
               "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(finished_at or time.time())), "elapsed": accepted["t"] if accepted else facts.session[-1]["t"]}
     return {
-        "version": REPORT_VERSION, "scenario": scenario.id, "title": scenario.title, "project": project, "attempt": attempt,
+        "version": REPORT_VERSION, "scenario": scenario.id, "title": scenario.title, "project": project, "attempt": attempt, "kind": kind, "variant": variant,
         "total": total, "max": rubric.max_total, "elapsed": record["elapsed"], "minutes": scenario.minutes, "finished_at": record["finished_at"],
         "rubric": {"id": rubric.id, "version": rubric.version}, "criteria": criteria, "rows": rows, "events": {i: events[i] for i in {e for r in rows for e in r["events"]}},
         "fairness": {"points": len(rows), "quoted": sum(1 for r in rows if r["quote"]), "matched": sum(1 for r in rows if r["verified"]), "dropped": [d.as_dict() for d in dropped],
@@ -139,7 +140,8 @@ def attach_voices(report: dict, judge_lines: dict[str, dict], coach: dict, dropp
 
 
 def render_markdown(report: dict, names: dict[str, str]) -> str:
-    lines = [f"# Debrief: {report['title']}", "", f"**Attempt {report['attempt']}: {report['total']}/{report['max']}** · {clock(report['elapsed'])} on the clock · rubric {report['rubric']['id']}", ""]
+    head = f"Demo run, {report.get('variant') or 'autoplay'} (attempt {report['attempt']} of the demos)" if report.get("kind") == "demo" else f"Attempt {report['attempt']}"
+    lines = [f"# Debrief: {report['title']}", "", f"**{head}: {report['total']}/{report['max']}** · {clock(report['elapsed'])} on the clock · rubric {report['rubric']['id']}", ""]
     lines += [f"_{'AI coach' if report['coach']['source'] == 'model' else 'Summary'}:_ {report['coach']['text']}", ""]
     lines += ["| Criterion | Judge | Score |", "| --- | --- | --- |", *[f"| {c['name']} | {c['judge_name']} | {c['score']}/{c['max']} |" for c in report["criteria"]], ""]
     for c in report["criteria"]:

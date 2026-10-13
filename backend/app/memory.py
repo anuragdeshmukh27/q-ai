@@ -159,6 +159,10 @@ class MessageBus:
         self._engine = create_engine(f"sqlite:///{(memory.q / 'messages.db').as_posix()}")
         _meta.create_all(self._engine)
 
+    def close(self) -> None:
+        """Release the database file (a folder that is deleted afterwards cannot be removed while Windows has it open)."""
+        self._engine.dispose()
+
     def send(self, sender: str, to: str, text: str, kind: str = "message") -> int:
         with self._lock, self._engine.begin() as c:
             mid = c.execute(insert(_messages).values(ts=int(time.time()), sender=sender, recipient=to, kind=kind, text=text, read=0)).inserted_primary_key[0]

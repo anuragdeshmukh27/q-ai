@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -28,6 +29,7 @@ from .recording import Recorder, RecordingError, check_name, load_recording, res
 from .leaderboard import SHIPPED_RESULTS, Leaderboard
 from .registry import ModelRegistry, ollama_installed_probe
 from .router import Router
+from .scenarios.autoplay import CLOCK_FACTOR, SPEEDS, VARIANTS, AutoplayRunner, ScaledClock, VirtualClock
 from .scenarios.build import ScenarioBuild
 from .scenarios.director import Replier
 from .scenarios.loader import Scenario, ScenarioError, load_scenario
@@ -61,6 +63,7 @@ class Settings:
     polish: bool = True  # live builds end with the Frontend UI polish task (Q_POLISH=0 turns it off)
     fast_live: bool = True  # live builds skip an unneeded polish pass and allow one LLM review round per task (Q_FAST_LIVE=0 turns it off)
     debrief_pace: float = 3.5  # seconds between the judges' posts in the debrief meeting (Q_DEBRIEF_PACE; tests use 0)
+    autoplay_virtual: bool = False  # an autoplay run keeps its session time on a clock that only the script moves (tests: a whole incident without waiting)
 
     @classmethod
     def from_env(cls, env=None) -> "Settings":
@@ -174,6 +177,17 @@ class Tracker:
                     "slug": self.slug, "preset": self.preset, "finished": self.finished}
 
 
+def remove_tree(root: Path) -> None:
+    """Delete a project folder; git's object files are read-only on Windows, so a plain rmtree leaves them behind."""
+    def writable(func, path, _exc) -> None:
+        try:
+            os.chmod(path, 0o700)
+            func(path)
+        except OSError:
+            pass
+    shutil.rmtree(root, onerror=writable)
+
+
 # -- one session ------------------------------------------------------------------------------------
 
 class Session:
@@ -195,6 +209,7 @@ class Session:
         self.chats: dict[str, list[dict]] = {}
         self.sampler: MetricsSampler | None = None
         self.fast_live = False
+        self.autoplay: AutoplayRunner | None = None  # a scripted learner is playing this scenario session ("Watch a run")
         self.scenario: Scenario | None = None  # a scenario session (Simulation mode, step 4): the channel, the guide and the session log belong to it
         self.record_info = req.record_info
         self.then_ask = req.then_ask or []
@@ -238,7 +253,7 @@ class Session:
         self._thread = threading.Thread(target=self._run_live, name=f"build-{self.id}", daemon=True)
         self._thread.start()
 
-    def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int) -> None:
+    def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int, kind: str = "learner", variant: str = "", clock=None) -> None:
         """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls). `attempt`: the number of this try (1 for the first)."""
         mgr = self.mgr
         llm = mgr.make_llm(None)
@@ -246,7 +261,7 @@ class Session:
         self.scenario = scn
         replier = Replier(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
         wordsmith = Wordsmith(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
-        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, rubric=rubric, wordsmith=wordsmith, attempt=attempt, debrief_pace=mgr.settings.debrief_pace, approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
+        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, rubric=rubric, wordsmith=wordsmith, attempt=attempt, debrief_pace=mgr.settings.debrief_pace, kind=kind, variant=variant, **({"clock": clock} if clock else {}), approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
                                   local_only=True, ports=mgr.ports, max_parallel=1, fast_live=fast, router=mgr.router)
         self.fast_live = fast
         if mgr.scheduler is not None:
@@ -513,7 +528,7 @@ class Session:
     def session_info(self) -> dict:
         """The whole session so far: the scenario, the clock, every logged event (quotable by id), the guide and the channel."""
         orch = self._scenario_build()
-        return {"scenario": orch.scenario.public(), "attempt": orch.attempt, "scoring": orch.debrief.rubric.scoring() if orch.debrief else [], "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
+        return {"scenario": orch.scenario.public(), "attempt": orch.attempt, "kind": orch.kind, "variant": orch.variant, "scoring": orch.debrief.rubric.scoring() if orch.debrief else [], "started_at": orch.log.started_at, "elapsed": round(orch.log.now(), 1), "state": self.state,
                 "summary": orch.log.summary(), "events": orch.log.events(), "guide": orch.guide.state(), "messages": list(orch.director.messages)}
 
     def report(self, markdown: bool = False) -> dict | str:
@@ -630,8 +645,37 @@ class Session:
         self.bus.emit("app_running", url=app.url, port=app.port, project=self.root.name)
         return {"running": True, "url": app.url}
 
+    def stop_autoplay(self) -> dict:
+        """The viewer pressed Stop: the script ends, the team and the debrief are halted, and the demo's project folder is removed (nothing of a demo is kept)."""
+        runner = self.autoplay
+        if runner is None:
+            raise SessionError("This is not an autoplay run.", 409)
+        runner._stop.set()
+        self.stop()
+        if self.orch:
+            self.orch.stop()  # releases the task, so a Submit that is running comes back
+        runner.stop(30)
+        if self._thread:
+            self._thread.join(30)
+        root = self.root
+        if root and root.is_dir() and not runner.alive():
+            if self.orch:
+                self.orch.messages.close()
+            remove_tree(root)
+        return {"stopped": True, "state": runner.state}
+
+    def set_autoplay_speed(self, speed: int) -> dict:
+        if self.autoplay is None:
+            raise SessionError("This is not an autoplay run.", 409)
+        if speed not in SPEEDS:
+            raise SessionError("The speed is 1 or 2.", 400)
+        self.autoplay.set_speed(speed)
+        return {"speed": speed}
+
     def stop(self) -> None:
         self._stop.set()
+        if self.autoplay:
+            self.autoplay._stop.set()
         if isinstance(self.orch, ScenarioBuild):
             self.orch.director.stop()
             if self.orch.debrief:
@@ -643,7 +687,7 @@ class Session:
         return {"id": self.id, "goal": self.goal, "kind": self.kind, "state": self.state, "mode": self.mode, "speed": self.speed,
                 "created": self.created, "events": len(self.bus.history), "overrides": dict(self.overrides), "recording": self.recording, "fast_live": self.fast_live,
                 "pending_approvals": self.approvals.pending(), "app": self.app(), **snap,
-                **({"scenario": {**self.scenario.public(), "attempt": self.orch.attempt, "started_at": self.orch.log.started_at, "summary": self.orch.log.summary()}} if self.scenario and isinstance(self.orch, ScenarioBuild) else {})}
+                **({"scenario": {**self.scenario.public(), "attempt": self.orch.attempt, "kind": self.orch.kind, "variant": self.orch.variant, "started_at": self.orch.log.started_at, "summary": self.orch.log.summary()}} if self.scenario and isinstance(self.orch, ScenarioBuild) else {})}
 
 
 # -- all sessions -----------------------------------------------------------------------------------
@@ -718,7 +762,7 @@ class SessionManager:
                 raise
         return s
 
-    def start_scenario(self, scenario_id: str) -> Session:
+    def start_scenario(self, scenario_id: str, kind: str = "learner", variant: str = "", clock=None) -> Session:
         try:
             scn = load_scenario(scenario_id)
             rubric = load_rubric(scn)
@@ -728,13 +772,27 @@ class SessionManager:
         with self._lock:
             if any(s.kind == "live" and s.state in ("starting", "running") for s in self.sessions.values()):
                 raise SessionError("A build is already running; the GPU runs one build at a time.", 409)
+            for other in self.sessions.values():  # the last run's debrief writes the attempt history when it ends: a new run must not read it half-way
+                if isinstance(other.orch, ScenarioBuild) and other.orch.debrief is not None:
+                    other.orch.debrief.join(5.0)
             s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
             self.sessions[s.id] = s
             try:
-                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id).next_number())
+                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id, kind).next_number(), kind, variant, clock)
             except Exception:
                 del self.sessions[s.id]
                 raise
+        return s
+
+    def start_autoplay(self, scenario_id: str, variant: str, speed: int = 1) -> Session:
+        """"Watch a run": a demo session of the scenario played by a script. Its session clock runs faster than real time (the weak run waits five quiet minutes for Aarav's nudge)."""
+        if variant not in VARIANTS:
+            raise SessionError("The run is strong or weak.", 400)
+        if speed not in SPEEDS:
+            raise SessionError("The speed is 1 or 2.", 400)
+        clock = VirtualClock() if self.settings.autoplay_virtual else ScaledClock(speed, CLOCK_FACTOR[variant])
+        s = self.start_scenario(scenario_id, "demo", variant, clock)
+        s.autoplay = AutoplayRunner(s, variant, clock, speed).start()
         return s
 
     def shutdown(self) -> None:

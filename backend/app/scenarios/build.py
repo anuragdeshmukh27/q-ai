@@ -49,7 +49,8 @@ class ScenarioBuild(Orchestrator):
     STAGES = ("setup", "tasks", "verify")
 
     def __init__(self, scenario: Scenario, registry, llm, bus=None, clock: Callable[[], float] = time.monotonic, replier: Replier | None = None,
-                 rubric: Rubric | None = None, wordsmith: Wordsmith | None = None, attempt: int = 1, debrief_pace: float = 3.5, **kw):
+                 rubric: Rubric | None = None, wordsmith: Wordsmith | None = None, attempt: int = 1, debrief_pace: float = 3.5,
+                 kind: str = "learner", variant: str = "", **kw):
         kw.update(mode="simulation", human_roles=(scenario.role,), qa=False, polish=False)  # QA's phase and the polish task belong to a build from a goal
         super().__init__(scenario.goal, registry, llm, bus, **kw)
         self.scenario = scenario
@@ -61,7 +62,8 @@ class ScenarioBuild(Orchestrator):
         self.log.subscribe(self.director.on_log_event)
         self.bus.subscribe(self._on_event)
         self.attempt = attempt
-        self.history = History(self.base or WORKSPACE, scenario.id)
+        self.kind, self.variant = kind, variant  # "demo": an autoplay run, kept out of the learner's attempts and marked in its report
+        self.history = History(self.base or WORKSPACE, scenario.id, kind)
         self.debrief = Debrief(self, rubric, wordsmith or Wordsmith(), self.history, attempt, debrief_pace) if rubric is not None else None  # no rubric, no debrief
         self._trigger = "ide"  # what started the test run that is going: the IDE's Run tests, or Submit
 
@@ -69,6 +71,7 @@ class ScenarioBuild(Orchestrator):
     def run(self):
         self.emit("scenario_started", scenario=self.scenario.id, title=self.scenario.title, role=self.scenario.role, minutes=self.scenario.minutes,
                   channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at, attempt=self.attempt,
+                  kind=self.kind, variant=self.variant,
                   scoring=self.debrief.rubric.scoring() if self.debrief else [])
         self.log.add("session_started", scenario=self.scenario.id, role=self.scenario.role)
         self.director.start()
