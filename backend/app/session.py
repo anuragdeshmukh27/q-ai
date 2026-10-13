@@ -533,8 +533,10 @@ class Session:
             raise SessionError("This project is not a scenario.", 409)
         return self.orch
 
-    def channel_post(self, text: str, to: str | None) -> dict:
+    def channel_post(self, text: str, to: str | None, script: bool = False) -> dict:
         orch = self._scenario_build()
+        if self.autoplay is not None and not script:
+            raise SessionError("A scripted run is playing: only the script posts in the channel, or the score would not be the run's.", 409)
         if to and to not in orch.scenario.characters:
             raise SessionError("That teammate is not on this incident.", 400)
         try:

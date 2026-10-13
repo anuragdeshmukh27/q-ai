@@ -267,7 +267,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {model.tasks.map((t) => {
               const mine = t.assignee === 'human'
-              const yourTurn = mine && t.status === 'running' && !replay
+              const yourTurn = mine && t.status === 'running' && !replay && !model.autoplay // a script plays this task: its Submit is the script's
               return (
                 <li key={t.id} className="rounded-md border border-[var(--line)] bg-[#0b0e17] px-2.5 py-1.5 text-[13px]">
                   <div className="flex items-center gap-2">

@@ -213,3 +213,17 @@ def test_a_new_run_does_not_start_while_the_last_debrief_is_still_going(tmp_path
         client.post(f"/api/projects/{again.json()['id']}/autoplay/stop")
     finally:
         mgr.shutdown()
+
+
+def test_nobody_else_posts_in_the_channel_while_a_script_plays(world):
+    """A viewer's message would change the weak run's score (it must stay silent until the nudge): the channel is the script's, and a person's own session is not affected."""
+    client, mgr, settings = world
+    pid, s = watch(client, mgr, "weak")
+    wait_for(lambda: events(s, "autoplay_started"), 60, "the run to start")
+    r = client.post(f"/api/projects/{pid}/channel", json={"text": "Update: I am on it."})
+    assert r.status_code == 409 and "scripted run" in r.json()["detail"]
+    assert not [m for m in events(s, "channel_message") if m.get("source") == "learner"]
+    client.post(f"/api/projects/{pid}/autoplay/stop")
+    plain = client.post(f"/api/scenarios/{ID}/start").json()["id"]
+    assert client.post(f"/api/projects/{plain}/channel", json={"text": "Update: I am on it."}).status_code == 200
+    mgr.get(plain).orch.stop()

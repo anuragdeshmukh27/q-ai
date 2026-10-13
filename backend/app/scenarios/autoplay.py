@@ -240,7 +240,7 @@ class AutoplayRunner:
         return result
 
     def post(self, text: str, to: str | None = None) -> dict:
-        out = self.session.channel_post(text, to)
+        out = self.session.channel_post(text, to, script=True)
         self.pause(5)
         return out
 

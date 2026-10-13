@@ -162,7 +162,7 @@ export function Dock({ model, projectId, replay, onDecide, ticker, onSubmit, onE
           {tab === 'Debrief' && <DebriefTab model={model} projectId={projectId} onTryAgain={onTryAgain} busy={busy} />}
           {tab === 'Explorer' && <Explorer projectId={projectId} model={model} />}
           {tab === 'Terminal' && <Terminal model={model} />}
-          {tab === 'Agent Chat' && <AgentChat model={model} onPost={onPost} replay={replay} />}
+          {tab === 'Agent Chat' && <AgentChat model={model} onPost={onPost} replay={replay || !!auto} />}
           {tab === 'Approvals' && <Approvals model={model} replay={replay} onDecide={onDecide} />}
           {tab === 'Git' && <GitGraph projectId={projectId} model={model} />}
           {tab === 'Leaderboard' && <LeaderboardTab />}
