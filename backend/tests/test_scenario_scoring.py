@@ -209,7 +209,7 @@ def test_the_report_of_a_strong_run():
     assert len(r["rows"]) == 20 and all(x["kind"] == "strength" and x["verified"] and x["quote"] and x["worded_by"] == "rule" and x["advice"] == "" for x in r["rows"])
     fair = r["fairness"]
     assert (fair["points"], fair["quoted"], fair["matched"], fair["dropped"], fair["rubric"]) == (20, 20, 20, [], "v1") and fair["tests_rerun"] == {"ok": True, "passed": 102, "total": 102}
-    assert r["focus"] and "full-marks" in r["focus"][0] and r["attempts"] == [r["attempts"][0]] and r["attempts"][0]["total"] == 100
+    assert r["focus"] and r["focus"][0].startswith("Full marks already. Beat your time of ") and "next scenario" in r["focus"][0] and r["attempts"] == [r["attempts"][0]] and r["attempts"][0]["total"] == 100
     assert set(r["events"]) == {e for x in r["rows"] for e in x["events"]} and r["files"] == {"md": ".q/reports/attempt-1.md", "json": ".q/reports/attempt-1.json"}
 
 

@@ -108,7 +108,7 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
         "fairness": {"points": len(rows), "quoted": sum(1 for r in rows if r["quote"]), "matched": sum(1 for r in rows if r["verified"]), "dropped": [d.as_dict() for d in dropped],
                      "tests_rerun": {"ok": bool(rerun and rerun.get("ok")), "passed": rerun.get("passed", 0), "total": rerun.get("passed", 0) + rerun.get("failed", 0)} if rerun else None,
                      "rubric": f"v{rubric.version}", "voices": {"judges": "template", "coach": "template", "reason": ""}, "ai_rejected": []},
-        "focus": focus[:3] or [f"A full-marks run. Try to beat your time of {clock(record['elapsed'])}, or keep these habits in the next scenario."],
+        "focus": focus[:3] or [f"Full marks already. Beat your time of {clock(record['elapsed'])}, or take these habits to the next scenario."],
         "coach": {"text": template_coach(total, rubric.max_total, criteria, rows, focus), "source": "template"},
         "judge_lines": {}, "attempts": [*prior, record], "files": {"md": f".q/reports/attempt-{attempt}.md", "json": f".q/reports/attempt-{attempt}.json"},
     }
@@ -123,7 +123,7 @@ def template_coach(total: int, top: int, criteria: list[dict], rows: list[dict],
         lines.append(f"Every criterion scored {best['score']} out of {best['max']}.")
     else:
         lines.append(f"{best['name']} was your strongest area ({best['score']}/{best['max']}) and {weak['name']} the weakest ({weak['score']}/{weak['max']}).")
-    lines.append(f"First thing for the next attempt: {focus[0][0].lower() + focus[0][1:]}" if focus else "There is nothing to fix: keep these habits in the next scenario.")
+    lines.append(f"First thing for the next attempt: {focus[0][0].lower() + focus[0][1:]}" if focus else "There is nothing to fix: beat your time or take these habits to the next scenario.")
     return " ".join(lines)
 
 

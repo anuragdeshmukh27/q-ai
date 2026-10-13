@@ -64,7 +64,7 @@ def test_the_template_coach_names_the_best_and_the_weakest_criterion_and_the_fir
     r = weak_report()
     assert r["coach"]["text"] == (f"You scored {r['total']} out of 100. Fix quality was your strongest area (2/4) and Communication the weakest (0/4). "
                                   f"First thing for the next attempt: {r['focus'][0][0].lower() + r['focus'][0][1:]}")
-    assert strong_report()["coach"]["text"] == "You scored 100 out of 100. Every criterion scored 4 out of 4. There is nothing to fix: keep these habits in the next scenario."
+    assert strong_report()["coach"]["text"] == "You scored 100 out of 100. Every criterion scored 4 out of 4. There is nothing to fix: beat your time or take these habits to the next scenario."
 
 
 # -- the verifier: a judge's line ------------------------------------------------------------------------------------------------
@@ -118,6 +118,40 @@ def test_the_coach_paragraph_must_name_a_strength_and_a_gap_with_their_times_fro
 def test_generic_praise_is_refused_even_when_the_times_are_right(praise):
     r = weak_report()
     assert "generic praise" in verify_voice(good_coach(r) + " " + praise, r, None, "coach")
+
+
+@pytest.mark.parametrize("praise", [
+    "You showed great communication, diagnosis, fix quality, and testing skills.",
+    "You showed great communication in this incident.",
+    "That was great communication and great skills overall.",
+    "Your communication, diagnosis and testing were all handled well.",
+    "You demonstrated strong ownership of the problem.",
+])
+def test_praise_by_criterion_name_is_refused_and_the_template_paragraph_is_used(praise):
+    r = strong_report()
+    assert verify_voice(good_coach(r), r, None, "coach") is None
+    why = verify_voice(good_coach(r) + " " + praise, r, None, "coach")
+    assert why and ("generic praise" in why or "criterion names" in why), why
+    got, said, rejected, _ = build_voices(r, Stub(VoiceOutput(lines=good_lines(r), coach=good_coach(r) + " " + praise)), moments(r), template(r))
+    assert said == {"text": r["coach"]["text"], "source": "template"} and [d.finding for d in rejected] == ["coach"]
+
+
+@pytest.mark.parametrize("ask", ["Next time, aim for a full-marks run.", "Aim for full marks next time.", "Try to get a perfect score next attempt.", "Work towards 100 out of 100 again."])
+def test_a_full_marks_run_is_never_asked_for_full_marks(ask):
+    r = strong_report()
+    assert r["total"] == r["max"]
+    why = verify_voice(good_coach(r) + " " + ask, r, None, "coach")
+    assert why and "asks for full marks" in why, why
+    assert verify_voice(good_coach(r) + f" Next time beat the time of {clock(r['elapsed'])} or move on to the next scenario.", r, None, "coach") is None
+
+
+def test_the_full_marks_advice_is_a_faster_time_or_the_next_scenario_in_the_report_and_the_prompt():
+    r = strong_report()
+    assert r["focus"] == [f"Full marks already. Beat your time of {clock(r['elapsed'])}, or take these habits to the next scenario."]
+    prompt = Wordsmith._prompt(r, moments(r))[0]["content"]
+    assert "never ask for full marks" in prompt and "beat the time or to move on to the next scenario" in prompt and "list of criterion names as praise" in prompt
+    assert "never ask for full marks" not in Wordsmith._prompt(weak_report(), moments(weak_report()))[0]["content"]
+    assert "full-marks" not in r["coach"]["text"] and "full marks" not in r["coach"]["text"].lower()
 
 
 def test_the_coach_checks_every_time_number_and_file_against_all_the_points():

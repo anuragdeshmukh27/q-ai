@@ -25,7 +25,10 @@ _ROLE_ID = re.compile(r"\b(architect|planner|reviewer|integrator|qa)\b")
 _QUOTED = re.compile(r"[“\"]([^”\"]{4,})[”\"]")
 _NUMBER = re.compile(r"\d+")
 _SCORE = re.compile(r"\b\d/\d\b")
-_GENERIC = re.compile(r"great job|good job|well done|nice work|excellent|fantastic|awesome|impressive|outstanding|congratulations|kudos|keep up the good work|problem[- ]solving|strong skills|great work|overall", re.I)
+_GENERIC = re.compile(r"great job|good job|well done|nice work|excellent|fantastic|awesome|impressive|outstanding|congratulations|kudos|keep up the good work|problem[- ]solving|strong skills|great work|overall"
+                      r"|showed great|great (?:communication|diagnosis|testing|ownership|fix quality|skills?)|great \w+ skills", re.I)
+_PRAISED_NAMES = 3  # three criterion names in one sentence is a list of praise, not a finding
+_ASKS_FOR_FULL = re.compile(r"\b(?:aim|aiming|go|going|strive|striving|work|working|push|try|trying|reach|achieve|get|getting|shoot)\w*\W+(?:\w+\W+){0,3}?(?:full[- ]marks?|perfect|100\b|top score)", re.I)
 
 
 class VoiceLine(BaseModel):
@@ -88,6 +91,19 @@ def coach_moments(report: dict) -> dict:
     return {"strength": strength, "gap": gap}
 
 
+def praise_of_names(text: str, report: dict) -> str | None:
+    """Why `text` praises the criteria by name instead of describing what happened (a verb of showing followed by a criterion name, or a sentence listing three of them), else None."""
+    names = [c["name"].casefold() for c in report["criteria"]]
+    pat = "|".join(re.escape(n) for n in names)
+    shown = re.search(rf"\b(?:showed|shown|shows|demonstrated|displayed|exhibited|excelled)\b[^.!?]{{0,80}}?\b(?:{pat})\b", text, re.I)
+    if shown:
+        return f"it lists criterion names as praise (“{shown.group(0)}”)"
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if sum(1 for n in names if re.search(rf"\b{re.escape(n)}\b", sentence, re.I)) >= _PRAISED_NAMES:
+            return "it lists criterion names as praise instead of the findings"
+    return None
+
+
 def verify_voice(text: str, report: dict, criterion: str | None, kind: str) -> str | None:
     """None when `text` (a judge's line, kind "judge", or the coach paragraph, kind "coach") only says what the report's own points say, else why not."""
     lo, hi = JUDGE_CHARS if kind == "judge" else COACH_CHARS
@@ -97,6 +113,11 @@ def verify_voice(text: str, report: dict, criterion: str | None, kind: str) -> s
         return "it uses a role id instead of a name"
     if _GENERIC.search(text):
         return f"it uses generic praise (“{_GENERIC.search(text).group(0)}”) instead of the findings"  # type: ignore[union-attr]
+    praised = praise_of_names(text, report)
+    if praised:
+        return praised
+    if kind == "coach" and report["total"] >= report["max"] and _ASKS_FOR_FULL.search(text):
+        return f"it asks for full marks (“{_ASKS_FOR_FULL.search(text).group(0)}”) of a run that has them"  # type: ignore[union-attr]
     if kind == "judge":
         c = next((c for c in report["criteria"] if c["id"] == criterion), None)
         if c is None:
@@ -153,7 +174,8 @@ class Wordsmith:
                   "(at most 40 words) that refer to the moment by its time exactly as written (mm:ss) and end with the tip in your own words. Do not write the criterion name or the score: "
                   "they are put in front of your line for you. Then write `coach`: three or four sentences to the learner (\"you\") about the whole attempt. The coach paragraph must name "
                   + (" and ".join(named) if named else "what went well") + ", each with its time exactly as written (mm:ss), and say what to do first next time. "
-                  "No praise words and no general remarks: only what happened in this attempt. "
+                  + ("This run already has full marks: never ask for full marks or a perfect run; the advice is to beat the time or to move on to the next scenario. " if report["total"] >= report["max"] else "")
+                  + "No praise words, no list of criterion names as praise and no general remarks: only what happened in this attempt. "
                   f"The total score is {report['total']}/{report['max']}. Never invent a time, a number, a file name, a quote or an event; use only the ones below. Use names, not roles.\n"
                   "Reply with JSON: {\"lines\": [{\"criterion\": \"communication\", \"line\": \"...\"}], \"coach\": \"...\"} with one line per criterion.\n\nCriteria:\n" + "\n".join(lines)
                   + "\n\nFocus for the next attempt: " + " | ".join(report["focus"]))
