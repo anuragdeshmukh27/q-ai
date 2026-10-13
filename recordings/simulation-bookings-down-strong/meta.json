@@ -1,0 +1,20 @@
+{
+  "name": "simulation-bookings-down-strong",
+  "goal": "Production incident: Bookings are down",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-13 20:16:23",
+  "seconds": 193,
+  "events": 3150,
+  "llm_calls": 2,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Simulation: Bookings are down (strong)",
+  "app": "Hospital OPD",
+  "feature": "Strong run: tests first, both fixes, a regression test, 100/100",
+  "kind": "scenario",
+  "variant": "strong"
+}
