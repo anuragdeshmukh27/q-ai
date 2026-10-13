@@ -33,7 +33,7 @@ FIX_FILES = ("backend/api/appointments.py", "backend/api/doctors.py")
 REGRESSION_PATH = "tests/regression/test_regression_slot_at.py"
 MIGRATION = "database/migrations/0007_rename_slot_time_to_slot_at.sql"
 VARIANTS = ("strong", "weak")
-CLOCK_FACTOR = {"strong": 1.0, "weak": 2.0}  # the weak run needs five quiet session minutes: its session clock runs twice as fast
+CLOCK_FACTOR = {"strong": 1.0, "weak": 3.0}  # the weak run needs five quiet session minutes before Aarav nudges: its session clock runs three times as fast, so a viewer waits about 100 s
 SPEEDS = (1, 2)
 REAL_TIMEOUT = 300.0  # seconds a single wait for the app (a test run, a reply) may take before the run gives up
 
@@ -227,21 +227,21 @@ class AutoplayRunner:
     def save(self, path: str, content: str) -> None:
         """The script types the new text (shown in the editor, unsaved), pauses, and saves it: the same PUT the editor's Save makes."""
         self.emit("autoplay_edit", path=path, content=content, writable=True)
-        self.pause(3)
+        self.pause(4)
         self.session.ide_write(ROLE, path, content)
         self.files[path] = content
-        self.pause(2)
+        self.pause(3)
 
     def run_tests(self, what: str = "the tests") -> dict:
         n = len(self.events("human_test_result"))
         self.session.ide_run_tests(ROLE)
         result = self.until(lambda: next(iter(self.events("human_test_result")[n:]), None), what)
-        self.pause(4)  # the viewer reads the result
+        self.pause(8)  # the viewer reads the result
         return result
 
     def post(self, text: str, to: str | None = None) -> dict:
         out = self.session.channel_post(text, to)
-        self.pause(3)
+        self.pause(5)
         return out
 
     def submit(self, retries: int = 3) -> dict:
@@ -266,19 +266,19 @@ class AutoplayRunner:
 
         def search() -> None:
             self.search("slot_time")
-            self.pause(6)
+            self.pause(10)
 
         def read() -> None:
             self.open_file("backend/api/appointments.py")
-            self.pause(5)
+            self.pause(8)
             self.open_file(MIGRATION)
-            self.pause(5)
+            self.pause(8)
             self.open_file("backend/api/doctors.py")
-            self.pause(4)
+            self.pause(6)
 
         def tell() -> None:
             self.post("Update: the booking routes still say slot_time, but migration 0007 renamed the column to slot_at. I am fixing both routes now.")
-            self.pause(2)
+            self.pause(6)
 
         def regression() -> None:
             self.save(REGRESSION_PATH, regression_test())

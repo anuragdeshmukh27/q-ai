@@ -85,7 +85,7 @@ function Heading({ children }: { children: string }) {
 
 export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario, onWatch }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null)
-  const rolesLocked = hasProject && !replay && !model.finished // the roles of a running simulation are fixed
+  const rolesLocked = hasProject && !replay && (!model.finished || !!model.autoplay?.active) // the roles of a running simulation are fixed; a scripted run (its debrief goes on after the build is done) locks the scenario card until it ends
   const submit1 = async (task: string) => {
     setSubmitting(task)
     try {

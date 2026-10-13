@@ -6,6 +6,7 @@
 The flow: start the scenario, wait for the task and Ananya's report, run the tests (red), open the files, ask Karan something in the channel, apply the reference fix through
 the IDE endpoints (the same calls the editor makes), run the tests (green), submit, and check the fix is accepted, the session log holds every step and the guide is complete.
 Then the debrief: the team meets, five judges post their criterion, and the report (scores, rows that quote the session log, fairness checks, files, attempt history) is checked.
+Last, "Watch a run": a scripted strong run at 2x speed plays the scenario through the same calls (about 90 seconds), scores 100 as a demo, and the learner's attempt history is untouched.
 Ports 8000 and 5173 are never used.
 """
 import argparse
@@ -185,6 +186,21 @@ def run(port: int, serve: bool) -> int:
         history = json.loads((tmp / "ws" / ".q-attempts" / f"{SCENARIO}.json").read_text(encoding="utf-8"))
         check([(a["attempt"], a["total"]) for a in history] == [(1, 100)], "the attempt history has attempt 1 with its score", str(history))
         check(info["events"][-1]["kind"] == "session_finished", "the debrief added nothing to the session log")
+        print("-- autoplay (a scripted strong run at 2x)")
+        r = c.post(f"/api/scenarios/{SCENARIO}/autoplay", json={"variant": "strong", "speed": 2})
+        check(r.status_code == 201 and r.json()["scenario"]["kind"] == "demo" and r.json()["scenario"]["attempt"] == 1, "autoplay started as demo attempt 1", r.text[:200])
+        apid = r.json()["id"]
+        aevents = lambda: c.get(f"/api/projects/{apid}/events").json()  # noqa: E731
+        ended_run = wait(lambda: next((e for e in aevents() if e["type"] == "autoplay_ended"), None), 400, "the autoplay run to end")
+        check(ended_run["reason"] == "done", "the scripted run reached the end of the debrief", str(ended_run))
+        kinds_seen = {e["type"] for e in aevents()}
+        check({"autoplay_started", "autoplay_step", "autoplay_open_file", "autoplay_search", "autoplay_edit", "human_test_output", "debrief_report"} <= kinds_seen, "the screen has every event it follows: opens, search, edits, test output, report")
+        demo = c.get(f"/api/projects/{apid}/report").json()
+        check(demo["total"] == 100 and demo["kind"] == "demo" and demo["variant"] == "strong" and demo["attempt"] == 1, "the demo scored 100 and is marked demo", f"{demo['total']} {demo['kind']}")
+        history = json.loads((tmp / "ws" / ".q-attempts" / f"{SCENARIO}.json").read_text(encoding="utf-8"))
+        check([(a["attempt"], a["total"]) for a in history] == [(1, 100)], "the learner's attempt history did not take the demo", str(history))
+        mine = json.loads((tmp / "ws" / ".q-attempts" / f"{SCENARIO}-demo.json").read_text(encoding="utf-8"))
+        check([(a["attempt"], a["total"], a["variant"]) for a in mine] == [(1, 100, "strong")], "the demo has a history of its own", str(mine))
     except (TimeoutError, KeyboardInterrupt) as e:
         print(f"  [FAIL] {e}")
         check.failed.append(str(e))

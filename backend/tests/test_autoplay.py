@@ -194,3 +194,22 @@ def test_autoplay_data_lives_with_the_scenario_and_the_patch_applies():
     seed = Path(__file__).parent.parent / "app" / "scenarios" / ID / "seed"
     fixed = reference_fix({p: (seed / p).read_text(encoding="utf-8") for p in FIX_FILES})
     assert all("slot_time" not in text for text in fixed.values()) and "def test_booking" in regression_test()
+
+
+def test_a_new_run_does_not_start_while_the_last_debrief_is_still_going(tmp_path):
+    client, mgr, settings = make(tmp_path)
+    settings.debrief_pace = 4.0  # the judges speak four seconds apart: the debrief takes a while
+    try:
+        pid, s = watch(client, mgr, "strong")
+        wait_for(lambda: events(s, "debrief_started"), 300, "the meeting")
+        late = client.post(f"/api/scenarios/{ID}/autoplay", json={"variant": "weak"})
+        assert late.status_code == 409 and "debrief" in late.json()["detail"]
+        assert client.post(f"/api/scenarios/{ID}/start").status_code == 409
+        wait_for(lambda: events(s, "debrief_ended"), 120, "the debrief to end")
+        wait_for(lambda: events(s, "autoplay_ended"), 30, "the run to end")
+        again = client.post(f"/api/scenarios/{ID}/autoplay", json={"variant": "weak"})
+        assert again.status_code == 201  # and the demo numbering went on from the finished one
+        assert History(settings.workspace, ID, "demo").attempts()[0]["attempt"] == 1 and mgr.get(again.json()["id"]).orch.attempt == 2
+        client.post(f"/api/projects/{again.json()['id']}/autoplay/stop")
+    finally:
+        mgr.shutdown()

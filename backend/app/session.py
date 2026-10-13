@@ -791,7 +791,9 @@ class SessionManager:
                 raise SessionError("A build is already running; the GPU runs one build at a time.", 409)
             for other in self.sessions.values():  # the last run's debrief writes the attempt history when it ends: a new run must not read it half-way
                 if isinstance(other.orch, ScenarioBuild) and other.orch.debrief is not None:
-                    other.orch.debrief.join(5.0)
+                    other.orch.debrief.join(5.0)  # the report arrives a moment before the debrief ends: a click on Try again right then waits for it
+                    if other.orch.debrief._thread is not None and other.orch.debrief._thread.is_alive():
+                        raise SessionError("The debrief of the last run is still going; start the next one when it has finished.", 409)
             s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
             self.sessions[s.id] = s
             try:
