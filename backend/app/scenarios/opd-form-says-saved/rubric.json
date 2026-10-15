@@ -139,10 +139,10 @@
       "rules": [
         {
           "id": "every_path_reports_refusal",
-          "plain": "After your fix a refused request shows an error, never a success, in all six cases the debrief tries: the booking form with a taken slot and with a bad phone, an edit, Complete or Cancel, a delete, a board move.",
+          "plain": "After your fix a refused request shows an error, never a success, in all eight cases the debrief tries: the booking form with a taken slot and with a bad phone, an edit onto a taken slot, Complete or Cancel, a delete, a board move, and the same mistake in the doctor and prescription forms.",
           "label": "every refused request shown as an error",
           "params": {},
-          "advice": "Fix the place every request passes through, not one form: the booking form, the edit form, the Complete and Cancel buttons, delete and the board all trusted the same answer."
+          "advice": "Fix the place every request passes through, not one form: the booking form, the edit form, the Complete and Cancel buttons, delete, the board and the forms of the other modules all trusted the same answer."
         },
         {
           "id": "refusal_message_shown",

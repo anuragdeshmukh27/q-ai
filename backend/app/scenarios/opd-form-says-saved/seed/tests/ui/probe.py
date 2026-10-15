@@ -33,6 +33,8 @@ def live_answers(client) -> dict:
     refused = client.post(f"/api/appointments/{first.json()['id']}/cancel")
     removed = client.delete(f"/api/appointments/{second.json()['id']}")
     missing = client.delete("/api/appointments/9999")
+    same_email = client.post("/api/doctors", json={"name": "Dr. Other", "department": "Pediatrics", "phone": "8408975521", "email": "farhan@example.com", "consultation_fee": 250, "room": "OPD 306", "availability": "Available"})
+    long_course = client.post(f"/api/doctors/{doctor['id']}/prescriptions", json={"patient_name": "Sana Sheikh", "medicine": "Paracetamol", "dosage": "500 mg", "days": 200, "instructions": "After food"})
     answer = lambda case, r, **more: {"case": case, "status": r.status_code, "body": r.json(), **more}
     return {
         "create_taken": answer("create", taken),
@@ -41,6 +43,8 @@ def live_answers(client) -> dict:
         "action_refused": answer("action", refused),
         "board_refused": answer("board", refused),
         "delete_missing": answer("delete", missing),
+        "create_doctor_email_taken": answer("create", same_email, page="#/doctors", fill={"email": "farhan@example.com"}),  # the same mistake on another module: not only appointments
+        "create_prescription_bad_days": answer("create", long_course, page="#/prescriptions", fill={"days": "200"}),
         "create_ok": answer("create", first),
         "edit_ok": answer("edit", edited),
         "action_ok": answer("action", completed),

@@ -157,7 +157,8 @@ def double_bookings(root: Path, seed_dir: Path, params: dict) -> dict[str, dict]
 
 # the ways a page sends a write request, with the real answer of the API for each refusal (the seed's tests/ui/answers.json) and where a person sees the outcome
 REFUSALS = (("create_taken", "a taken slot in the booking form", "form"), ("create_bad_phone", "a bad phone in the booking form", "form"), ("edit_taken", "an edit onto a taken slot", "form"),
-            ("action_refused", "a refused Complete or Cancel", "toast"), ("delete_missing", "a refused delete", "toast"), ("board_refused", "a refused board move", "toast"))
+            ("action_refused", "a refused Complete or Cancel", "toast"), ("delete_missing", "a refused delete", "toast"), ("board_refused", "a refused board move", "toast"),
+            ("create_doctor_email_taken", "a taken email in the doctor form", "form"), ("create_prescription_bad_days", "a bad number of days in the prescription form", "form"))
 
 
 def refusals(root: Path, seed: Path, params: dict) -> dict[str, dict]:
@@ -199,7 +200,7 @@ def refusals(root: Path, seed: Path, params: dict) -> dict[str, dict]:
     bad = [x for x in labels if x not in shown]
     unsaid = [x for x in labels if x not in said]
     return {
-        "refusal_paths": {"text": ("Debrief check of the pages: all {} refused requests (a taken slot, a bad phone, an edit, Complete or Cancel, a delete, a board move) show an error and none says it saved".format(len(labels)) if not bad
+        "refusal_paths": {"text": ("Debrief check of the pages: all {} refused requests (the booking form, an edit, Complete or Cancel, a delete, a board move, and the doctor and prescription forms) show an error and none says it saved".format(len(labels)) if not bad
                                    else f"Debrief check of the pages: {len(shown)} of {len(labels)} refused requests show an error; still reported as saved: {', '.join(bad)}"),
                           "ok": not bad, "passed": len(shown), "of": len(labels), "failed": bad},
         "refusal_message": {"text": (f"Debrief check of the messages: in all {len(labels)} cases the server's own message is what the person reads" if not unsaid

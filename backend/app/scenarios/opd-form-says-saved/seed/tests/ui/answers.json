@@ -42,6 +42,28 @@
       "detail": "Appointment not found"
     }
   },
+  "create_doctor_email_taken": {
+    "case": "create",
+    "status": 409,
+    "body": {
+      "detail": "Email already exists"
+    },
+    "page": "#/doctors",
+    "fill": {
+      "email": "farhan@example.com"
+    }
+  },
+  "create_prescription_bad_days": {
+    "case": "create",
+    "status": 400,
+    "body": {
+      "detail": "Days must be between 1 and 90"
+    },
+    "page": "#/prescriptions",
+    "fill": {
+      "days": "200"
+    }
+  },
   "create_ok": {
     "case": "create",
     "status": 201,

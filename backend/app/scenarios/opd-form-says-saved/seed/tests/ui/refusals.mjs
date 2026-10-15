@@ -25,11 +25,18 @@ const press = async (node) => { await node.click(); await flush(); await flush()
 const button = (pred) => html.querySelectorAll('button').find(pred)
 const fill = (name, value) => { html.querySelector('#f-' + name).value = value }
 
-await go('#/appointments')
+// the New form of each module: what a person types (`fill` in the case changes some of it)
+const FORMS = {
+  '#/appointments': { patient_name: 'Meera Joshi', patient_phone: given.phone ?? '9812345678', date: '2026-10-15', time: '11:00', reason: 'Check-up', status: 'Booked' },
+  '#/doctors': { name: 'Dr. Other', department: 'Pediatrics', phone: '8408975521', email: 'other@example.com', consultation_fee: '250', room: 'OPD 306', availability: 'Available' },
+  '#/prescriptions': { patient_name: 'Sana Sheikh', medicine: 'Paracetamol', dosage: '500 mg', days: '5', instructions: 'After food' },
+}
+const page = given.page ?? '#/appointments'
+await go(page)
 const before = b.calls.length
 if (given.case === 'create') {
   await press(button((x) => x.textContent.startsWith('+ New')))
-  fill('patient_name', 'Meera Joshi'); fill('patient_phone', given.phone ?? '9812345678'); fill('date', '2026-10-15'); fill('time', '11:00'); fill('reason', 'Check-up'); fill('status', 'Booked')
+  for (const [name, value] of Object.entries({ ...FORMS[page], ...(given.fill ?? {}) })) fill(name, value)
   await html.querySelector('form').fire('submit'); await flush(); await flush()
 } else if (given.case === 'edit') {
   await press(view().querySelectorAll('button').find((x) => x.attrs['aria-label'] === 'Edit'))

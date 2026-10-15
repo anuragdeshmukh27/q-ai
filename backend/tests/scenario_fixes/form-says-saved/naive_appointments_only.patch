@@ -1,0 +1,12 @@
+diff --git a/static/shell.js b/static/shell.js
+--- a/static/shell.js
++++ b/static/shell.js
+@@ -76,7 +76,7 @@
+     const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+     let data = null;
+     try { data = await res.json(); } catch { /* an empty body */ }
+-    if (!res.ok && !data) {  // nothing came back to show
++    if (!res.ok && (!data || /appointments/.test(url))) {
+       const err = new Error("request failed");
+       err.detail = typeof data?.detail === "string" ? data.detail : "Please check your input";
+       throw err;
