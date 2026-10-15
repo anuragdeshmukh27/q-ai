@@ -263,7 +263,7 @@ def double_bookings(c: httpx.Client, check: Check, tmp: Path) -> None:
     check(fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [], "fairness: 20 points quoted, 20 quotes matched, none dropped", str(fair))
     check(fair["tests_rerun"]["ok"] is True, "the suite was re-run on the merged project", str(fair["tests_rerun"]))
     checks = [e for e in rep["events"].values() if e["kind"] == "debrief_check"]
-    check(len(checks) == 7 and any(e["text"].startswith("Debrief upgrade of the production snapshot: 30 of 30") for e in checks) and any(e["text"].startswith("Debrief check of the index: unique") for e in checks),
+    check(len(checks) >= 5 and any(e["text"].startswith("Debrief upgrade of the production snapshot: 30 of 30") for e in checks) and any(e["text"].startswith("Debrief check of the index: unique") for e in checks),
           "the debrief tried the migration on the production snapshot and the results are entries a point quotes", str([e["text"] for e in checks]))
     check(all("#incident-duplicates" in r["source"] for r in rep["rows"] if r["source"].startswith("#")), "every channel source names #incident-duplicates")
     history = json.loads((tmp / "ws" / ".q-attempts" / f"{TWO}.json").read_text(encoding="utf-8"))

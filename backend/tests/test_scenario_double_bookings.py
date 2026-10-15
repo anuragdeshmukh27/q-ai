@@ -169,3 +169,29 @@ NAIVE_FIXES = [
 def test_each_naive_fix_fails_the_tests_that_name_its_mistake(copies, name, expected):
     rc, failed, out = run_suite(make_copy(copies, name, NAIVE / f"{name}.sql"))
     assert failed == expected, out[-2000:]
+
+
+# -- the engine pieces that used to know only the first scenario ---------------------------------------------
+
+def test_the_source_of_a_quote_names_the_scenarios_channel_and_the_default_is_unchanged():
+    from app.scenarios.scoring import source_label
+    post, said = {"kind": "message_posted"}, {"kind": "team_message", "from": "qa"}
+    assert source_label(post) == "#incident-opd · You" and source_label(said) == "#incident-opd · Ananya"
+    assert source_label(post, "#incident-duplicates") == "#incident-duplicates · You" and source_label(said, "#incident-duplicates") == "#incident-duplicates · Ananya"
+
+
+def test_a_question_to_someone_who_is_not_on_the_incident_is_answered_with_this_scenarios_teammates(tmp_path):
+    from api_helpers import wait_for
+    from scenario_helpers import ScenarioLLM
+    from test_scenario_debrief import events, manager
+    client, mgr, settings = manager(tmp_path, ScenarioLLM())
+    try:
+        pid = client.post(f"/api/scenarios/{ID}/start").json()["id"]
+        s = mgr.get(pid)
+        wait_for(lambda: next(iter(events(s, "human_task_assigned")), None), 90, "the task")
+        assert client.post(f"/api/projects/{pid}/channel", json={"text": "Meera, can you look at the page?"}).status_code == 200
+        said = wait_for(lambda: next((e for e in events(s, "channel_message") if "is not on this incident" in e["text"]), None), 20, "Aarav's answer")
+        assert said["from"] == "architect" and said["text"] == "Meera is not on this incident. Ask Ananya, Rohan or me."
+        s.orch.stop()
+    finally:
+        mgr.shutdown()
