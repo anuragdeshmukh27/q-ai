@@ -163,23 +163,39 @@ class Wordsmith:
             m = moments.get(c["id"])
             at = f' at {clock(m["t"])}: "{m["quote"]}" ({m["note"]})' if m else ""
             lines.append(f'- criterion "{c["id"]}": {c["name"]}, judge {c["judge_name"]}, score {c["score"]}/{c["max"]}. Moment{at}. Tip: {m["tip"] if m else c["keep"]}')
-        cm = coach_moments(report)
-        named = []
-        if cm["strength"]:
-            named.append(f'the strength at {clock(cm["strength"]["t"])}: {cm["strength"]["note"]}')
-        if cm["gap"]:
-            named.append(f'the gap at {clock(cm["gap"]["t"])}: {cm["gap"]["note"]} (tip: {cm["gap"]["advice"]})')
         system = ("You write what the judges of a simulated engineering team say to a junior engineer in the debrief meeting after a production incident, and a short coaching paragraph. "
-                  "The scores and the moments below are final: you only put them into words. For each criterion write `line`: what its judge says, in first person, one or two short sentences "
-                  "(at most 40 words) that refer to the moment by its time exactly as written (mm:ss) and end with the tip in your own words. Do not write the criterion name or the score: "
-                  "they are put in front of your line for you. Then write `coach`: three or four sentences to the learner (\"you\") about the whole attempt. The coach paragraph must name "
-                  + (" and ".join(named) if named else "what went well") + ", each with its time exactly as written (mm:ss), and say what to do first next time. "
-                  + ("This run already has full marks: never ask for full marks or a perfect run; the advice is to beat the time or to move on to the next scenario. " if report["total"] >= report["max"] else "")
-                  + "No praise words, no list of criterion names as praise and no general remarks: only what happened in this attempt. "
-                  f"The total score is {report['total']}/{report['max']}. Never invent a time, a number, a file name, a quote or an event; use only the ones below. Use names, not roles.\n"
-                  "Reply with JSON: {\"lines\": [{\"criterion\": \"communication\", \"line\": \"...\"}], \"coach\": \"...\"} with one line per criterion.\n\nCriteria:\n" + "\n".join(lines)
-                  + "\n\nFocus for the next attempt: " + " | ".join(report["focus"]))
+                  "The scores and the moments below are final: you only put them into words. Never invent a time, a number, a file name, a quote or an event; use only the ones below. Use names, not roles.\n\n"
+                  "PART 1, the judges' lines. For each criterion write `line`: what its judge says, in first person, one or two short sentences (at most 40 words) that refer to the moment by its time "
+                  "exactly as written (mm:ss) and end with the tip in your own words. Do not write the criterion name or the score: they are put in front of your line for you.\n"
+                  "Criteria:\n" + "\n".join(lines) + "\n\n" + Wordsmith._coach_block(report) + "\n\n"
+                  "Reply with JSON: {\"lines\": [{\"criterion\": \"communication\", \"line\": \"...\"}], \"coach\": \"...\"} with one line per criterion.")
         return [{"role": "system", "content": system}, {"role": "user", "content": "Write the lines and the paragraph."}]
+
+    @staticmethod
+    def _coach_block(report: dict) -> str:
+        """The instructions for the coach paragraph: the facts it may use, the shape of its three sentences and the words it must not use (what `verify_voice` refuses, said up front)."""
+        cm = coach_moments(report)
+        full = report["total"] >= report["max"]
+        facts = []
+        if cm["strength"]:
+            facts.append(f'- the strength at {clock(cm["strength"]["t"])}: {cm["strength"]["note"]}')
+        if cm["gap"]:
+            facts.append(f'- the gap at {clock(cm["gap"]["t"])}: {cm["gap"]["note"]} Tip: {cm["gap"]["advice"]}')
+        facts.append(f'- the total score is {report["total"]}/{report["max"]}')
+        facts.append("- focus for the next attempt: " + " | ".join(report["focus"]))
+        s1 = f'1. "At {clock(cm["strength"]["t"])} you ..." and say, in plain words, what you did then (the strength).' if cm["strength"] else "1. Say, in plain words, what went well (the strength)."
+        if cm["gap"]:
+            s2 = f'2. "At {clock(cm["gap"]["t"])} you ..." or "By then you had not ..." and say what was missing (the gap).'
+            s3 = '3. "Next time, first ..." and give the tip of the gap in your own words.'
+        else:
+            s2 = f'2. Say that the total was {report["total"]}/{report["max"]}.'
+            s3 = ("3. Say that there is nothing to fix and that the advice is to beat the time or to move on to the next scenario; never ask for full marks or a perfect run."
+                  if full else "3. Say what to do first next time.")
+        return ("PART 2, the coach paragraph (`coach`). Write exactly three sentences to the learner (\"you\"), in this shape and nothing more, and say what to do first next time. No praise words, no list of criterion names as praise and no general remarks: only what happened in this attempt.\n"
+                f"{s1}\n{s2}\n{s3}\n"
+                "Facts you may use (nothing else; copy each time exactly as written, mm:ss):\n" + "\n".join(facts) + "\n"
+                "Do not use any of these words anywhere in the paragraph: great, good, excellent, impressive, strong, well done, showed, demonstrated, skills, problem-solving, overall, fantastic, awesome. "
+                "Do not write the name of a criterion (" + ", ".join(c["name"] for c in report["criteria"]) + ") and do not rate the learner: state what happened, then what to do.")
 
     def speak(self, report: dict, moments: dict[str, dict]) -> tuple[VoiceOutput | None, str]:
         if self.llm is None or not self._available():
