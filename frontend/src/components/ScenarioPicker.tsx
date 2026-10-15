@@ -10,7 +10,7 @@ interface Props {
   onWatch?: (id: string, variant: 'strong' | 'weak') => void
 }
 
-/** The scenarios of Simulation mode: a finished app with a planted problem and a scripted team. One card for now. */
+/** The scenarios of Simulation mode: a finished app with a planted problem and a scripted team, one card each. */
 export function ScenarioPicker({ scenarios, busy, onStart, onWatch }: Props) {
   if (scenarios.length === 0) return null
   return (
@@ -42,7 +42,7 @@ export function ScenarioPicker({ scenarios, busy, onStart, onWatch }: Props) {
                   <button
                     onClick={() => onWatch(s.id, 'strong')}
                     disabled={busy}
-                    title="A scripted engineer: tests first, searches for the old name, the first update inside two minutes, a regression test, both fixes. Scores 100."
+                    title="A scripted engineer: runs the tests first, reads the code and the data before editing, keeps the channel informed, adds a regression test and fixes it properly. Scores 100."
                     className="rounded-md border border-[var(--good)] px-2 py-1.5 text-[13px] font-bold text-[var(--good)] hover:bg-[#10281a] disabled:opacity-40"
                   >
                     Strong run
@@ -50,7 +50,7 @@ export function ScenarioPicker({ scenarios, busy, onStart, onWatch }: Props) {
                   <button
                     onClick={() => onWatch(s.id, 'weak')}
                     disabled={busy}
-                    title="A scripted engineer: edits first, no update until nudged, a red submit, asks for help. Scores clearly lower."
+                    title="A scripted engineer: edits first, no update until nudged, a red submit, asks for help. Scores clearly lower; the debrief shows why."
                     className="rounded-md border border-[var(--warn)] px-2 py-1.5 text-[13px] font-bold text-[var(--warn)] hover:bg-[#2a210a] disabled:opacity-40"
                   >
                     Weak run
