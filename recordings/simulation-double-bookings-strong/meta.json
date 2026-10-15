@@ -1,0 +1,20 @@
+{
+  "name": "simulation-double-bookings-strong",
+  "goal": "Double bookings at the Hospital OPD",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-15 19:24:07",
+  "seconds": 181,
+  "events": 746,
+  "llm_calls": 2,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Simulation: Double bookings (strong)",
+  "app": "Hospital OPD",
+  "feature": "Strong run: the data first, one safe migration, a regression test, 100/100",
+  "kind": "scenario",
+  "variant": "strong"
+}
