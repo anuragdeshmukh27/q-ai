@@ -1,0 +1,126 @@
+{
+  "id": "opd-double-bookings",
+  "title": "Double bookings",
+  "summary": "Two patients keep being booked with the same doctor at the same time. You are the Database engineer: make the database refuse it, and clean up the bookings that already collide, without losing a single one.",
+  "role": "database",
+  "minutes": 30,
+  "level": "Advanced",
+  "rubric": "opd-double-bookings-v1",
+  "goal": "Double bookings at the Hospital OPD",
+  "brief": "It is Thursday, 08:20. The front desk of the Hospital OPD reports that two patients were booked with the same doctor at the same date and time. It has happened several times this week and the morning clinic opens at 09:00: two people turn up for one slot.\n\nYou are the Database engineer on call. Karan's seat is yours. The app is finished and its tests are in the repo, and there is a snapshot of the production data in fixtures/prod_snapshot.sql. Find out why the database lets it happen, and ship a migration that (a) cleans up the double bookings that already exist without deleting any appointment, and (b) makes sure it cannot happen again. Submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-duplicates. Ananya (QA) has the report with the real rows, Aarav (lead) wants updates, Rohan owns backend/ (read-only for you) and helps if you ask. Every question you ask is counted.",
+  "seed": {"dir": "seed", "preset": "fastapi-vanilla"},
+  "task": {
+    "title": "Fix: stop double bookings in the database",
+    "files": [],
+    "new_files": ["database/migrations/0008_one_booking_per_slot.sql"],
+    "acceptance_tests": [
+      "tests/db/test_double_bookings.py::test_duplicate_bookings_are_cancelled_not_deleted",
+      "tests/db/test_double_bookings.py::test_a_cancelled_duplicate_records_why",
+      "tests/db/test_double_bookings.py::test_the_database_refuses_a_second_booked_row_for_a_slot",
+      "tests/api/test_double_booking_api.py::test_booking_the_same_slot_twice_returns_409_slot_already_booked",
+      "tests/api/test_double_booking_api.py::test_moving_an_appointment_onto_a_taken_slot_returns_409"
+    ]
+  },
+  "channel": {"id": "incident-duplicates", "name": "#incident-duplicates"},
+  "acks": ["Thanks for the update. Keep us posted.", "Noted. Tell me if you need anyone.", "Good, thanks. Is anything blocking you?"],
+  "evidence": {
+    "dup_1": "Dr. Ananya Rao, 14 Oct at 10:30: Rahul Deshmukh (appointment 7) and Meera Joshi (appointment 19)",
+    "dup_2": "Dr. Farhan Ali, 15 Oct at 11:00: Sana Sheikh (appointment 12) and Arjun Nair (appointment 24)",
+    "dup_3": "Dr. Vikram Shah, 13 Oct at 09:30: Kavita Patil (appointment 15) and Dinesh Rao (appointment 27)"
+  },
+  "characters": {
+    "qa": {
+      "persona": "Ananya, QA engineer. Precise, a little tired, reports what she saw with the real rows and never guesses at the cause. She cannot edit database code.",
+      "facts": [
+        "She found three slots that hold two Booked appointments each: {dup_1}; {dup_2}; {dup_3}.",
+        "The booking request does not fail: the second patient gets 201 and a confirmation, exactly like the first.",
+        "The front desk's slot picker greys out a booked time, but two receptionists booking at the same moment, or a booking made from the phone list, still get through.",
+        "Cancelled and Completed appointments can share a slot with a Booked one: that is normal and must keep working.",
+        "The tests in tests/db/test_double_bookings.py and tests/api/test_double_booking_api.py show it; run the tests in your folder to see them. The snapshot of the production data is in fixtures/prod_snapshot.sql."
+      ],
+      "fallbacks": [
+        {"match": ["row", "data", "which", "slot", "appointment"], "text": "Three slots hold two Booked appointments each: {dup_1}; {dup_2}; {dup_3}."},
+        {"match": [], "text": "What I saw: three slots with two Booked appointments each, e.g. {dup_1}. Nothing refused the second booking: it got 201. The rows are in fixtures/prod_snapshot.sql."}
+      ]
+    },
+    "architect": {
+      "persona": "Aarav, the lead. Calm, wants a status update every few minutes, cares about the morning clinic and about doing this through review. He does not know the code in detail.",
+      "facts": [
+        "The morning clinic opens at 09:00 and two patients may turn up for one slot until this is fixed.",
+        "The production data is real: nobody may lose an appointment record. Someone has to tell the second patient that the slot is gone, so the record must stay, marked as cancelled, with the reason.",
+        "The fix has to go through Submit: all tests green, the Reviewer reads it, then the Integrator merges. No shortcuts.",
+        "The migration will run on the production database as it is today, rows and all.",
+        "The database engineer may only change files under database/ (and add tests under tests/regression/). backend/ belongs to Rohan."
+      ],
+      "fallbacks": [
+        {"match": ["delete", "remove", "drop"], "text": "Please do not delete patients' appointments. The record has to stay, marked as cancelled, with the reason."},
+        {"match": [], "text": "The clinic opens at 09:00. Find why the database allows it, fix it in database/, and submit; I will watch for the review."}
+      ]
+    },
+    "backend": {
+      "persona": "Rohan, backend engineer. Helpful, direct, answers only about backend/ and how the API behaves. He will not add a check to the booking route: he says the database has to refuse it.",
+      "facts": [
+        "The booking route (POST /api/doctors/{id}/appointments) just inserts the row. It does not look for a taken slot, and Rohan does not want a check-then-insert there: two requests at once would still get through.",
+        "backend/main.py turns any database refusal (sqlite3.IntegrityError) into a 409 by itself, so if the database refused the second row the route would answer 409 'Slot already booked' without a line of backend code.",
+        "He did not change anything in backend/ this week."
+      ],
+      "fallbacks": [
+        {"match": [], "text": "The route only inserts the row; I will not add a check there, two requests at once would pass it. main.py already turns a database refusal into a 409 by itself, so the rule belongs in the database."}
+      ]
+    },
+    "planner": {
+      "persona": "Priya, project manager. Keeps the guide of the incident and points to the next step, never to the answer.",
+      "facts": [
+        "Her guide for this incident is in the panel next to the task: run the tests, look at the data, find what the database is missing, tell the channel what you found, add a regression test, write the migration, run the tests again, submit.",
+        "The acceptance tests are in tests/db/test_double_bookings.py and tests/api/test_double_booking_api.py and the whole suite has to pass."
+      ],
+      "fallbacks": [
+        {"match": [], "text": "Follow the guide next to your task: it moves to the next step by itself when you run the tests, open a file, post here or submit."}
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "id": "qa-report", "at": 3, "from": "qa",
+      "text": "Double bookings. Two patients were booked with the same doctor at the same date and time, and it has happened several times this week. I found three slots in the production snapshot: {dup_1}; {dup_2}; {dup_3}. The second booking is accepted with 201, nothing refuses it."
+    },
+    {
+      "id": "lead-update", "at": 90, "from": "architect", "skip_if": "learner_posted",
+      "text": "Any update on the double bookings? Please post what you have found so far in this channel, even if it is only 'still looking'."
+    },
+    {
+      "id": "lead-nudge", "idle": 300, "max": 3, "from": "architect",
+      "texts": [
+        "No update from you for 5 minutes. Where are we on the double bookings? The clinic opens soon.",
+        "Still nothing in the channel. Tell me what is wrong in the database and what you are doing about it.",
+        "10 more minutes and patients start arriving for the same slots. What is the status?"
+      ]
+    },
+    {
+      "id": "backend-pointer", "at": 240, "from": "backend", "hint": true, "skip_if": ["asked:backend", "opened:database/migrations/0006*", "said:unique|index|constraint"],
+      "text": "Heads up from me: nothing in backend/ checks for a taken slot, and main.py turns a database refusal into a 409 by itself. So the question is what the database lets in. Have a look at the migration that made the index on appointments (0006): is it unique?"
+    },
+    {
+      "id": "react-tests-failed", "on": "submit_result", "where": {"ok": false, "stage": "tests"}, "from": "qa",
+      "text": "Your submit did not go through: these tests still fail: {failed}."
+    },
+    {
+      "id": "react-accepted-lead", "on": "submit_result", "where": {"ok": true}, "from": "architect",
+      "text": "Accepted and merged. Thank you. Ananya, please run your checks on main."
+    },
+    {
+      "id": "react-accepted-qa", "on": "submit_result", "where": {"ok": true}, "from": "qa", "delay": 5,
+      "text": "Checked on main: the upgrade ran on the snapshot, the three slots keep their first booking, and a second booking of a taken slot now answers 409."
+    }
+  ],
+  "guide": [
+    {"id": "run-tests", "title": "Reproduce it", "text": "Press Run tests and read which tests fail and the first error line of each. That is your starting point. Post a first update in #incident-duplicates within 2 minutes, and answer Aarav within a minute when he asks.", "advance_on": {"kind": "test_run"}},
+    {"id": "look-at-data", "title": "Look at the data", "text": "Ananya quotes real rows. Open fixtures/prod_snapshot.sql (read-only for you) and find the appointments that share a doctor, a date and a time. You can also search the project.", "advance_on": {"kind": "file_opened", "path": "fixtures/prod_snapshot.sql"}},
+    {"id": "find-constraint", "title": "Find what the database is missing", "text": "The booking succeeded, so no rule stopped it. Open the migration that created the index on appointments (database/migrations/0006) and ask yourself what it enforces.", "advance_on": {"kind": "file_opened", "path": "database/migrations/0006*"}},
+    {"id": "tell-channel", "title": "Tell the team", "text": "Post what you found in #incident-duplicates (Agent Chat tab). Aarav is waiting for an update; you can also ask Rohan or Ananya.", "advance_on": {"kind": "message_posted"}},
+    {"id": "regression-test", "title": "Add a regression test", "text": "Add a regression test in tests/regression/ that fails before your fix: book the same slot twice and expect the second to be refused. Name the file test_regression_<what>.py and copy the style of tests/api/test_double_booking_api.py. Run it: it has to be red now and green once the database refuses the second booking.", "advance_on": {"kind": "file_saved", "path": "tests/regression/test_*.py"}},
+    {"id": "fix", "title": "Write the migration", "text": "Add database/migrations/0008_one_booking_per_slot.sql: first deal with the rows that already collide (no row may be deleted), then make the database refuse a second Booked row for a slot. The index has to work on today's data.", "advance_on": {"kind": "file_saved", "path": "database/migrations/0008*"}},
+    {"id": "tests-green", "title": "Run the tests again", "text": "Run tests. The whole suite has to be green, not only the acceptance tests.", "advance_on": {"kind": "test_result", "ok": true}},
+    {"id": "submit", "title": "Submit for review", "text": "Press Submit for review. The Reviewer reads your change and may send it back up to twice.", "advance_on": {"kind": "submit"}}
+  ]
+}

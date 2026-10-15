@@ -1,0 +1,111 @@
+{
+  "id": "opd-double-bookings-v1",
+  "version": 1,
+  "scenario": "opd-double-bookings",
+  "title": "Double bookings",
+  "points_per_criterion": 4,
+  "weight": 5,
+  "measures": ["double_bookings"],
+  "criteria": [
+    {
+      "id": "communication",
+      "name": "Communication",
+      "judge": "architect",
+      "descriptors": {
+        "0": "Nothing reached the channel while the incident was open, or only after the lead had to chase you repeatedly.",
+        "1": "You posted, but late or without saying what was wrong; the lead had to ask and nudge.",
+        "2": "Some timely updates, but at least one gap or one post that did not say what you had found.",
+        "3": "Prompt, useful updates with one slip: a late answer to the lead, or a quiet stretch.",
+        "4": "A first update in the first two minutes, the lead's request answered at once, no quiet stretch, and the cause named in plain words."
+      },
+      "signals": ["message_posted", "team_message"],
+      "keep": "Keep posting a short status as soon as you know something, even when it is only 'still looking'.",
+      "rules": [
+        {"id": "first_update", "plain": "Post a first update in #incident-duplicates within 2 minutes of the start.", "label": "a first update inside two minutes", "params": {"within": 120}, "advice": "Post a first update in the channel within two minutes, even if it is only what you have seen so far."},
+        {"id": "answered_requests", "plain": "When Aarav asks for an update, answer within a minute.", "label": "the lead's request answered at once", "params": {"within": 60}, "advice": "When the lead asks for an update, answer within a minute, even if nothing has changed."},
+        {"id": "no_nudges", "plain": "Never let 5 quiet minutes pass without a post, so Aarav does not have to nudge you.", "label": "no quiet stretch of five minutes", "params": {}, "advice": "Set a timer for each promised update: do not let five quiet minutes pass without a post."},
+        {"id": "names_the_cause", "plain": "Say in the channel what you found: name the missing unique index or constraint, or the duplicate rows.", "label": "the cause named in the channel", "params": {"pattern": "duplicate|unique|constraint|index|same slot|twice|double"}, "advice": "Say what you found, not only that you are working on it: name the missing constraint or the duplicate rows."}
+      ]
+    },
+    {
+      "id": "diagnosis",
+      "name": "Diagnosis",
+      "judge": "backend",
+      "descriptors": {
+        "0": "You changed things before you had run the tests or opened anything that explains the double bookings.",
+        "1": "You saw that the tests failed but never looked at the data or at what the database enforces.",
+        "2": "You looked at the right places, but after you had already started editing, or only with a pointer.",
+        "3": "Reproduce, look at the data, find the missing constraint: three of the four habits, in order.",
+        "4": "You reproduced it, read the production data and the migration that made the index before your first edit, and needed no pointer."
+      },
+      "signals": ["test_run", "file_opened", "search", "hint_given"],
+      "keep": "Keep reproducing first and reading the real data and the schema before you write a migration.",
+      "rules": [
+        {"id": "reproduced_first", "plain": "Run the tests before you save any file, and read why they fail.", "label": "the tests run before the first edit", "params": {}, "advice": "Run the tests and read the first error line of each failure before you change anything."},
+        {"id": "looked_at_the_data", "plain": "Open the production snapshot (fixtures/prod_snapshot.sql), or search the project for the duplicates, before your first save.", "label": "the production data looked at before editing", "params": {"pattern": "fixtures/*", "search": "duplicate|double|slot_at|snapshot|Booked"}, "advice": "Look at the real rows before you write a migration: a change that is right on an empty table can fail on production data."},
+        {"id": "found_the_missing_constraint", "plain": "Open the migration that created the index on appointments (0006 or 0002), or search for UNIQUE, before your first save.", "label": "the missing constraint found before editing", "params": {"pattern": "database/migrations/0006*|database/migrations/0002*", "search": "unique|index|constraint"}, "advice": "The second booking succeeded because nothing refused it: read the migration that made the index and ask what it enforces."},
+        {"id": "no_pointer_needed", "plain": "Find the missing constraint yourself, before Rohan has to point at it (about 4 minutes in).", "label": "found without a pointer", "params": {"pattern": "database/migrations/0006*|database/migrations/0002*"}, "advice": "Look at what the database enforces yourself before you wait for a teammate to point at it."}
+      ]
+    },
+    {
+      "id": "fix_quality",
+      "name": "Fix quality",
+      "judge": "reviewer",
+      "descriptors": {
+        "0": "The migration is missing, or it fails on the production data, or the suite is still red on main.",
+        "1": "Only one part of the problem is solved: the index, or the clean-up, but not both.",
+        "2": "Two of the four: for example rows resolved and a green suite but no index, or an index that blocks cancelled slots.",
+        "3": "A correct migration with one thing to improve: a missing reason, or an earliest booking that was not kept.",
+        "4": "No row deleted, the duplicates resolved the way the incident asks, a partial unique index on Booked rows, and the whole suite green on my re-run."
+      },
+      "signals": ["file_saved", "submit_result"],
+      "keep": "Keep running a migration against a copy of the real data before you ship it, and keep every record.",
+      "rules": [
+        {"id": "no_row_deleted", "plain": "Delete no appointment: every row of the production snapshot is still there after your migration. The debrief upgrades the snapshot with it.", "label": "no appointment deleted", "params": {}, "advice": "Cancel the later duplicates instead of deleting them: a patient's record is not yours to remove."},
+        {"id": "duplicates_resolved", "plain": "Keep the earliest booking of each double-booked slot, set the later ones to Cancelled and record why (a new column or a log table).", "label": "the double bookings resolved, with the reason recorded", "params": {}, "advice": "Keep the earliest booking of each slot, cancel the later ones and record why in a new column or a log table."},
+        {"id": "partial_index_present", "plain": "Add a unique index on doctor, date and time that applies only to Booked rows, so cancelled and completed rows can share a slot.", "label": "a partial unique index on the Booked rows", "params": {}, "advice": "Add CREATE UNIQUE INDEX ... (doctor_id, date, slot_at) WHERE status = 'Booked': it must exist after the clean-up, and only for Booked rows."},
+        {"id": "suite_green_on_main", "plain": "The whole test suite passes on the merged project. The debrief re-runs it.", "label": "the whole suite green on my re-run", "params": {}, "advice": "Run the whole suite, not only the acceptance tests, before you submit."}
+      ]
+    },
+    {
+      "id": "testing",
+      "name": "Testing",
+      "judge": "qa",
+      "descriptors": {
+        "0": "You submitted without ever running the tests, and nothing protects the fix.",
+        "1": "You ran the tests, but not green before submitting, and nothing protects the fix.",
+        "2": "A green run before submit and no red submit, but no new test that proves the fix.",
+        "3": "Green before submit, no red submit, and a regression test that was added but does not prove the fix.",
+        "4": "A green run before submit, no red submit, and a regression test that books a slot twice, fails on the old code and passes on yours."
+      },
+      "signals": ["test_run", "test_result", "file_saved", "submit_result"],
+      "keep": "Keep adding a regression test with every bug fix: it is the part that outlives the incident.",
+      "rules": [
+        {"id": "green_before_submit", "plain": "Run the tests after your last change and see them green before you press Submit.", "label": "a green run of your own before Submit", "params": {}, "advice": "Run the tests yourself and see them green before you press Submit."},
+        {"id": "no_red_submit", "plain": "Do not submit while tests still fail: a submit that is refused for failing tests counts against you.", "label": "no red submit", "params": {}, "advice": "Submit only when your own run is green: a red submit costs a round trip."},
+        {"id": "regression_test_added", "plain": "Add a regression test in tests/regression/ (test_regression_<what>.py).", "label": "a regression test added", "params": {"pattern": "tests/regression/test_*.py"}, "advice": "Add a regression test in tests/regression/ for the bug you fixed."},
+        {"id": "regression_test_proves_fix", "plain": "Your regression test books the same slot twice, fails on the old code and passes on your fix. The debrief runs it both ways.", "label": "a regression test that fails before the fix and passes after", "params": {}, "advice": "Book the same slot twice and expect 409: run your new test before the migration, it has to be red then, and green after."}
+      ]
+    },
+    {
+      "id": "ownership",
+      "name": "Ownership",
+      "judge": "architect",
+      "descriptors": {
+        "0": "The fix was not accepted, or it came long after the clinic opened with no word to the team.",
+        "1": "Accepted late, with many hints and no word to the team.",
+        "2": "Accepted, but you leaned on hints or went outside your files.",
+        "3": "Accepted in time, you stayed inside your files and asked for little help, but you did not close the loop.",
+        "4": "Accepted inside the time box, inside your own files, with one hint at most, and the team told that the fix was ready."
+      },
+      "signals": ["submit_result", "hint_given", "message_posted"],
+      "keep": "Keep telling the team when the fix is ready and what you did.",
+      "rules": [
+        {"id": "within_time_box", "plain": "Get the fix accepted inside the 30 minutes.", "label": "accepted inside the time box", "params": {}, "advice": "Watch the clock: the clinic opens at 09:00, so aim to have the fix submitted inside the time box."},
+        {"id": "few_hints", "plain": "Use at most one hint. Every answer to a question of yours counts, and so does a pointer you needed.", "label": "at most one hint", "params": {"max_hints": 1}, "advice": "Try the next step on your own before you ask a teammate; every answer counts as a hint."},
+        {"id": "no_scope_rejection", "plain": "Only change files your role may edit (database/ and tests/regression/): backend/ is Rohan's, so Submit is refused if you touch it.", "label": "inside your own files", "params": {}, "advice": "Read the list of files you may edit in the task document before you change anything outside it: the booking route is Rohan's."},
+        {"id": "reported_the_outcome", "plain": "After your last green run, tell the channel the fix is ready.", "label": "the team told that the fix was ready", "params": {}, "advice": "When the tests are green, tell the channel the fix is ready and what you changed."}
+      ]
+    }
+  ]
+}

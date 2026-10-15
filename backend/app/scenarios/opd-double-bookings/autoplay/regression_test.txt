@@ -1,0 +1,20 @@
+"""A slot that is already Booked cannot be booked again: the second request is refused with 409 and the first booking stays."""
+from fastapi.testclient import TestClient
+
+from backend.main import app
+
+client = TestClient(app)
+
+
+def test_booking_the_same_slot_twice_is_refused_with_409():
+    doctor = client.post("/api/doctors", json={"name": "Dr. Test", "department": "General Medicine", "phone": "9876500001", "room": "OPD 1", "consultation_fee": 300,
+                                               "availability": "Available", "email": "regression@example.com"})
+    assert doctor.status_code == 201, doctor.text
+    url = f"/api/doctors/{doctor.json()['id']}/appointments"
+    booking = {"patient_name": "A", "patient_phone": "9876511112", "date": "2026-10-12", "time": "09:15", "reason": "Check", "status": "Booked"}
+    first = client.post(url, json=booking)
+    assert first.status_code == 201, first.text
+    second = client.post(url, json={**booking, "patient_name": "B", "patient_phone": "9876511113"})
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"] == "Slot already booked"
+    assert len(client.get(url).json()["items"]) == 1
