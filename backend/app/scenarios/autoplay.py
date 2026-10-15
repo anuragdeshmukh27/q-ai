@@ -49,8 +49,8 @@ def regression_test(scenario_id: str = "opd-bookings-down") -> str:
     return _data(scenario_id, "regression_test.txt").read_text(encoding="utf-8")
 
 
-def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down", create: tuple[str, ...] = ()) -> dict[str, str]:
-    """The reference fix applied to `files` (path -> current text): what the files must become. `git apply` of the scenario's own patch.
+def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down", create: tuple[str, ...] = (), patch: str = "fix.patch") -> dict[str, str]:
+    """The reference fix applied to `files` (path -> current text): what the files must become. `git apply` of the scenario's own patch (`patch`: another one of its autoplay patches).
     `create`: files the patch makes from nothing (a new migration); their text is returned too."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -58,7 +58,7 @@ def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down",
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text.replace("\r\n", "\n"), encoding="utf-8", newline="\n")
-        r = subprocess.run(["git", "apply", str(_data(scenario_id, "fix.patch"))], cwd=root, capture_output=True, text=True)
+        r = subprocess.run(["git", "apply", str(_data(scenario_id, patch))], cwd=root, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"the reference fix does not apply: {r.stderr.strip()[:300]}")
         return {rel: (root / rel).read_text(encoding="utf-8") for rel in (*files, *create)}

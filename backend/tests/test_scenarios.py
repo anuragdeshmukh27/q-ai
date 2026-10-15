@@ -37,7 +37,7 @@ def test_the_shipped_scenario_loads_with_everything_the_session_needs():
     assert s.task.files == ["backend/api/appointments.py", "backend/api/doctors.py"]
     assert set(s.characters) == {"qa", "architect", "database", "planner"} and s.role not in s.characters
     assert [i.id for i in s.timeline][:2] == ["qa-report", "lead-update"] and len(s.guide) == 8
-    assert [s.id for s in list_scenarios()] == [ID, "opd-double-bookings"]  # both scenarios are in the picker
+    assert [s.id for s in list_scenarios()] == [ID, "opd-double-bookings", "opd-form-says-saved"]  # the three scenarios are in the picker
 
 
 def test_the_picker_data_leaves_the_script_on_the_server():

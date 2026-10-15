@@ -47,8 +47,9 @@ def scenario(tmp_path):
 def test_the_scenario_list_has_a_card_for_each_scenario_without_the_script(tmp_path):
     client, mgr = manager(tmp_path, ScenarioLLM())
     cards = client.get("/api/scenarios").json()
-    assert [c["id"] for c in cards] == [ID, "opd-double-bookings"] and cards[0]["title"] == "Production incident: Bookings are down" and cards[0]["role"] == "backend"
+    assert [c["id"] for c in cards] == [ID, "opd-double-bookings", "opd-form-says-saved"] and cards[0]["title"] == "Production incident: Bookings are down" and cards[0]["role"] == "backend"
     assert (cards[1]["title"], cards[1]["role"], cards[1]["level"], cards[1]["minutes"]) == ("Double bookings", "database", "Advanced", 30)
+    assert (cards[2]["title"], cards[2]["role"], cards[2]["level"], cards[2]["minutes"], cards[2]["tests"]) == ("The form says it saved", "frontend", "Intermediate", 25, 6)
     assert all("timeline" not in c and "guide" not in c and "characters" not in c for c in cards)
 
 

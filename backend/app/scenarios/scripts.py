@@ -221,7 +221,104 @@ class DoubleBookingsScript(Script):
                 ("Rewrite the migration", "ide", rewrite), ("Submit again", "ide", r.finish_submit)]
 
 
-SCRIPTS: dict[str, type[Script]] = {"opd-bookings-down": BookingsDownScript, "opd-double-bookings": DoubleBookingsScript}
+class FormSaysSavedScript(Script):
+    """"The form says it saved" (the frontend engineer): the page's one request function treats a refused answer that has a message as a success."""
+
+    ID = "opd-form-says-saved"
+    SHELL = "static/shell.js"
+    REGRESSION_PATH = "tests/regression/test_regression_refusals.py"
+    API_TEST = "tests/api/test_double_booking_api.py"
+    API_MAIN = "backend/main.py"
+
+    def _fixed(self, patch: str = "fix.patch") -> str:
+        from .autoplay import reference_fix
+        return reference_fix({self.SHELL: self.r.files[self.SHELL]}, self.ID, patch=patch)[self.SHELL]
+
+    def strong(self) -> list[Step]:
+        from .autoplay import regression_test
+        r = self.r
+
+        def reproduce() -> None:
+            r.pause(6)
+            r.post("On it. I am running the tests first, then I will read what the server answers and report what I find.")  # the first update, well inside the 2 minutes
+            r.run_tests("the first test run")
+
+        def search() -> None:
+            r.search("409")
+            r.pause(10)
+
+        def read() -> None:
+            r.open_file(self.API_TEST)
+            r.pause(10)
+            r.open_file(self.API_MAIN)
+            r.pause(8)
+
+        def code() -> None:
+            r.open_file(self.SHELL, line=75)
+            r.pause(12)
+
+        def tell() -> None:
+            r.post("Update: the server is right, it answers 409 with a message. The page is wrong: call() in static/shell.js only throws when the answer has no body, "
+                   "so a 409 with a detail is treated as a success and every form and button says it saved. I will fix call() and add a regression test.")
+            r.pause(6)
+
+        def regression() -> None:
+            r.save(self.REGRESSION_PATH, regression_test(self.ID))
+            r.run_tests("the regression test, red")
+
+        def fix() -> None:
+            r.save(self.SHELL, self._fixed())
+
+        def green() -> None:
+            r.run_tests("the green run")
+
+        def report() -> None:
+            r.post("Fix is ready: call() now throws for any refused answer, so every form, button and drag shows the server's message. Submitting now.")
+
+        return [("Say you are on it, run the tests: they fail", "ide", reproduce), ("Search for 409", "ide", search),
+                ("Open the server's answer: the API test and main.py", "ide", read), ("Open the code that sends the requests", "ide", code),
+                ("Tell the team what the page does wrong", "chat", tell), ("Add a regression test: a refused request is an error", "ide", regression),
+                ("Fix call() in static/shell.js", "ide", fix), ("Run the tests: green", "ide", green), ("Tell the team the fix is ready", "chat", report),
+                ("Submit for review", "ide", r.finish_submit)]
+
+    def weak(self) -> list[Step]:
+        r = self.r
+
+        def first_edit() -> None:
+            r.pause(8)
+            r.open_file(self.SHELL, auto=True)
+            r.pause(6)
+            r.save(self.SHELL, self._fixed("naive_create_form.patch"))  # only the booking form looks at the answer, with no test run and no look at what the server says
+
+        def silence() -> None:
+            r.until(r.nudge_seen, "Aarav's nudge", session_limit=900)  # no update, no test run: the team has to ask
+            r.pause(6)
+
+        def reply() -> None:
+            r.post("Sorry, still working on it. I think the booking form needs to read the answer.")
+
+        def red_submit() -> None:
+            answer = r.session.submit_task(r.task)
+            r.pause(5)
+            if answer.get("ok"):
+                raise RuntimeError("the weak run's first submit was accepted; the script expects it to fail")
+
+        def ask() -> None:
+            n = r.replies_from("backend")
+            r.post("Rohan, can you help? The other screens still fail and I do not know why.", "backend")
+            r.until(lambda: r.replies_from("backend") > n, "Rohan's reply")
+            r.pause(5)
+
+        def rewrite() -> None:
+            r.pause(4)
+            r.save(self.SHELL, self._fixed())
+
+        return [("Patch the booking form without running the tests or reading the answer", "ide", first_edit), ("No update, no tests: nobody hears from the engineer", "chat", silence),
+                ("Answer Aarav after the nudge", "chat", reply), ("Submit: the tests fail", "ide", red_submit), ("Ask Rohan for help", "chat", ask),
+                ("Fix the request function", "ide", rewrite), ("Submit again", "ide", r.finish_submit)]
+
+
+SCRIPTS: dict[str, type[Script]] = {"opd-bookings-down": BookingsDownScript, "opd-double-bookings": DoubleBookingsScript, "opd-form-says-saved": FormSaysSavedScript}
 
 
 def script_for(scenario_id: str, runner: "AutoplayRunner") -> Script:

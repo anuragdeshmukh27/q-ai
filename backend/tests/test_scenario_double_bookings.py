@@ -35,7 +35,7 @@ def test_the_scenario_loads_with_a_database_engineer_and_rohan_as_a_teammate():
     assert set(s.characters) == {"qa", "architect", "backend", "planner"} and s.role not in s.characters
     assert s.task.new_files == [MIGRATION] and s.task.all_files == [MIGRATION] and len(s.task.acceptance_tests) == 5 and len(s.guide) == 8
     assert [i.id for i in s.timeline][:3] == ["qa-report", "lead-update", "lead-nudge"]  # the ids the rules read
-    assert [x.id for x in list_scenarios()] == ["opd-bookings-down", ID]
+    assert [x.id for x in list_scenarios()] == ["opd-bookings-down", ID, "opd-form-says-saved"]
 
 
 def test_the_picker_cards_carry_the_same_fields_for_both_scenarios():

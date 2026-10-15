@@ -121,7 +121,7 @@ def test_the_speed_switch_and_the_bad_requests_work_on_scenario_2(world):
 
 def test_every_scenario_that_can_be_watched_has_a_script_and_the_others_are_refused(world, monkeypatch):
     client, mgr, settings = world
-    assert set(SCRIPTS) == {OTHER, ID}
+    assert set(SCRIPTS) == {OTHER, ID, "opd-form-says-saved"}
     with pytest.raises(ValueError, match="no scripted run"):
         script_for("opd-unknown", None)  # type: ignore[arg-type]
     monkeypatch.delitem(SCRIPTS, ID)
