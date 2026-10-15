@@ -1,10 +1,10 @@
-"""Record an autoplay run of a scenario ("Production incident: Bookings are down", the default, or "Double bookings") as a Demo-mode recording, with real Ollama.
+"""Record an autoplay run of a scenario ("Production incident: Bookings are down", the default, "Double bookings" or "The form says it saved") as a Demo-mode recording, with real Ollama.
 
-    backend\\.venv\\Scripts\\python.exe scripts\\record_simulation.py [--scenario opd-bookings-down|opd-double-bookings] [--tries 3] [--variant strong] [--require-model]
+    backend\\.venv\\Scripts\\python.exe scripts\\record_simulation.py [--scenario opd-bookings-down|opd-double-bookings|opd-form-says-saved] [--tries 3] [--variant strong] [--require-model]
 
 Ollama must be running with the models installed (the teammates' replies, the Reviewer of the Submit and the debrief's judges' lines use `qwen25-coder-7b`); this is one GPU job, run it alone.
 The scripted learner plays the scenario through the same calls a person makes (about 3 minutes), then the debrief runs; the whole event stream and the project's git history are saved as
-recordings/simulation-<scenario>-<variant>/ (simulation-bookings-down-strong, simulation-double-bookings-strong; "Simulation: Double bookings (strong)" in the Demo picker). A take is kept only if the
+recordings/simulation-<scenario>-<variant>/ (simulation-bookings-down-strong, simulation-double-bookings-strong, simulation-form-says-saved-strong; "Simulation: Double bookings (strong)" in the Demo picker). A take is kept only if the
 report is 100/100 for a strong run (a weak run: 30 for each scenario), the debrief finished, no error was emitted and no Reviewer send-back cost a point; otherwise it is deleted and the run is repeated (`--tries`). `--require-model` also insists that
 the judges' lines and the coach paragraph are the 7b's (not the template's) in the kept take. Replaying it needs neither Ollama nor a GPU:
     backend\\.venv\\Scripts\\python.exe -m pytest backend\\tests\\test_replay_scenario.py -q
@@ -28,6 +28,8 @@ SCENARIOS = {
                           "card": {"strong": "Strong run: tests first, both fixes, a regression test, 100/100", "weak": "Weak run: edits first, nudged, a red submit, 30/100"}},
     "opd-double-bookings": {"name": "simulation-double-bookings", "title": "Simulation: Double bookings", "expected": {"strong": 100, "weak": 30},
                             "card": {"strong": "Strong run: the data first, one safe migration, a regression test, 100/100", "weak": "Weak run: a migration that deletes rows, nudged, a red submit, 30/100"}},
+    "opd-form-says-saved": {"name": "simulation-form-says-saved", "title": "Simulation: The form says it saved", "expected": {"strong": 100, "weak": 30},
+                            "card": {"strong": "Strong run: the server's answer first, one fix in the request function, a regression test, 100/100", "weak": "Weak run: patches one form, nudged, a red submit, 30/100"}},
 }
 
 

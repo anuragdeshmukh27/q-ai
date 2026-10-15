@@ -1,4 +1,5 @@
-"""End-to-end check of a scenario ("Production incident: Bookings are down" by default, or "Double bookings" with --scenario opd-double-bookings), driven through the HTTP API with the LLM stubbed (no Ollama, no GPU).
+"""End-to-end check of a scenario ("Production incident: Bookings are down" by default, "Double bookings" with --scenario opd-double-bookings, or "The form says it saved"
+with --scenario opd-form-says-saved), driven through the HTTP API with the LLM stubbed (no Ollama, no GPU).
 
     backend\\.venv\\Scripts\\python.exe scripts\\scenario_e2e.py            run the check on port 8200 and stop the server (exit 0 = all steps passed)
     backend\\.venv\\Scripts\\python.exe scripts\\scenario_e2e.py --serve    only start the stubbed backend on 8200 for the UI, no scripted flow (start the frontend with Q_BACKEND=http://127.0.0.1:8200)
@@ -36,7 +37,12 @@ from scenario_helpers import FIX_FILES, REGRESSION_PATH, REGRESSION_TEST, Scenar
 
 SCENARIO = "opd-bookings-down"
 TWO = "opd-double-bookings"
-SCENARIO_IDS = [SCENARIO, TWO]
+THREE = "opd-form-says-saved"
+SCENARIO_IDS = [SCENARIO, TWO, THREE]
+REGRESSION_THREE = "tests/regression/test_regression_refusals.py"
+SHELL = "static/shell.js"
+CAUSE_THREE = ("Update: the server is right, it answers 409 with a message. The page is wrong: call() in static/shell.js only throws when the answer has no body, "
+               "so a 409 with a detail is treated as a success and every form and button says it saved. I will fix call().")
 REGRESSION_TWO = "tests/regression/test_regression_double_booking.py"
 MIGRATION_TWO = "database/migrations/0008_one_booking_per_slot.sql"
 FORBIDDEN_PORTS = {8000, 5173}
@@ -65,7 +71,7 @@ def wait(fn, timeout: float, what: str):
 def bookings_down(c: httpx.Client, check: Check, tmp: Path) -> None:
     """The first scenario ("Bookings are down", the backend engineer), through the same HTTP calls the browser makes."""
     cards = c.get("/api/scenarios").json()
-    check([x["id"] for x in cards] == SCENARIO_IDS, "the scenario list has both incidents", str(cards))
+    check([x["id"] for x in cards] == SCENARIO_IDS, "the scenario list has all three incidents", str(cards))
     r = c.post(f"/api/scenarios/{SCENARIO}/start")
     check(r.status_code == 201 and r.json()["mode"] == "simulation" and r.json()["scenario"]["id"] == SCENARIO, "scenario started", r.text)
     pid = r.json()["id"]
@@ -191,7 +197,7 @@ def ref_migration() -> str:
 def double_bookings(c: httpx.Client, check: Check, tmp: Path) -> None:
     """The second scenario ("Double bookings", the database engineer), through the same HTTP calls the browser makes."""
     cards = c.get("/api/scenarios").json()
-    check([x["id"] for x in cards] == SCENARIO_IDS, "the scenario list has both incidents", str(cards))
+    check([x["id"] for x in cards] == SCENARIO_IDS, "the scenario list has all three incidents", str(cards))
     check(next(x for x in cards if x["id"] == TWO)["role"] == "database", "the second card is played as the database engineer")
     r = c.post(f"/api/scenarios/{TWO}/start")
     check(r.status_code == 201 and r.json()["mode"] == "simulation" and r.json()["scenario"]["id"] == TWO, "scenario started", r.text)
@@ -285,6 +291,106 @@ def double_bookings(c: httpx.Client, check: Check, tmp: Path) -> None:
     check([(a["attempt"], a["total"], a["variant"]) for a in mine] == [(1, 100, "strong")], "the demo has a history of its own", str(mine))
 
 
+def form_says_saved(c: httpx.Client, check: Check, tmp: Path) -> None:
+    """The third scenario ("The form says it saved", the frontend engineer), through the same HTTP calls the browser makes."""
+    cards = c.get("/api/scenarios").json()
+    check([x["id"] for x in cards] == SCENARIO_IDS, "the scenario list has all three incidents", str(cards))
+    check(next(x for x in cards if x["id"] == THREE)["role"] == "frontend", "the third card is played as the frontend engineer")
+    r = c.post(f"/api/scenarios/{THREE}/start")
+    check(r.status_code == 201 and r.json()["mode"] == "simulation" and r.json()["scenario"]["id"] == THREE, "scenario started", r.text)
+    pid = r.json()["id"]
+    events = lambda: c.get(f"/api/projects/{pid}/events").json()  # noqa: E731
+    of = lambda t: [e for e in events() if e["type"] == t]  # noqa: E731
+    task = wait(lambda: next(iter(of("human_task_assigned")), None), 120, "your task")
+    tid = task["task"]
+    check(task["agent"] == "frontend" and len(task["tests"]) == 6, f"your task {tid} was handed over to the frontend desk: {task['title']}")
+    check(not of("architecture_ready") and not of("spec_ready"), "no design or planning step ran")
+    report = wait(lambda: next((e for e in of("channel_message") if e["from"] == "qa"), None), 30, "Ananya's report")
+    check("'Appointment added'" in report["text"] and '"Slot already booked"' in report["text"], "Ananya reported the steps and the real 409 in #incident-frontdesk")
+    doc = c.get(f"/api/projects/{pid}/tasks/{tid}/doc").text
+    check("form still closes with a green 'Appointment added'" in doc and "static/**" in doc and "tests/regression/**" in doc and "In this incident you also own `static/shell.js`" in doc,
+          "the task document carries the brief and the files you may edit: static/ (the shell included) and tests/regression/")
+
+    ide = f"/api/projects/{pid}/ide/frontend"
+    test_run = lambda: (n := len(of("human_test_result")), c.post(f"{ide}/tests"), wait(lambda: len(of("human_test_result")) > n and of("human_test_result")[n], 120, "the test result"))[2]  # noqa: E731
+    print("-- the problem")
+    red = test_run()
+    check(red["ok"] is False and red["failed"] == 6, "run tests: the six acceptance tests are red (the rest of the suite, backend included, is green)", red["summary"])
+    check(c.put(f"{ide}/file", json={"path": "backend/main.py", "content": "# x\n"}).status_code == 403 and c.put(f"{ide}/file", json={"path": "database/connection.py", "content": "# x\n"}).status_code == 403,
+          "backend/ and database/ are read-only: the API answers correctly and is not yours")
+    check(c.get(f"{ide}/file", params={"path": "tests/api/test_double_booking_api.py"}).status_code == 200 and c.get(f"{ide}/file", params={"path": "backend/main.py"}).status_code == 200,
+          "what the server answers can be read")
+    current = c.get(f"{ide}/file", params={"path": SHELL}).json()["content"]
+    asked = c.post(f"/api/projects/{pid}/channel", json={"text": "Rohan, what does the API answer when a slot is taken?", "to": "backend"})
+    check(asked.status_code == 200 and asked.json()["to"] == ["backend"], "asked Rohan in the channel")
+    wait(lambda: any(e["from"] == "backend" and e.get("reply_to") for e in of("channel_message")), 30, "Rohan's reply")
+    check(True, "Rohan replied")
+    found = c.get(f"{ide}/search", params={"q": "409"}).json()
+    check(found["matches"] >= 2 and any(f["path"].startswith("tests/api") or f["path"].startswith("backend") for f in found["results"]), "a project-wide search finds 409 in the backend and its tests", str(found["files"]))
+    posted = c.post(f"/api/projects/{pid}/channel", json={"text": CAUSE_THREE})
+    check(posted.status_code == 200, "posted an update that names the cause")
+    check(c.put(f"{ide}/file", json={"path": REGRESSION_THREE, "content": regression_test(THREE)}).status_code == 200, "saved a regression test in tests/regression/")
+    red_regression = test_run()
+    check(red_regression["ok"] is False and any(REGRESSION_THREE in t["id"] and t["outcome"] == "failed" for t in red_regression["tests"]), "the regression test (a refused request is an error) is red before the fix")
+
+    print("-- the fix in static/shell.js, saved the way the editor saves")
+    fixed = reference_fix({SHELL: current}, THREE)[SHELL]
+    check(c.put(f"{ide}/file", json={"path": SHELL, "content": fixed}).status_code == 200, f"saved {SHELL}")
+    green = test_run()
+    check(green["ok"] is True and green["failed"] == 0, "run tests: green after the fix", green["summary"])
+    c.post(f"/api/projects/{pid}/channel", json={"text": "Fix is ready: call() now throws for any refused answer, so every form shows the server's message. Submitting."})
+    answer: dict = {}
+    for attempt in range(1, 5):
+        answer = c.post(f"/api/projects/{pid}/tasks/{tid}/submit").json()
+        print(f"  submit {attempt}: {answer['stage']}")
+        if answer["ok"]:
+            break
+    check(answer["ok"] is True and answer["stage"] == "accepted", "submit accepted")
+    state = wait(lambda: (s := c.get(f"/api/projects/{pid}").json())["state"] in ("done", "failed") and s, 180, "the session to finish")
+    check(state["state"] == "done" and state["finished"]["ok"] is True, f"the build finished ok (state {state['state']})", str(state.get("problems")))
+
+    print("-- the session log")
+    info = c.get(f"/api/projects/{pid}/session").json()
+    kinds = [e["kind"] for e in info["events"]]
+    check(all(k in kinds for k in ("file_opened", "file_saved", "test_run", "test_result", "message_posted", "hint_given", "submit", "submit_result", "session_finished")), "every kind of step is in the log", str(sorted(set(kinds))))
+    check(info["summary"]["hints"] == 1 and info["summary"]["saves"] == 2 and info["summary"]["searches"] == 1, "one hint (the question to Rohan), two saves and one search were counted", str(info["summary"]))
+    check(info["guide"]["current"] is None and info["guide"]["done"] == 8, "Priya's guide is complete", str(info["guide"]["done"]))
+    check(any(m.get("ref") == "react-accepted-lead" for m in info["messages"]), "Aarav thanked you for the fix")
+
+    print("-- the debrief")
+    ended = wait(lambda: next(iter(of("debrief_ended")), None), 240, "the debrief to end")
+    check(ended["ok"] is True and not of("debrief_failed"), "the team met and the debrief ended")
+    judges = [m for m in of("channel_message") if m.get("criterion")]
+    check([(m["from"], m["criterion"]) for m in judges] == [("architect", "communication"), ("backend", "diagnosis"), ("reviewer", "fix_quality"), ("qa", "testing"), ("architect", "ownership")],
+          "each judge posted their criterion in #incident-frontdesk (Rohan judges the diagnosis)", str([(m["from"], m["criterion"]) for m in judges]))
+    rep = c.get(f"/api/projects/{pid}/report").json()
+    check(rep["scenario"] == THREE and rep["total"] == 100 and [x["score"] for x in rep["criteria"]] == [4, 4, 4, 4, 4], "the report scores the run 100/100", f"{rep['total']} {[x['score'] for x in rep['criteria']]}")
+    fair = rep["fairness"]
+    check(fair["points"] == fair["quoted"] == fair["matched"] == 20 and fair["dropped"] == [], "fairness: 20 points quoted, 20 quotes matched, none dropped", str(fair))
+    check(fair["tests_rerun"]["ok"] is True, "the suite was re-run on the merged project", str(fair["tests_rerun"]))
+    checks = [e for e in rep["events"].values() if e["kind"] == "debrief_check"]
+    check(len(checks) >= 5 and any(e["text"].startswith("Debrief check of the pages: all 8 refused requests") for e in checks) and any(e["text"].startswith("Debrief check of the messages: in all 8 cases") for e in checks),
+          "the debrief ran the pages on the real answers of the API and the results are entries a point quotes", str([e["text"] for e in checks]))
+    check(all("#incident-frontdesk" in r["source"] for r in rep["rows"] if r["source"].startswith("#")), "every channel source names #incident-frontdesk")
+    history = json.loads((tmp / "ws" / ".q-attempts" / f"{THREE}.json").read_text(encoding="utf-8"))
+    check([(a["attempt"], a["total"]) for a in history] == [(1, 100)], "the attempt history of this scenario has attempt 1", str(history))
+    check(not (tmp / "ws" / ".q-attempts" / f"{SCENARIO}.json").exists() and not (tmp / "ws" / ".q-attempts" / f"{TWO}.json").exists(), "the other scenarios have no history from this run")
+
+    print("-- autoplay (a scripted strong run at 2x)")
+    r = c.post(f"/api/scenarios/{THREE}/autoplay", json={"variant": "strong", "speed": 2})
+    check(r.status_code == 201 and r.json()["scenario"]["kind"] == "demo" and r.json()["scenario"]["attempt"] == 1, "autoplay started as demo attempt 1", r.text[:200])
+    apid = r.json()["id"]
+    aevents = lambda: c.get(f"/api/projects/{apid}/events").json()  # noqa: E731
+    ended_run = wait(lambda: next((e for e in aevents() if e["type"] == "autoplay_ended"), None), 400, "the autoplay run to end")
+    check(ended_run["reason"] == "done", "the scripted run reached the end of the debrief", str(ended_run))
+    demo = c.get(f"/api/projects/{apid}/report").json()
+    check(demo["total"] == 100 and demo["kind"] == "demo" and demo["variant"] == "strong" and demo["scenario"] == THREE, "the demo scored 100 and is marked demo", f"{demo['total']} {demo['kind']}")
+    history = json.loads((tmp / "ws" / ".q-attempts" / f"{THREE}.json").read_text(encoding="utf-8"))
+    check([(a["attempt"], a["total"]) for a in history] == [(1, 100)], "the learner's attempt history did not take the demo", str(history))
+    mine = json.loads((tmp / "ws" / ".q-attempts" / f"{THREE}-demo.json").read_text(encoding="utf-8"))
+    check([(a["attempt"], a["total"], a["variant"]) for a in mine] == [(1, 100, "strong")], "the demo has a history of its own", str(mine))
+
+
 def run(port: int, serve: bool, scenario: str) -> int:
     assert port not in FORBIDDEN_PORTS, "this check never uses ports 8000 or 5173"
     tmp = Path(tempfile.mkdtemp(prefix="q-scenario-e2e-"))
@@ -315,7 +421,7 @@ def run(port: int, serve: bool, scenario: str) -> int:
             shutil.rmtree(tmp, ignore_errors=True)
         return 0
     try:
-        (bookings_down if scenario == SCENARIO else double_bookings)(c, check, tmp)
+        {SCENARIO: bookings_down, TWO: double_bookings, THREE: form_says_saved}[scenario](c, check, tmp)
     except (TimeoutError, KeyboardInterrupt) as e:
         print(f"  [FAIL] {e}")
         check.failed.append(str(e))
