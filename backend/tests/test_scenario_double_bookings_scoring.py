@@ -48,9 +48,9 @@ def test_a_strong_run_scores_every_point_and_the_log_has_no_scan_of_an_old_name(
     assert [e["check"] for e in f.log if e["kind"] == "debrief_check"] == ["rerun", "regression", "change", "counts", "rows_kept", "duplicates", "unique_index"]
 
 
-def test_a_weak_run_scores_35_and_every_gap_cites_a_real_entry():
+def test_a_weak_run_scores_30_and_every_gap_cites_a_real_entry():
     f = facts(WEAK, WEAK_FACTS)
-    assert scores(f) == WEAK_SCORES and sum(scores(f).values()) * RUBRIC.weight == 35
+    assert scores(f) == WEAK_SCORES and sum(scores(f).values()) * RUBRIC.weight == 30
     log = {e["id"] for e in f.log}
     for r in score(RUBRIC, f):
         for x in r.findings:
@@ -66,7 +66,7 @@ def test_each_new_rule_cites_the_entry_that_proves_it():
     assert finding(strong, "no_row_deleted").events[0] == strong.check("rows_kept")["id"]
     assert finding(strong, "partial_index_present").events[0] == strong.check("unique_index")["id"]
     assert finding(strong, "regression_test_added").events[0] == by(strong, "file_saved", path=REGRESSION)["id"]
-    assert finding(weak, "names_the_cause").kind == "strength" and finding(weak, "first_update").kind == "gap"
+    assert finding(weak, "names_the_cause").kind == "gap" and finding(weak, "first_update").kind == "gap"
     assert finding(weak, "looked_at_the_data").text == "By your first edit at 00:40 you had not opened the production data."
     assert finding(weak, "no_pointer_needed").events[0] == by(weak, "hint_given", n=1)["id"]
 
@@ -192,5 +192,101 @@ def test_the_report_of_the_strong_run_quotes_every_point_and_names_the_channel()
 
 def test_the_report_of_the_weak_run():
     r = report_for(WEAK, WEAK_FACTS)
-    assert r["total"] == 35 and r["fairness"]["dropped"] == [] and "no_scope_rejection" in {row["rule"] for row in r["rows"] if row["kind"] == "strength"}
+    assert r["total"] == 30 and r["fairness"]["dropped"] == [] and "no_scope_rejection" in {row["rule"] for row in r["rows"] if row["kind"] == "strength"}
     assert r["focus"][0].startswith("Post a first update") or r["focus"][0].startswith("Run the tests")
+
+
+# -- hand-test fixes: the cause named in the channel, and a run started before the first edit ---------------------
+
+def post_only(text: str) -> Facts:
+    """The strong run with its one update replaced by `text` (the other post, 'Fix is ready', never names a cause)."""
+    steps = [(t, k, {**v, "text": text} if v.get("message") == "C003" else v) for t, k, v in STRONG]
+    return facts(steps, STRONG_FACTS)
+
+
+@pytest.mark.parametrize("text", [
+    "Update: nothing in the database stops a second Booked row: migration 0006 only made a plain index. Three slots already hold duplicates.",
+    "Update: three slots hold two Booked appointments each, and migration 0006 only made a plain index, so nothing stops a second booking.",
+    "The database has no unique constraint on the slot, so the same slot can be booked twice.",
+    "There is no unique index for doctor, date and slot.",
+    "Migration 0006 made a plain, non-unique index.",
+    "Without a unique index the database accepts a second booking.",
+    "The index on the slot is not unique, so nothing refuses a second booking.",
+])
+def test_the_cause_is_named_when_a_post_says_the_database_has_no_unique_constraint_or_index(text):
+    assert finding(post_only(text), "names_the_cause").kind == "strength"
+
+
+@pytest.mark.parametrize("text", [
+    "Sorry, still working on it. I think I need to remove the duplicate rows.",
+    "There are duplicate rows: two patients booked the same slot twice.",
+    "Rohan, can you help? I do not know what else the database needs.",
+    "Still looking at the index.",
+    "Fix is ready: migration 0008 cancels the later duplicates and adds the partial unique index.",
+    "On it. I am running the tests first, then I will look at the data.",
+])
+def test_the_duplicate_rows_alone_or_a_fix_do_not_name_the_cause(text):
+    x = finding(post_only(text), "names_the_cause")
+    assert x.kind == "gap" and "does not say what was broken" in x.text and "the database has no unique constraint or index" in x.advice
+
+
+def test_the_weak_run_no_longer_gets_the_point_for_wanting_to_remove_the_duplicate_rows():
+    f = facts(WEAK, WEAK_FACTS)
+    x = finding(f, "names_the_cause")
+    assert x.kind == "gap" and x.text == "Your last post, at 05:30, does not say what was broken."
+    assert scores(f)["communication"] == 0 and sum(scores(f).values()) * RUBRIC.weight == 30
+
+
+def test_the_first_scenario_names_the_cause_by_its_own_rule_and_its_scores_do_not_move():
+    from app.scenarios.rubric import load_rubric as load
+    import scenario_fixtures as one
+    first = load(load_scenario("opd-bookings-down"))
+    pattern = next(r.params["pattern"] for c in first.criteria for r in c.rules if r.id == "names_the_cause")
+    assert pattern == "slot_at|slot_time|migration|0007|renam"
+    f = one.facts(one.WEAK, one.WEAK_FACTS)
+    assert {r.id: r.score for r in score(first, f)} == one.WEAK_SCORES and sum(r.score for r in score(first, f)) * first.weight == sum(one.WEAK_SCORES.values()) * first.weight
+    f = one.facts(one.STRONG, one.STRONG_FACTS)
+    assert sum(r.score for r in score(first, f)) * first.weight == 100
+
+
+def test_a_run_started_before_the_first_edit_counts_even_when_its_result_came_in_after_the_edit():
+    steps = sorted([(101 if (t, k) == (26, "test_result") else t, k, v) for t, k, v in STRONG], key=lambda s: s[0])  # the first edit is at 100 s: the suite was still going
+    f = facts(steps, STRONG_FACTS)
+    x = finding(f, "reproduced_first")
+    assert x.kind == "strength" and x.text == "You started the tests at 00:20, before the first edit."
+    assert f.log[[e["id"] for e in f.log].index(x.events[0])]["kind"] == "test_run"  # the point quotes the click, not the late result
+    assert scores(f)["diagnosis"] == 4
+
+
+def test_a_run_that_finished_before_the_first_edit_still_quotes_its_result():
+    x = finding(facts(STRONG, STRONG_FACTS), "reproduced_first")
+    assert x.kind == "strength" and x.text == "Your first test run finished at 00:26 (5 failed, 105 passed in 6.1s), before the first edit."
+
+
+def test_a_run_after_the_first_edit_does_not_count():
+    steps = [(t, k, v) for t, k, v in STRONG if k not in ("test_run", "test_result") or t > 100]
+    x = finding(facts(steps, STRONG_FACTS), "reproduced_first")
+    assert x.kind == "gap" and x.text == "By your first edit at 01:40 you had not run the tests."
+
+
+REAL_FACTS = {
+    "scan": None, "rerun": {"ok": True, "passed": 111, "failed": 0, "summary": "111 passed"},
+    "regression": {"path": REGRESSION, "fails_on_seed": True, "passes_on_main": True, "seed_summary": "1 failed in 0.39s", "main_summary": "1 passed"},
+    "measured": MEASURED_OK,
+}
+
+
+def test_the_hand_testers_first_attempt_is_scored_again_and_the_log_has_no_run_before_the_first_edit():
+    """Attempt 1 of the hand-test (95/100): the log, as the session wrote it. It holds no test run before the first save (00:58); the run of 5 failures that the hand-tester remembers
+    belongs to the session before it (opd-double-bookings-3, abandoned and never submitted). The backend's own event history of the attempt has the same three runs as the log."""
+    import json
+    log = [json.loads(x) for x in (Path(__file__).parent / "fixtures_real_double_attempt1.jsonl").read_text(encoding="utf-8").splitlines()]
+    first_edit = next(e for e in log if e["kind"] == "file_saved")
+    assert (first_edit["id"], first_edit["t"]) == ("E008", 58.9) and first_edit["path"] == REGRESSION and first_edit["added"] == 0  # the empty file made with "+"
+    assert [(e["id"], e["t"], e["trigger"]) for e in log if e["kind"] == "test_run"] == [("E011", 73.1, "ide"), ("E016", 96.0, "ide"), ("E021", 115.9, "submit")]
+    assert [e["t"] for e in log if e["kind"] == "test_run" and e["t"] < first_edit["t"]] == []
+    f = Facts(log, minutes=30, **REAL_FACTS)
+    assert scores(f) == {"communication": 4, "diagnosis": 3, "fix_quality": 4, "testing": 4, "ownership": 4} and sum(scores(f).values()) * RUBRIC.weight == 95
+    x = finding(f, "reproduced_first")
+    assert x.kind == "gap" and x.text == "By your first edit at 00:58 you had not run the tests." and x.events[0] == "E008"
+    assert finding(f, "names_the_cause").kind == "strength"  # "migration 0006 only made a plain index, so nothing stops a second booking"

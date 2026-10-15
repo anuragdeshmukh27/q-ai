@@ -49,7 +49,8 @@ STRONG_FACTS = {"scan": None, "measured": MEASURED_OK, "rerun": {"ok": True, "pa
                 "regression": {"path": REGRESSION, "fails_on_seed": True, "passes_on_main": True}}
 STRONG_SCORES = {"communication": 4, "diagnosis": 4, "fix_quality": 4, "testing": 4, "ownership": 4}  # 100
 
-# The weak run: edits a naive migration first (no test run, nothing read), no update until Aarav nudges, a late post that does name the duplicates, a red submit, a question to Rohan,
+# The weak run: edits a naive migration first (no test run, nothing read), no update until Aarav nudges, a late post that only wants to remove the duplicate rows (a symptom: it does not say
+# the database has no unique constraint), a red submit, a question to Rohan,
 # the migration rewritten, accepted at the second submit with no regression test and no green run of its own.
 WEAK = [
     (0, "session_started", {"scenario": "opd-double-bookings", "role": "database"}),
@@ -74,7 +75,7 @@ WEAK = [
     (570, "session_finished", {"ok": True}),
 ]
 WEAK_FACTS = {"scan": None, "measured": MEASURED_OK, "rerun": {"ok": True, "passed": 110, "failed": 0, "summary": "110 passed"}, "regression": None}
-WEAK_SCORES = {"communication": 1, "diagnosis": 0, "fix_quality": 4, "testing": 0, "ownership": 2}  # 35
+WEAK_SCORES = {"communication": 0, "diagnosis": 0, "fix_quality": 4, "testing": 0, "ownership": 2}  # 30
 
 
 def facts(steps: list[tuple[float, str, dict]], extra: dict, minutes: int = 30) -> Facts:

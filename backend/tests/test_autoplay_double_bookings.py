@@ -1,5 +1,5 @@
 """Autoplay ("Watch a run") of "Double bookings": a scripted database engineer plays the real scenario with the LLM stubbed. The scores are the rubric's own, so the exact numbers are
-the rubric's: a strong run 100, the weak run 35. A virtual clock that only the script moves lets a whole incident, nudge included, run in seconds."""
+the rubric's: a strong run 100, the weak run 30. A virtual clock that only the script moves lets a whole incident, nudge included, run in seconds."""
 import pytest
 
 from app.scenarios.autoplay import reference_fix
@@ -61,15 +61,15 @@ def test_the_strong_run_scores_100_and_the_screen_has_every_event_it_needs(world
     assert "#incident-opd" not in str([r["source"] for r in rep["rows"]])
 
 
-def test_the_weak_run_scores_exactly_35_and_the_gaps_are_the_ones_it_was_given(world):
+def test_the_weak_run_scores_exactly_30_and_the_gaps_are_the_ones_it_was_given(world):
     client, mgr, settings = world
     pid, s, rep = play(client, mgr, "weak")
-    assert [(c["id"], c["score"]) for c in rep["criteria"]] == [("communication", 1), ("diagnosis", 0), ("fix_quality", 4), ("testing", 0), ("ownership", 2)]
-    assert rep["total"] == 35 and rep["kind"] == "demo" and rep["variant"] == "weak"
+    assert [(c["id"], c["score"]) for c in rep["criteria"]] == [("communication", 0), ("diagnosis", 0), ("fix_quality", 4), ("testing", 0), ("ownership", 2)]
+    assert rep["total"] == 30 and rep["kind"] == "demo" and rep["variant"] == "weak"
     held = {r["rule"] for r in rep["rows"] if r["kind"] == "strength"}
-    assert held == {"names_the_cause", "no_row_deleted", "duplicates_resolved", "partial_index_present", "suite_green_on_main", "within_time_box", "no_scope_rejection"}
+    assert held == {"no_row_deleted", "duplicates_resolved", "partial_index_present", "suite_green_on_main", "within_time_box", "no_scope_rejection"}
     gaps = {r["rule"] for r in rep["rows"] if r["kind"] == "gap"}
-    assert {"first_update", "no_nudges", "reproduced_first", "looked_at_the_data", "no_red_submit", "regression_test_added", "few_hints"} <= gaps
+    assert {"first_update", "no_nudges", "names_the_cause", "reproduced_first", "looked_at_the_data", "no_red_submit", "regression_test_added", "few_hints"} <= gaps
     log = client.get(f"/api/projects/{pid}/session").json()["events"]
     kinds = [e["kind"] for e in log]
     first_save = kinds.index("file_saved")
@@ -83,11 +83,11 @@ def test_the_weak_run_scores_exactly_35_and_the_gaps_are_the_ones_it_was_given(w
     assert [e["from"] for e in log if e["kind"] == "hint_given"] == ["backend", "backend"]  # Rohan's pointer at four minutes, then the question the script asks him
 
 
-def test_the_two_runs_differ_by_sixty_five_and_both_are_demos(world):
+def test_the_two_runs_differ_by_seventy_and_both_are_demos(world):
     client, mgr, settings = world
     _, _, strong = play(client, mgr, "strong")
     _, _, weak = play(client, mgr, "weak")
-    assert strong["total"] - weak["total"] == 65 and strong["rubric"] == weak["rubric"] == {"id": "opd-double-bookings-v1", "version": 1}
+    assert strong["total"] - weak["total"] == 70 and strong["rubric"] == weak["rubric"] == {"id": "opd-double-bookings-v1", "version": 1}
 
 
 def test_a_demo_of_each_scenario_has_its_own_history_and_never_counts_as_an_attempt(world):

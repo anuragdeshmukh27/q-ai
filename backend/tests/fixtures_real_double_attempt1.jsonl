@@ -1,0 +1,26 @@
+{"id": "E001", "t": 0.0, "kind": "session_started", "scenario": "opd-double-bookings", "role": "database"}
+{"id": "E002", "t": 3.0, "kind": "team_message", "message": "C001", "from": "qa", "text": "Double bookings. Two patients were booked with the same doctor at the same date and time, and it has happened several times this week. I found three slots in the production snapshot: Dr. Ananya Rao, 14 Oct at 10:30: Rahul Deshmukh (appointment 7) and Meera Joshi (appointment 19); Dr. Farhan Ali, 15 Oct at 11:00: Sana Sheikh (appointment 12) and Arjun Nair (appointment 24); Dr. Vikram Shah, 13 Oct at 09:30: Kavita Patil (appointment 15) and Dinesh Rao (appointment 27). The second booking is accepted with 201, nothing refuses it.", "source": "scripted", "ref": "qa-report"}
+{"id": "E003", "t": 3.4, "kind": "file_opened", "role": "database", "path": "database/appointments.py", "auto": true}
+{"id": "E004", "t": 15.6, "kind": "file_opened", "role": "database", "path": "fixtures/prod_snapshot.sql"}
+{"id": "E005", "t": 26.3, "kind": "file_opened", "role": "database", "path": "database/migrations/0006_index_appointments_by_doctor_and_slot.sql"}
+{"id": "E006", "t": 45.4, "kind": "message_posted", "message": "C002", "text": "Update: three slots hold two Booked appointments each, and migration 0006 only made a plain index, so nothing stops a second booking. Fix: migration 0008 cancels the later duplicates with a reason (no rows deleted) and adds a unique index on Booked slots. Next update in 5 minutes.", "to": ["architect"]}
+{"id": "E007", "t": 45.4, "kind": "team_message", "message": "C003", "from": "architect", "text": "Thanks for the update. Keep us posted.", "source": "scripted", "ref": "C002"}
+{"id": "E008", "t": 58.9, "kind": "file_saved", "role": "database", "path": "tests/regression/test_regression_double_booking.py", "added": 0, "removed": 0, "size": 0, "created": true}
+{"id": "E009", "t": 58.9, "kind": "file_opened", "role": "database", "path": "tests/regression/test_regression_double_booking.py"}
+{"id": "E010", "t": 70.8, "kind": "file_saved", "role": "database", "path": "tests/regression/test_regression_double_booking.py", "added": 20, "removed": 0, "size": 1196, "created": false}
+{"id": "E011", "t": 73.1, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E012", "t": 79.0, "kind": "test_result", "task": "h1", "ok": false, "passed": 105, "failed": ["tests/api/test_double_booking_api.py::test_booking_the_same_slot_twice_returns_409_slot_already_booked", "tests/api/test_double_booking_api.py::test_moving_an_appointment_onto_a_taken_slot_returns_409", "tests/db/test_double_bookings.py::test_duplicate_bookings_are_cancelled_not_deleted", "tests/db/test_double_bookings.py::test_a_cancelled_duplicate_records_why", "tests/db/test_double_bookings.py::test_the_database_refuses_a_second_booked_row_for_a_slot", "tests/regression/test_regression_double_booking.py::test_booking_the_same_slot_twice_is_refused_with_409"], "summary": "6 failed, 105 passed in 5.62s", "trigger": "ide"}
+{"id": "E013", "t": 84.5, "kind": "file_saved", "role": "database", "path": "database/migrations/0008_one_booking_per_slot.sql", "added": 0, "removed": 0, "size": 0, "created": true}
+{"id": "E014", "t": 84.5, "kind": "file_opened", "role": "database", "path": "database/migrations/0008_one_booking_per_slot.sql"}
+{"id": "E015", "t": 95.5, "kind": "file_saved", "role": "database", "path": "database/migrations/0008_one_booking_per_slot.sql", "added": 19, "removed": 0, "size": 1386, "created": false}
+{"id": "E016", "t": 96.0, "kind": "test_run", "task": "h1", "trigger": "ide"}
+{"id": "E017", "t": 102.7, "kind": "test_result", "task": "h1", "ok": true, "passed": 111, "failed": [], "summary": "111 passed in 6.36s", "trigger": "ide"}
+{"id": "E018", "t": 111.4, "kind": "message_posted", "message": "C004", "text": "Fix is ready: migration 0008 cancels the later duplicates with a reason, keeps every row and adds a partial unique index on Booked slots. Regression test passes, all tests green. Submitting.", "to": ["architect"]}
+{"id": "E019", "t": 111.4, "kind": "team_message", "message": "C005", "from": "architect", "text": "Noted. Tell me if you need anyone.", "source": "scripted", "ref": "C004"}
+{"id": "E020", "t": 115.8, "kind": "submit", "task": "h1"}
+{"id": "E021", "t": 115.9, "kind": "test_run", "task": "h1", "trigger": "submit"}
+{"id": "E022", "t": 122.6, "kind": "test_result", "task": "h1", "ok": true, "passed": 111, "failed": [], "summary": "111 passed in 6.32s", "trigger": "submit"}
+{"id": "E023", "t": 128.1, "kind": "submit_result", "task": "h1", "ok": true, "stage": "accepted", "summary": "111 passed in 6.32s", "failed": [], "review_items": 0}
+{"id": "E024", "t": 128.1, "kind": "team_message", "message": "C006", "from": "architect", "text": "Accepted and merged. Thank you. Ananya, please run your checks on main.", "source": "scripted", "ref": "react-accepted-lead"}
+{"id": "E025", "t": 133.5, "kind": "team_message", "message": "C007", "from": "qa", "text": "Checked on main: the upgrade ran on the snapshot, the three slots keep their first booking, and a second booking of a taken slot now answers 409.", "source": "scripted", "ref": "react-accepted-qa"}
+{"id": "E026", "t": 142.1, "kind": "session_finished", "ok": true}

@@ -334,9 +334,10 @@ def reproduced_first(f: Facts, p: dict) -> Outcome:
     run = f.first("test_run")
     if run is not None and f.before(run, edit):
         result = f.result_of(run)
-        if result is not None:
+        if result is not None and f.before(result, edit):
             return Outcome(True, _ids(result, run), f"Your first test run finished at {clock(result['t'])} ({result.get('summary', '')}), before the first edit.")
-        return Outcome(True, _ids(run), f"You ran the tests at {clock(run['t'])}, before the first edit.")
+        # a run STARTED before the first edit counts, even when its result came in after it (the edit was made while the suite was still going)
+        return Outcome(True, _ids(run, result), f"You started the tests at {clock(run['t'])}, before the first edit.")
     if edit is None:
         return Outcome(False, _ids(f.anchor), f"{_by(f.anchor)} you had not run the tests.")
     return Outcome(False, _ids(edit, run), f"{_by(edit)} you had not run the tests.")
