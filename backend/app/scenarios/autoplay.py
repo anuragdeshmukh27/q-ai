@@ -28,14 +28,15 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:  # pragma: no cover
     from ..session import Session
 
-ROLE = "backend"
+# scenario 1's names, kept for the tests and scripts that import them; the scripts themselves are in scripts.py
 FIX_FILES = ("backend/api/appointments.py", "backend/api/doctors.py")
 REGRESSION_PATH = "tests/regression/test_regression_slot_at.py"
-MIGRATION = "database/migrations/0007_rename_slot_time_to_slot_at.sql"
 VARIANTS = ("strong", "weak")
 CLOCK_FACTOR = {"strong": 1.0, "weak": 3.0}  # the weak run needs five quiet session minutes before Aarav nudges: its session clock runs three times as fast, so a viewer waits about 100 s
 SPEEDS = (1, 2)
 REAL_TIMEOUT = 300.0  # seconds a single wait for the app (a test run, a reply) may take before the run gives up
+
+from .scripts import script_for  # noqa: E402  (scripts.py imports this module only inside functions)
 
 HERE = Path(__file__).parent
 
@@ -48,8 +49,9 @@ def regression_test(scenario_id: str = "opd-bookings-down") -> str:
     return _data(scenario_id, "regression_test.txt").read_text(encoding="utf-8")
 
 
-def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down") -> dict[str, str]:
-    """The reference fix applied to `files` (path -> current text): what the files must become. `git apply` of the scenario's own patch."""
+def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down", create: tuple[str, ...] = ()) -> dict[str, str]:
+    """The reference fix applied to `files` (path -> current text): what the files must become. `git apply` of the scenario's own patch.
+    `create`: files the patch makes from nothing (a new migration); their text is returned too."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         for rel, text in files.items():
@@ -59,7 +61,7 @@ def reference_fix(files: dict[str, str], scenario_id: str = "opd-bookings-down")
         r = subprocess.run(["git", "apply", str(_data(scenario_id, "fix.patch"))], cwd=root, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"the reference fix does not apply: {r.stderr.strip()[:300]}")
-        return {rel: (root / rel).read_text(encoding="utf-8") for rel in files}
+        return {rel: (root / rel).read_text(encoding="utf-8") for rel in (*files, *create)}
 
 
 # -- clocks ---------------------------------------------------------------------------------------------------------
@@ -129,6 +131,8 @@ class AutoplayRunner:
             raise ValueError(f"unknown variant {variant!r}")
         self.session, self.variant, self.clock, self.speed = session, variant, clock, float(speed)
         self.virtual = isinstance(clock, VirtualClock)
+        self.scenario_id = session.scenario.id  # the script and the role are the scenario's
+        self.role = session.scenario.role
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.state = "starting"  # starting | running | done | stopped | error
@@ -137,7 +141,8 @@ class AutoplayRunner:
         self.files: dict[str, str] = {}  # what the script has read or written, path -> text
         self.tree: dict = {}
         self.step_no = 0
-        self.steps = self._strong() if variant == "strong" else self._weak()
+        script = script_for(self.scenario_id, self)
+        self.steps = script.strong() if variant == "strong" else script.weak()
 
     # -- life ----------------------------------------------------------------------
     @property
@@ -213,14 +218,14 @@ class AutoplayRunner:
 
     # -- the learner's actions ----------------------------------------------------------------
     def open_file(self, path: str, *, auto: bool = False, line: int | None = None) -> str:
-        out = self.session.ide_read(ROLE, path, auto)
+        out = self.session.ide_read(self.role, path, auto)
         self.files[path] = out["content"]
         writable = any(f["path"] == path and f.get("writable") for f in self.tree.get("files", []))
         self.emit("autoplay_open_file", path=path, content=out["content"], writable=writable, **({"line": line} if line else {}))
         return out["content"]
 
     def search(self, query: str) -> dict:
-        result = self.session.ide_search(ROLE, query)
+        result = self.session.ide_search(self.role, query)
         self.emit("autoplay_search", q=query, result=result)
         return result
 
@@ -228,13 +233,13 @@ class AutoplayRunner:
         """The script types the new text (shown in the editor, unsaved), pauses, and saves it: the same PUT the editor's Save makes."""
         self.emit("autoplay_edit", path=path, content=content, writable=True)
         self.pause(4)
-        self.session.ide_write(ROLE, path, content)
+        self.session.ide_write(self.role, path, content)
         self.files[path] = content
         self.pause(3)
 
     def run_tests(self, what: str = "the tests") -> dict:
         n = len(self.events("human_test_result"))
-        self.session.ide_run_tests(ROLE)
+        self.session.ide_run_tests(self.role)
         result = self.until(lambda: next(iter(self.events("human_test_result")[n:]), None), what)
         self.pause(8)  # the viewer reads the result
         return result
@@ -257,95 +262,16 @@ class AutoplayRunner:
     def nudge_seen(self) -> bool:
         return any(m.get("ref") == "lead-nudge" for m in list(self.orch.director.messages))
 
-    # -- the two runs ---------------------------------------------------------------------------
-    def _strong(self) -> list[tuple[str, str, Callable[[], None]]]:
-        def reproduce() -> None:
-            self.pause(6)
-            self.post("On it. I am running the tests first to see the failure myself, then I will report what I find.")  # the first update, well inside the 2 minutes
-            self.run_tests("the first test run")
+    def replies_from(self, who: str) -> int:
+        """How many answers a teammate has given to the learner so far (a script waits for one more)."""
+        return len([m for m in list(self.orch.director.messages) if m.get("from") == who and m.get("reply_to")])
 
-        def search() -> None:
-            self.search("slot_time")
-            self.pause(10)
-
-        def read() -> None:
-            self.open_file("backend/api/appointments.py")
-            self.pause(8)
-            self.open_file(MIGRATION)
-            self.pause(8)
-            self.open_file("backend/api/doctors.py")
-            self.pause(6)
-
-        def tell() -> None:
-            self.post("Update: the booking routes still say slot_time, but migration 0007 renamed the column to slot_at. I am fixing both routes now.")
-            self.pause(6)
-
-        def regression() -> None:
-            self.save(REGRESSION_PATH, regression_test())
-            self.run_tests("the regression test, red")
-
-        def fix() -> None:
-            fixed = reference_fix({p: self.files[p] for p in FIX_FILES})
-            for path in FIX_FILES:
-                self.save(path, fixed[path])
-
-        def green() -> None:
-            self.run_tests("the green run")
-
-        def report() -> None:
-            self.post("Fix is ready: both routes use slot_at and a regression test covers it. Submitting now.")
-
-        return [("Say you are on it, run the tests: they fail", "ide", reproduce), ("Search for slot_time", "ide", search),
-                ("Open the routes and migration 0007", "ide", read), ("Tell the team what was found", "chat", tell),
-                ("Add a regression test that fails on the bug", "ide", regression), ("Fix both routes", "ide", fix),
-                ("Run the tests: green", "ide", green), ("Tell the team the fix is ready", "chat", report),
-                ("Submit for review", "ide", self._finish_submit)]
-
-    def _weak(self) -> list[tuple[str, str, Callable[[], None]]]:
-        def first_edit() -> None:
-            self.pause(8)
-            appointments = self.open_file("backend/api/appointments.py", auto=True)
-            self.pause(6)
-            fixed = reference_fix({"backend/api/appointments.py": appointments, "backend/api/doctors.py": self._read_quiet("backend/api/doctors.py")})
-            self.save("backend/api/appointments.py", fixed["backend/api/appointments.py"])
-            self.fixed = fixed
-
-        def silence() -> None:
-            self.until(self.nudge_seen, "Aarav's nudge", session_limit=900)  # no update, no test run: the team has to ask
-            self.pause(6)
-
-        def reply() -> None:
-            self.post("Sorry, I am still working on it.")
-
-        def red_submit() -> None:
-            answer = self.session.submit_task(self.task)
-            self.pause(5)
-            if answer.get("ok"):
-                raise RuntimeError("the weak run's first submit was accepted; the script expects it to fail")
-
-        def ask() -> None:
-            n = len([m for m in list(self.orch.director.messages) if m.get("from") == "database" and m.get("reply_to")])
-            self.post("Karan, can you help? I do not know what else could be broken.", "database")
-            self.until(lambda: len([m for m in list(self.orch.director.messages) if m.get("from") == "database" and m.get("reply_to")]) > n, "Karan's reply")
-            self.pause(5)
-
-        def second_file() -> None:
-            self.open_file("backend/api/doctors.py")
-            self.pause(4)
-            self.save("backend/api/doctors.py", self.fixed["backend/api/doctors.py"])
-
-        return [("Edit the first file without running the tests", "ide", first_edit), ("No update, no tests: nobody hears from the engineer", "chat", silence),
-                ("Answer Aarav after the nudge", "chat", reply), ("Submit: the tests fail", "ide", red_submit), ("Ask Karan for help", "chat", ask),
-                ("Fix the second route", "ide", second_file), ("Submit again", "ide", self._finish_submit)]
-
-    fixed: dict[str, str] = {}
-
-    def _read_quiet(self, path: str) -> str:
+    def read_quiet(self, path: str) -> str:
         """The text of a file the script needs but does not show opening (read from the worktree, not through the IDE, so nothing is logged)."""
-        wt = self.orch._ide_worktree(ROLE)
+        wt = self.orch._ide_worktree(self.role)
         return (Path(wt) / path).read_text(encoding="utf-8")
 
-    def _finish_submit(self) -> None:
+    def finish_submit(self) -> None:
         answer = self.submit()
         if not (answer.get("ok") and answer.get("stage") == "accepted"):
             raise RuntimeError(f"the submit was not accepted: {answer.get('stage')} {answer.get('summary', '')}"[:200])
@@ -357,7 +283,7 @@ class AutoplayRunner:
             self.state = "running"
             task = self.until(lambda: next(iter(self.events("human_task_assigned")), None), "the task to be handed over")
             self.task = task["task"]
-            self.tree = self.session.ide_tree(ROLE)
+            self.tree = self.session.ide_tree(self.role)
             labels = [s[0] for s in self.steps] + ["The debrief meeting and the report"]
             self.emit("autoplay_started", variant=self.variant, speed=self.speed, rate=self.clock.rate, t=round(self.clock(), 2), total=len(labels), labels=labels,
                       task=self.task, doc=self._doc(), tree=self.tree)

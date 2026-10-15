@@ -32,6 +32,7 @@ from .router import Router
 from .scenarios.autoplay import CLOCK_FACTOR, SPEEDS, VARIANTS, AutoplayRunner, ScaledClock, VirtualClock
 from .scenarios.build import ScenarioBuild
 from .scenarios.director import Replier
+from .scenarios.scripts import SCRIPTS
 from .scenarios.loader import Scenario, ScenarioError, load_scenario
 from .scenarios.reports import History
 from .scenarios.rubric import Rubric, load_rubric
@@ -811,6 +812,12 @@ class SessionManager:
             raise SessionError("The run is strong or weak.", 400)
         if speed not in SPEEDS:
             raise SessionError("The speed is 1 or 2.", 400)
+        try:
+            load_scenario(scenario_id)
+        except ScenarioError as e:
+            raise SessionError(str(e), 404) from None
+        if scenario_id not in SCRIPTS:
+            raise SessionError("That scenario has no scripted run.", 400)
         clock = VirtualClock() if self.settings.autoplay_virtual else ScaledClock(speed, CLOCK_FACTOR[variant])
         s = self.start_scenario(scenario_id, "demo", variant, clock, record_as, record_info)
         s.autoplay = AutoplayRunner(s, variant, clock, speed).start()
