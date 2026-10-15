@@ -1,0 +1,99 @@
+{
+  "create_taken": {
+    "case": "create",
+    "status": 409,
+    "body": {
+      "detail": "Slot already booked"
+    }
+  },
+  "create_bad_phone": {
+    "case": "create",
+    "status": 400,
+    "body": {
+      "detail": "Patient phone must be a 10-digit mobile number"
+    },
+    "phone": "98765"
+  },
+  "edit_taken": {
+    "case": "edit",
+    "status": 409,
+    "body": {
+      "detail": "Slot already booked"
+    }
+  },
+  "action_refused": {
+    "case": "action",
+    "status": 409,
+    "body": {
+      "detail": "That status change is not allowed"
+    }
+  },
+  "board_refused": {
+    "case": "board",
+    "status": 409,
+    "body": {
+      "detail": "That status change is not allowed"
+    }
+  },
+  "delete_missing": {
+    "case": "delete",
+    "status": 404,
+    "body": {
+      "detail": "Appointment not found"
+    }
+  },
+  "create_ok": {
+    "case": "create",
+    "status": 201,
+    "body": {
+      "id": 1,
+      "doctor_id": 1,
+      "patient_name": "Sana Sheikh",
+      "patient_phone": "9812345678",
+      "date": "2026-10-15",
+      "time": "11:00",
+      "reason": "Follow-up",
+      "status": "Booked"
+    }
+  },
+  "edit_ok": {
+    "case": "edit",
+    "status": 200,
+    "body": {
+      "id": 2,
+      "doctor_id": 1,
+      "patient_name": "Sana Sheikh",
+      "patient_phone": "9812345678",
+      "date": "2026-10-15",
+      "time": "14:00",
+      "reason": "Follow-up",
+      "status": "Booked"
+    }
+  },
+  "action_ok": {
+    "case": "action",
+    "status": 200,
+    "body": {
+      "id": 1,
+      "doctor_id": 1,
+      "patient_name": "Sana Sheikh",
+      "patient_phone": "9812345678",
+      "date": "2026-10-15",
+      "time": "11:00",
+      "reason": "Follow-up",
+      "status": "Completed"
+    }
+  },
+  "delete_ok": {
+    "case": "delete",
+    "status": 200,
+    "body": {
+      "deleted": true
+    }
+  },
+  "no_json": {
+    "case": "create",
+    "status": 502,
+    "text": "<html><body>502 Bad Gateway</body></html>"
+  }
+}
