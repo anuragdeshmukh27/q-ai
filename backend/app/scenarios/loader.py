@@ -140,6 +140,7 @@ class Scenario(BaseModel):
     seed: SeedInfo
     task: TaskInfo
     channel: ChannelInfo
+    unlock: list[str] = Field(default_factory=list)  # files the preset locks (orchestrator.LOCKED) that the role you play may edit in this incident, e.g. the page's own shell
     evidence: dict[str, str] = Field(default_factory=dict)
     acks: list[str] = Field(default_factory=lambda: ["Thanks for the update.", "Noted. Keep us posted."], min_length=1)  # the lead's answer to a post that asks nobody
     characters: dict[str, Character]
@@ -198,6 +199,13 @@ def _check(s: Scenario, folder: Path) -> list[str]:
             problems.append(f"new file {f!r} is already in the seed")
         elif not (seed / PurePosixPath(f).parent).is_dir():
             problems.append(f"new file {f!r}: its folder is not in the seed")
+    from ..orchestrator import LOCKED
+
+    for f in s.unlock:
+        if f not in LOCKED or f.endswith("**"):
+            problems.append(f"unlock {f!r} must be one file the preset locks ({', '.join(x for x in LOCKED if not x.endswith('**'))})")
+        elif not (seed / f).is_file():
+            problems.append(f"unlock {f!r} is not in the seed")
     for t in s.task.acceptance_tests:
         path, _, name = t.partition("::")
         file = seed / path

@@ -377,7 +377,7 @@ def no_pointer_needed(f: Facts, p: dict) -> Outcome:
     mig = str(p.get("pattern", "database/migrations/*")).split("|")  # one glob, or several separated by |
     found_by = f.first("file_opened", lambda e: not e.get("auto") and any(fnmatch.fnmatch(str(e.get("path", "")), g) for g in mig) and (pointer is None or f.before(e, pointer)))
     if pointer is not None and found_by is None:
-        return Outcome(False, _ids(pointer), f"A teammate had to point you at the database change at {clock(pointer['t'])}.")
+        return Outcome(False, _ids(pointer), f"A teammate had to point you at {p.get('what', 'the database change')} at {clock(pointer['t'])}.")
     searched = f.first("search", lambda e: int(e.get("matches", 0)) > 0)
     route = f.first("file_opened", lambda e: not e.get("auto") and "api" in str(e.get("path", "")))
     return Outcome(True, _ids(found_by, searched, route, f.result_of(f.first("test_run")), f.anchor), "No scripted pointer was needed: you found where to look yourself.")
@@ -582,6 +582,44 @@ def partial_index_present(f: Facts, p: dict) -> Outcome:
     if not m.get("partial"):
         return Outcome(False, _ids(check), "The unique index covers every status, so a cancelled appointment would block its slot: limit it to the Booked rows.")
     return Outcome(False, _ids(check), "The index exists but does not behave: a second Booked row has to be refused and a Cancelled one allowed.")
+
+
+# -- The form says it saved (scenario "The form says it saved", the frontend engineer) ------------------------
+
+@rule
+def read_the_response(f: Facts, p: dict) -> Outcome:
+    """Opened what the server answers (`pattern`: its error handler, a route, a test of the API), or searched for it (`search`), before the first edit."""
+    return _read_before_edit(f, str(p.get("pattern", "backend/main.py|backend/api/*|tests/api/*")), "what the server answers", str(p.get("search", "")))
+
+
+@rule
+def found_the_failing_code(f: Facts, p: dict) -> Outcome:
+    """Opened the page code that sends the requests (`pattern`), or searched for it (`search`), before the first edit."""
+    return _read_before_edit(f, str(p.get("pattern", "static/*.js")), "the code that sends the requests", str(p.get("search", "")))
+
+
+@rule
+def every_path_reports_refusal(f: Facts, p: dict) -> Outcome:
+    m, check = _upgrade(f, "refusal_paths")
+    if m is None:
+        return Outcome(False, _ids(f.check("refusal_paths"), f.anchor), "Q could not run the pages on your change.")
+    if m.get("ok"):
+        return Outcome(True, _ids(check), f"Every way of sending a request now shows an error when the server refuses it: {m.get('passed')} of {m.get('of')} cases checked.")
+    if m.get("error"):
+        return Outcome(False, _ids(check), "The pages could not be run on your change, so no refused request was shown correctly.")
+    return Outcome(False, _ids(check), f"The page still reports a refused request as a success in {m.get('of', 0) - m.get('passed', 0)} of {m.get('of')} cases: {'; '.join(m.get('failed', []))}.")
+
+
+@rule
+def refusal_message_shown(f: Facts, p: dict) -> Outcome:
+    m, check = _upgrade(f, "refusal_message")
+    if m is None:
+        return Outcome(False, _ids(f.check("refusal_message"), f.anchor), "Q could not run the pages on your change.")
+    if m.get("ok"):
+        return Outcome(True, _ids(check), "In every case the server's own message reaches the person (a taken slot says so).")
+    if m.get("error"):
+        return Outcome(False, _ids(check), "The pages could not be run on your change, so no message was shown.")
+    return Outcome(False, _ids(check), f"The server's own message does not reach the person in {m.get('of', 0) - m.get('passed', 0)} of {m.get('of')} cases: {'; '.join(m.get('failed', []))}.")
 
 
 def score(rubric: Rubric, facts: Facts) -> list[CriterionResult]:

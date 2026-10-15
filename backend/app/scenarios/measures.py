@@ -6,7 +6,10 @@ returns nothing and the rules say that the result could not be measured.
 """
 from __future__ import annotations
 
+import json
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -152,4 +155,57 @@ def double_bookings(root: Path, seed_dir: Path, params: dict) -> dict[str, dict]
     }
 
 
-MEASURES: dict[str, Callable[[Path, Path, dict], dict[str, dict]]] = {"double_bookings": double_bookings}
+# the ways a page sends a write request, with the real answer of the API for each refusal (the seed's tests/ui/answers.json) and where a person sees the outcome
+REFUSALS = (("create_taken", "a taken slot in the booking form", "form"), ("create_bad_phone", "a bad phone in the booking form", "form"), ("edit_taken", "an edit onto a taken slot", "form"),
+            ("action_refused", "a refused Complete or Cancel", "toast"), ("delete_missing", "a refused delete", "toast"), ("board_refused", "a refused board move", "toast"))
+
+
+def refusals(root: Path, seed: Path, params: dict) -> dict[str, dict]:
+    """Runs the pages of the merged project (its static/) in Node against the seed's own probe and the real answers of the API: does every way of sending a request show a refusal
+    as an error, with the server's own words? The probe, the fake browser and the answers are the seed's, so nothing you can edit changes them."""
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node is not installed")
+    answers = json.loads((Path(seed) / "tests" / "ui" / "answers.json").read_text(encoding="utf-8"))
+    shown: list[str] = []
+    said: list[str] = []
+    error = ""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        shutil.copytree(Path(root) / "static", work / "static", ignore=shutil.ignore_patterns("fonts"))
+        (work / "tests" / "ui").mkdir(parents=True)
+        for name in ("fakedom.mjs", "refusals.mjs"):
+            shutil.copy(Path(seed) / "tests" / "ui" / name, work / "tests" / "ui" / name)
+        for name, label, where in REFUSALS:
+            case = answers[name]
+            detail = case["body"]["detail"]
+            r = subprocess.run([node, str(work / "tests" / "ui" / "refusals.mjs"), json.dumps(case)], cwd=work, capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                error = (r.stderr or r.stdout).strip().splitlines()[-1][:160] if (r.stderr or r.stdout).strip() else "the page did not run"
+                break
+            out = json.loads(r.stdout.strip().splitlines()[-1])
+            success = [t["text"] for t in out["toasts"] if t["kind"] == "success"]
+            errors = [t["text"] for t in out["toasts"] if t["kind"] == "error"]
+            refused = not success and (out["formOpen"] if where == "form" else bool(errors))
+            if refused:
+                shown.append(label)
+            if refused and (out["formError"] == detail if where == "form" else any(detail in t for t in errors)):
+                said.append(label)
+    labels = [label for _, label, _ in REFUSALS]
+    if error:
+        text = f"Debrief check of the pages: they could not be run on your change ({error})"
+        return {"refusal_paths": {"text": text, "ok": False, "error": error, "passed": 0, "of": len(labels), "failed": labels},
+                "refusal_message": {"text": "Debrief check of the messages: the pages could not be run on your change", "ok": False, "error": error, "passed": 0, "of": len(labels), "failed": labels}}
+    bad = [x for x in labels if x not in shown]
+    unsaid = [x for x in labels if x not in said]
+    return {
+        "refusal_paths": {"text": ("Debrief check of the pages: all {} refused requests (a taken slot, a bad phone, an edit, Complete or Cancel, a delete, a board move) show an error and none says it saved".format(len(labels)) if not bad
+                                   else f"Debrief check of the pages: {len(shown)} of {len(labels)} refused requests show an error; still reported as saved: {', '.join(bad)}"),
+                          "ok": not bad, "passed": len(shown), "of": len(labels), "failed": bad},
+        "refusal_message": {"text": (f"Debrief check of the messages: in all {len(labels)} cases the server's own message is what the person reads" if not unsaid
+                                     else f"Debrief check of the messages: the server's own message reaches the person in {len(said)} of {len(labels)} cases; missing for {', '.join(unsaid)}"),
+                            "ok": not unsaid, "passed": len(said), "of": len(labels), "failed": unsaid},
+    }
+
+
+MEASURES: dict[str, Callable[[Path, Path, dict], dict[str, dict]]] = {"double_bookings": double_bookings, "refusals": refusals}

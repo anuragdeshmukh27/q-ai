@@ -119,13 +119,15 @@ class ScenarioBuild(Orchestrator):
         """The learner may also add tests of their own for the incident (a regression test); the generated and QA's tests stay read-only."""
         a = super()._engineer(owner)
         if owner == self.scenario.role:  # only the role's own folder and the regression tests: the database role's generic `tests/test_db*.py` is not part of an incident
-            a = a.model_copy(update={"owned_paths": [*(p for p in a.owned_paths if p != TEST_GLOBS.get(owner)), REGRESSION_TESTS]})
+            a = a.model_copy(update={"owned_paths": [*(p for p in a.owned_paths if p != TEST_GLOBS.get(owner)), REGRESSION_TESTS],
+                                     "forbidden_paths": [p for p in a.forbidden_paths if p not in self.scenario.unlock]})  # a frontend incident is in the page's own shell: the scenario unlocks it
         return a
 
     def _automatic_findings(self, agent, wt: Path, owner: str):
         """The Reviewer's deterministic checks, minus "a database branch needs its own tests": a scenario brings its tests, and the learner's own regression test is scored by the rubric
         (the Reviewer could only ask for `tests/test_db_*.py`, a file the database role may not write here)."""
-        return [f for f in super()._automatic_findings(agent, wt, owner) if f.file != "tests/test_db.py"]
+        return [f for f in super()._automatic_findings(agent, wt, owner)
+                if f.file != "tests/test_db.py" and not (f.file in self.scenario.unlock and "lines; keep files under" in f.problem)]  # nor "this file is long": the page's shell was long before you
 
     # -- what a person's task needs here ------------------------------------------------------
     def _scaffold(self, t: dict, agent, wt: Path):
@@ -136,7 +138,12 @@ class ScenarioBuild(Orchestrator):
         head = [f"# {t['id']}: {t['title']}", "", self.scenario.brief, "", "## What to do", *[f"- {c}" for c in t["acceptance"]],
                 "- add a regression test in `tests/regression/` (a file named `test_regression_<what>.py`) that fails on the code as it is now and passes after your fix",
                 "- the whole test suite passes: `python -m pytest -q`", ""]
-        return "\n".join(head) + "\n" + base[base.index("## Files you may edit"):]
+        rest = base[base.index("## Files you may edit"):]
+        for f in self.scenario.unlock:  # the preset says "do not edit" about its locked files; in this incident these are yours
+            rest = rest.replace(f"`{f}`, ", "").replace(f", `{f}`", "")
+        if self.scenario.unlock:
+            rest = rest.replace("\n\nDo not edit these", "\n\nIn this incident you also own " + ", ".join(f"`{f}`" for f in self.scenario.unlock) + ".\n\nDo not edit these", 1)
+        return "\n".join(head) + "\n" + rest
 
     def _start_human(self, t: dict):
         fut = super()._start_human(t)

@@ -1,0 +1,274 @@
+{
+  "id": "opd-form-says-saved-v1",
+  "version": 1,
+  "scenario": "opd-form-says-saved",
+  "title": "The form says it saved",
+  "points_per_criterion": 4,
+  "weight": 5,
+  "measures": [
+    "refusals"
+  ],
+  "criteria": [
+    {
+      "id": "communication",
+      "name": "Communication",
+      "judge": "architect",
+      "descriptors": {
+        "0": "Nothing reached the channel while the incident was open, or only after the lead had to chase you repeatedly.",
+        "1": "You posted, but late or without saying what was wrong; the lead had to ask and nudge.",
+        "2": "Some timely updates, but at least one gap or one post that did not say what you had found.",
+        "3": "Prompt, useful updates with one slip: a late answer to the lead, or a quiet stretch.",
+        "4": "A first update in the first two minutes, the lead's request answered at once, no quiet stretch, and the cause named in plain words: the page treats a refused answer as a success."
+      },
+      "signals": [
+        "message_posted",
+        "team_message"
+      ],
+      "keep": "Keep posting a short status as soon as you know something, even when it is only 'still looking'.",
+      "rules": [
+        {
+          "id": "first_update",
+          "plain": "Post a first update in #incident-frontdesk within 2 minutes of the start.",
+          "label": "a first update inside two minutes",
+          "params": {
+            "within": 120
+          },
+          "advice": "Post a first update in the channel within two minutes, even if it is only what you have seen so far."
+        },
+        {
+          "id": "answered_requests",
+          "plain": "When Aarav asks for an update, answer within a minute.",
+          "label": "the lead's request answered at once",
+          "params": {
+            "within": 60
+          },
+          "advice": "When the lead asks for an update, answer within a minute, even if nothing has changed."
+        },
+        {
+          "id": "no_nudges",
+          "plain": "Never let 5 quiet minutes pass without a post, so Aarav does not have to nudge you.",
+          "label": "no quiet stretch of five minutes",
+          "params": {},
+          "advice": "Set a timer for each promised update: do not let five quiet minutes pass without a post."
+        },
+        {
+          "id": "names_the_cause",
+          "plain": "Say in the channel what you found: the page ignores the server's refusal (a 409 or any other error answer) and reports the request as a success.",
+          "label": "the cause named in the channel",
+          "params": {
+            "pattern": "\\b(?:ignor|swallow|discard|misread)\\w*\\W+(?:\\w+\\W+){0,6}?(?:409|40\\d|4xx|errors?|refus\\w*|reject\\w*|status|failures?|res\\.ok|response|answer)|\\b(?:409|40\\d|4xx|errors?|refus\\w*|reject\\w*|failures?|non[- ]?2xx|response|answer)\\W+(?:\\w+\\W+){0,6}?(?:as|like)\\W+(?:\\w+\\W+){0,2}?(?:success\\w*|saved|ok|fine|worked)\\b|\\b(?:not|n't|never|no)\\W+(?:\\w+\\W+){0,3}?check\\w*\\W+(?:\\w+\\W+){0,4}?(?:res\\.ok|status|ok|response)\\b|\\b(?:says?|shows?|reports?|announces?)\\W+(?:\\w+\\W+){0,4}?(?:saved|added|success\\w*)\\W+(?:\\w+\\W+){0,8}?(?:409|refus\\w*|reject\\w*|errors?|although|even though|when the server)"
+          },
+          "advice": "Say what you found, not only that you are working on it: the page does not treat a refused answer (409, 400, 404) as an error, so it tells the person the request was saved. The missing row is a symptom."
+        }
+      ]
+    },
+    {
+      "id": "diagnosis",
+      "name": "Diagnosis",
+      "judge": "backend",
+      "descriptors": {
+        "0": "You changed things before you had run the tests or opened anything that explains why the form says it saved.",
+        "1": "You saw that the tests failed but never read what the server answers or the code that sends the requests.",
+        "2": "You looked at the right places, but after you had already started editing, or only with a pointer.",
+        "3": "Reproduce, read the server's answer, find the code that sends the requests: three of the four habits, in order.",
+        "4": "You reproduced it, read what the server answers and the page code that sends the requests before your first edit, and needed no pointer."
+      },
+      "signals": [
+        "test_run",
+        "file_opened",
+        "search",
+        "hint_given"
+      ],
+      "keep": "Keep reproducing first and reading what the server really answers before you change the page.",
+      "rules": [
+        {
+          "id": "reproduced_first",
+          "plain": "Run the tests before you save any file, and read what the page showed.",
+          "label": "the tests run before the first edit",
+          "params": {},
+          "advice": "Run the tests and read the first line of each failure before you change anything."
+        },
+        {
+          "id": "read_the_response",
+          "plain": "Open what the server answers (backend/main.py, a route, or tests/api/test_double_booking_api.py), or search the project for 409, before your first save.",
+          "label": "the server's answer read before editing",
+          "params": {
+            "pattern": "backend/main.py|backend/api/*|tests/api/*",
+            "search": "409|detail|refus|already booked"
+          },
+          "advice": "Read the network response first: what status and message does the server send for a refused booking? Then you know whether the fault is the API or the page."
+        },
+        {
+          "id": "found_the_failing_code",
+          "plain": "Open static/shell.js yourself (or search the project for fetch or res.ok) before your first save.",
+          "label": "the code that sends the requests found before editing",
+          "params": {
+            "pattern": "static/shell.js|static/app.js",
+            "search": "fetch|res\\.ok|call\\("
+          },
+          "advice": "Every request of the page goes through one place in static/shell.js: open it and read what it does with an answer that is not a success."
+        },
+        {
+          "id": "no_pointer_needed",
+          "plain": "Find where the page reads the answer yourself, before Rohan has to point at it (about 4 minutes in).",
+          "label": "found without a pointer",
+          "params": {
+            "pattern": "backend/main.py|tests/api/test_double_booking_api.py|static/shell.js",
+            "what": "the page code"
+          },
+          "advice": "Look at what the page does with the server's answer yourself before you wait for a teammate to point at it."
+        }
+      ]
+    },
+    {
+      "id": "fix_quality",
+      "name": "Fix quality",
+      "judge": "reviewer",
+      "descriptors": {
+        "0": "The page still reports refused requests as saved everywhere, or the suite is red on main.",
+        "1": "Only one screen is fixed, or the error is shown but the server's message is lost.",
+        "2": "Two of the four: for example the errors show in some places but not all, or a green suite with a lost message.",
+        "3": "A correct fix with one thing to improve: a screen still says it saved, or the change is much bigger than the problem.",
+        "4": "Every way of sending a request shows a refusal as an error with the server's own message, the change is small and the whole suite is green on my re-run."
+      },
+      "signals": [
+        "file_saved",
+        "submit_result"
+      ],
+      "keep": "Keep fixing the cause, in the one place every request passes, rather than screen by screen.",
+      "rules": [
+        {
+          "id": "every_path_reports_refusal",
+          "plain": "After your fix a refused request shows an error, never a success, in all six cases the debrief tries: the booking form with a taken slot and with a bad phone, an edit, Complete or Cancel, a delete, a board move.",
+          "label": "every refused request shown as an error",
+          "params": {},
+          "advice": "Fix the place every request passes through, not one form: the booking form, the edit form, the Complete and Cancel buttons, delete and the board all trusted the same answer."
+        },
+        {
+          "id": "refusal_message_shown",
+          "plain": "The server's own message (for example 'Slot already booked') is what the person reads.",
+          "label": "the server's message shown",
+          "params": {},
+          "advice": "Show what the server said (its detail message), not a generic error: the front desk needs to know the slot is taken."
+        },
+        {
+          "id": "small_change",
+          "plain": "Keep the change small: the cause is in one place.",
+          "label": "a small, targeted change",
+          "params": {
+            "max_lines": 20
+          },
+          "advice": "The cause is one wrong condition in one function: a fix that rewrites screens is bigger than the problem."
+        },
+        {
+          "id": "suite_green_on_main",
+          "plain": "The whole test suite passes on the merged project. The debrief re-runs it.",
+          "label": "the whole suite green on my re-run",
+          "params": {},
+          "advice": "Run the whole suite, not only the acceptance tests, before you submit."
+        }
+      ]
+    },
+    {
+      "id": "testing",
+      "name": "Testing",
+      "judge": "qa",
+      "descriptors": {
+        "0": "You submitted without ever running the tests, and nothing protects the fix.",
+        "1": "You ran the tests, but not green before submitting, and nothing protects the fix.",
+        "2": "A green run before submit and no red submit, but no new test that proves the fix.",
+        "3": "Green before submit, no red submit, and a regression test that was added but does not prove the fix.",
+        "4": "A green run before submit, no red submit, and a regression test that makes the page's request code fail on the old code and pass on yours."
+      },
+      "signals": [
+        "test_run",
+        "test_result",
+        "file_saved",
+        "submit_result"
+      ],
+      "keep": "Keep adding a regression test with every bug fix: it is the part that outlives the incident.",
+      "rules": [
+        {
+          "id": "green_before_submit",
+          "plain": "Run the tests after your last change and see them green before you press Submit.",
+          "label": "a green run of your own before Submit",
+          "params": {},
+          "advice": "Run the tests yourself and see them green before you press Submit."
+        },
+        {
+          "id": "no_red_submit",
+          "plain": "Do not submit while tests still fail: a submit that is refused for failing tests counts against you.",
+          "label": "no red submit",
+          "params": {},
+          "advice": "Submit only when your own run is green: a red submit costs a round trip."
+        },
+        {
+          "id": "regression_test_added",
+          "plain": "Add a regression test in tests/regression/ (test_regression_<what>.py).",
+          "label": "a regression test added",
+          "params": {
+            "pattern": "tests/regression/test_*.py"
+          },
+          "advice": "Add a regression test in tests/regression/ for the bug you fixed."
+        },
+        {
+          "id": "regression_test_proves_fix",
+          "plain": "Your regression test runs the page's request code in Node with a stub answer, fails on the old code and passes on your fix. The debrief runs it both ways.",
+          "label": "a regression test that fails before the fix and passes after",
+          "params": {},
+          "advice": "Load static/shell.js in Node with a fake fetch that answers 409 and expect the request to fail with the server's message: it has to be red on the old code and green after the fix."
+        }
+      ]
+    },
+    {
+      "id": "ownership",
+      "name": "Ownership",
+      "judge": "architect",
+      "descriptors": {
+        "0": "The fix was not accepted, or it came long after the clinic opened with no word to the team.",
+        "1": "Accepted late, with many hints and no word to the team.",
+        "2": "Accepted, but you leaned on hints or went outside your files.",
+        "3": "Accepted in time, you stayed inside your files and asked for little help, but you did not close the loop.",
+        "4": "Accepted inside the time box, inside your own files, with one hint at most, and the team told that the fix was ready."
+      },
+      "signals": [
+        "submit_result",
+        "hint_given",
+        "message_posted"
+      ],
+      "keep": "Keep telling the team when the fix is ready and what you did.",
+      "rules": [
+        {
+          "id": "within_time_box",
+          "plain": "Get the fix accepted inside the 25 minutes.",
+          "label": "accepted inside the time box",
+          "params": {},
+          "advice": "Watch the clock: the clinic opens at 09:00, so aim to have the fix submitted inside the time box."
+        },
+        {
+          "id": "few_hints",
+          "plain": "Use at most one hint. Every answer to a question of yours counts, and so does a pointer you needed.",
+          "label": "at most one hint",
+          "params": {
+            "max_hints": 1
+          },
+          "advice": "Try the next step on your own before you ask a teammate; every answer counts as a hint."
+        },
+        {
+          "id": "no_scope_rejection",
+          "plain": "Change no backend file: only files your role may edit (static/ and tests/regression/). backend/ is Rohan's and database/ is Karan's, so Submit is refused if you touch them.",
+          "label": "no backend change attempted, only your own files",
+          "params": {},
+          "advice": "Read the list of files you may edit in the task document before you change anything outside it: the API answers correctly and belongs to Rohan."
+        },
+        {
+          "id": "reported_the_outcome",
+          "plain": "After your last green run, tell the channel the fix is ready.",
+          "label": "the team told that the fix was ready",
+          "params": {},
+          "advice": "When the tests are green, tell the channel the fix is ready and what you changed."
+        }
+      ]
+    }
+  ]
+}

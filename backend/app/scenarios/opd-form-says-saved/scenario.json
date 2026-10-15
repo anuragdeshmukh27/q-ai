@@ -1,0 +1,132 @@
+{
+  "id": "opd-form-says-saved",
+  "title": "The form says it saved",
+  "summary": "The front desk is told 'Appointment added' for bookings that were never saved. You are the Frontend engineer: find out what the page does with the server's answer and fix it everywhere it happens.",
+  "role": "frontend",
+  "minutes": 25,
+  "level": "Intermediate",
+  "rubric": "opd-form-says-saved-v1",
+  "goal": "The form says it saved at the Hospital OPD",
+  "brief": "It is Friday, 08:35. Since the double-bookings fix went live the database refuses a second booking for a slot, and the API says so: 409 and a message. But the front desk reports that the booking form still closes with a green 'Appointment added' for a slot that was taken, and no booking appears. Two patients have already turned up for appointments that do not exist. The morning clinic opens at 09:00.\n\nYou are the Frontend engineer on call. Meera's seat is yours. The pages of the Hospital OPD manager are in static/ (the shell, app.js, the styles) and the tests of the pages run in Node from tests/ui. The backend and the database are finished and tested: they are read-only for you, Rohan owns backend/ and helps if you ask. Find out what the page does with the server's answer, fix it everywhere the same mistake is made, and add a regression test. Submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-frontdesk. Ananya (QA) has the steps, Aarav (lead) wants updates. Every question you ask is counted.",
+  "seed": {"dir": "seed", "preset": "fastapi-vanilla"},
+  "unlock": ["static/shell.js", "static/shell.css", "static/ui-kit.js", "static/ui-kit.css"],
+  "task": {
+    "title": "Fix: the pages report a refused request as a success",
+    "files": ["static/shell.js"],
+    "acceptance_tests": [
+      "tests/ui/test_refusals.py::test_a_taken_slot_keeps_the_booking_form_open_and_says_why",
+      "tests/ui/test_refusals.py::test_an_invalid_phone_shows_the_servers_message_in_the_form",
+      "tests/ui/test_refusals.py::test_moving_an_appointment_onto_a_taken_slot_is_refused_on_screen",
+      "tests/ui/test_refusals.py::test_a_refused_status_button_shows_an_error_not_the_success_text",
+      "tests/ui/test_refusals.py::test_a_refused_delete_does_not_say_removed",
+      "tests/ui/test_refusals.py::test_a_refused_board_move_shows_an_error"
+    ]
+  },
+  "channel": {"id": "incident-frontdesk", "name": "#incident-frontdesk"},
+  "acks": ["Thanks for the update. Keep us posted.", "Noted. Tell me if you need anyone.", "Good, thanks. Is anything blocking you?"],
+  "evidence": {
+    "steps": "Appointments, + New appointment, doctor Dr. Farhan Ali, date 15 Oct 2026, time 11:00 (already booked for Sana Sheikh, appointment 12), Add appointment",
+    "what_i_see": "the dialog closes and a green toast says 'Appointment added'; the table shows no new row and Dr. Farhan Ali's page still lists Sana Sheikh only",
+    "network": "POST /api/doctors/4/appointments answered 409 with {\"detail\": \"Slot already booked\"}",
+    "phone": "A patient phone with 9 digits (98765 4321) is answered 400 with {\"detail\": \"Patient phone must be a 10-digit mobile number\"}, and the page says 'Appointment added' as well",
+    "stale": "Cancel on an appointment that another desk had just completed is answered 409 with {\"detail\": \"That status change is not allowed\"}, and the page shows the green 'Cancelled' toast"
+  },
+  "characters": {
+    "qa": {
+      "persona": "Ananya, QA engineer. Precise, a little tired, reports the steps and what she sees with the real texts and never guesses at the cause. She cannot edit page code.",
+      "facts": [
+        "Steps: {steps}. What she sees: {what_i_see}.",
+        "In the browser's network tab: {network}.",
+        "It is not only the booking form. {phone}. {stale}.",
+        "The same happens when an appointment is edited onto a taken slot, deleted when it is already gone, or moved on the board.",
+        "A booking that is accepted still works: the dialog closes, 'Appointment added' shows and the row appears.",
+        "The tests in tests/ui/test_refusals.py show it; run the tests in your folder to see them."
+      ],
+      "fallbacks": [
+        {"match": ["step", "reproduce", "how", "see", "happen"], "text": "Steps: {steps}. What I see: {what_i_see}."},
+        {"match": ["network", "response", "status", "409", "api", "server", "backend"], "text": "In the network tab: {network}. So the server did refuse it."},
+        {"match": [], "text": "What I saw: {what_i_see}. The steps are: {steps}. The server answered: {network}."}
+      ]
+    },
+    "architect": {
+      "persona": "Aarav, the lead. Calm, wants a status update every few minutes, cares about the morning clinic and about doing this through review. He does not know the code in detail.",
+      "facts": [
+        "The morning clinic opens at 09:00; people are being told their booking is saved when it is not.",
+        "The fix has to go through Submit: all tests green, the Reviewer reads it, then the Integrator merges. No shortcuts.",
+        "The frontend engineer may only change files under static/ (and add tests under tests/regression/). backend/ belongs to Rohan and database/ to Karan, and both are finished.",
+        "Whatever the mistake is, it must be fixed in every place it is made, not only in the booking form."
+      ],
+      "fallbacks": [
+        {"match": ["backend", "database", "api"], "text": "The backend and the database are finished and tested; this is about the page. Please do not change them."},
+        {"match": [], "text": "The clinic opens at 09:00. Find what the page does wrong, fix it in static/ everywhere it happens, and submit; I will watch for the review."}
+      ]
+    },
+    "backend": {
+      "persona": "Rohan, backend engineer. Helpful, direct, answers only about backend/ and how the API behaves. He will not change the API: he says it answers correctly and the page must read the answer.",
+      "facts": [
+        "The API answers a refused request with a 4xx status and {\"detail\": \"<message>\"}: 409 'Slot already booked' (the database refuses a second Booked row), 400 for a bad phone, 404 when the record is gone, 409 'That status change is not allowed'.",
+        "The status code is what tells a client whether a request worked: 2xx is saved, anything else is not.",
+        "tests/api/test_double_booking_api.py shows the 409 and its message; backend/main.py turns a database refusal into it.",
+        "He did not change anything in backend/ this week, and every backend test passes. The page code is in static/shell.js."
+      ],
+      "fallbacks": [
+        {"match": ["api", "response", "answer", "status", "409", "return", "send"], "text": "The API answers correctly: 409 and {\"detail\": \"Slot already booked\"} for a taken slot, 400 with a message for a bad phone, 404 when the record is gone. See tests/api/test_double_booking_api.py. What the page does with that answer is the question."},
+        {"match": [], "text": "I will not change the API: it refuses the request and says why, with the right status. Look at how the page reads that answer."}
+      ]
+    },
+    "planner": {
+      "persona": "Priya, project manager. Keeps the guide of the incident and points to the next step, never to the answer.",
+      "facts": [
+        "Her guide for this incident is in the panel next to the task: run the tests, read what the server answers, find the code that sends the requests, tell the channel what you found, add a regression test, fix it, run the tests again, submit.",
+        "The acceptance tests are in tests/ui/test_refusals.py and the whole suite has to pass."
+      ],
+      "fallbacks": [
+        {"match": [], "text": "Follow the guide next to your task: it moves to the next step by itself when you run the tests, open a file, post here or submit."}
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "id": "qa-report", "at": 3, "from": "qa",
+      "text": "The booking form says it saved when it did not. Steps: {steps}. What I see: {what_i_see}. In the network tab: {network}. {phone}."
+    },
+    {
+      "id": "lead-update", "at": 90, "from": "architect", "skip_if": "learner_posted",
+      "text": "Any update on the booking form? Please post what you have found so far in this channel, even if it is only 'still looking'."
+    },
+    {
+      "id": "lead-nudge", "idle": 300, "max": 3, "from": "architect",
+      "texts": [
+        "No update from you for 5 minutes. Where are we on the booking form? The clinic opens soon.",
+        "Still nothing in the channel. Tell me what the page does wrong and what you are doing about it.",
+        "10 more minutes and the front desk keeps telling patients their booking is saved. What is the status?"
+      ]
+    },
+    {
+      "id": "backend-pointer", "at": 240, "from": "backend", "hint": true, "skip_if": ["asked:backend", "opened:backend/main.py", "opened:tests/api/test_double_booking_api.py", "said:409|refus|swallow|ignor|res\\.ok|as a success|as success"],
+      "text": "Heads up from me: the API's answer is right (a 409 with a detail message, tests/api/test_double_booking_api.py shows it). So the question is what the page does with a refused answer: look at the function in static/shell.js that sends every request."
+    },
+    {
+      "id": "react-tests-failed", "on": "submit_result", "where": {"ok": false, "stage": "tests"}, "from": "qa",
+      "text": "Your submit did not go through: these tests still fail: {failed}."
+    },
+    {
+      "id": "react-accepted-lead", "on": "submit_result", "where": {"ok": true}, "from": "architect",
+      "text": "Accepted and merged. Thank you. Ananya, please run your checks on main."
+    },
+    {
+      "id": "react-accepted-qa", "on": "submit_result", "where": {"ok": true}, "from": "qa", "delay": 5,
+      "text": "Checked on main: a taken slot keeps the form open and says 'Slot already booked', a bad phone shows its message, and Complete, Cancel, Delete and the board show an error when the server refuses."
+    }
+  ],
+  "guide": [
+    {"id": "run-tests", "title": "Reproduce it", "text": "Press Run tests and read which tests fail and what each says the page showed. That is your starting point. Post a first update in #incident-frontdesk within 2 minutes, and answer Aarav within a minute when he asks.", "advance_on": {"kind": "test_run"}},
+    {"id": "read-the-answer", "title": "Read what the server answers", "text": "The page is shown real answers of the real API. Open tests/api/test_double_booking_api.py (read-only for you) and backend/main.py and see what the server sends back when it refuses a booking: its status and its message.", "advance_on": {"kind": "file_opened", "path": "tests/api/test_double_booking_api.py"}},
+    {"id": "find-the-code", "title": "Find the code that sends the requests", "text": "Every form, button and drag on the page sends its request through one place in static/shell.js. Open it (you can search the project for fetch) and read what it does with an answer that is not a success.", "advance_on": {"kind": "file_opened", "path": "static/shell.js"}},
+    {"id": "tell-channel", "title": "Tell the team", "text": "Post what you found in #incident-frontdesk (Agent Chat tab). Aarav is waiting for an update; you can also ask Rohan or Ananya.", "advance_on": {"kind": "message_posted"}},
+    {"id": "regression-test", "title": "Add a regression test", "text": "Add a regression test in tests/regression/ that fails before your fix: run the page's request code in Node with a stub fetch that answers 409 and expect the request to fail with the server's message. Name the file test_regression_<what>.py and copy the style of tests/ui/test_refusals.py. Run it: it has to be red now and green once the page treats a refused request as an error.", "advance_on": {"kind": "file_saved", "path": "tests/regression/test_*.py"}},
+    {"id": "fix", "title": "Fix it everywhere", "text": "Change static/shell.js so that a refused request is an error for every form, button and drag, and the server's own message reaches the person. Fix the cause, not one screen.", "advance_on": {"kind": "file_saved", "path": "static/shell.js"}},
+    {"id": "tests-green", "title": "Run the tests again", "text": "Run tests. The whole suite has to be green, not only the acceptance tests.", "advance_on": {"kind": "test_result", "ok": true}},
+    {"id": "submit", "title": "Submit for review", "text": "Press Submit for review. The Reviewer reads your change and may send it back up to twice.", "advance_on": {"kind": "submit"}}
+  ]
+}
