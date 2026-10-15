@@ -36,8 +36,19 @@ class SeedInfo(BaseModel):
 
 class TaskInfo(BaseModel):
     title: str = Field(min_length=3)
-    files: list[str] = Field(min_length=1)
+    files: list[str] = Field(default_factory=list)  # files of the seed the task changes
+    new_files: list[str] = Field(default_factory=list)  # files the person creates (a migration): the folder is in the seed, the file is not
     acceptance_tests: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _has_files(self):
+        if not self.files and not self.new_files:
+            raise ValueError("the task needs `files` or `new_files`")
+        return self
+
+    @property
+    def all_files(self) -> list[str]:
+        return [*self.files, *self.new_files]
 
 
 class ChannelInfo(BaseModel):
@@ -182,6 +193,11 @@ def _check(s: Scenario, folder: Path) -> list[str]:
     for f in s.task.files:
         if not (seed / f).is_file():
             problems.append(f"task file {f!r} is not in the seed")
+    for f in s.task.new_files:
+        if (seed / f).exists():
+            problems.append(f"new file {f!r} is already in the seed")
+        elif not (seed / PurePosixPath(f).parent).is_dir():
+            problems.append(f"new file {f!r}: its folder is not in the seed")
     for t in s.task.acceptance_tests:
         path, _, name = t.partition("::")
         file = seed / path

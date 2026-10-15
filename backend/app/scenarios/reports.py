@@ -86,7 +86,7 @@ def build_report(*, scenario, rubric: Rubric, attempt: int, project: str, facts:
                 dropped.append(Dropped(f.id, f.text, problem))
                 continue
             row = {"id": f"R{len(rows) + 1:02d}", "criterion": c.id, "rule": f.rule, "kind": f.kind, "event": event_id, "events": f.events, "t": events[event_id]["t"],
-                   "source": source_label(events[event_id]), "quote": quote, "note": f.text, "advice": f.advice if f.kind == "gap" else "", "verified": True, "worded_by": "rule"}
+                   "source": source_label(events[event_id], scenario.channel.name), "quote": quote, "note": f.text, "advice": f.advice if f.kind == "gap" else "", "verified": True, "worded_by": "rule"}
             rows.append(row)
             ids.append(row["id"])
         criteria.append({"id": c.id, "name": c.name, "judge": c.judge, "judge_name": names.get(c.judge, c.judge), "score": res.score, "max": rubric.points_per_criterion,

@@ -14,15 +14,15 @@ ID = "opd-bookings-down"
 PATCH = Path(__file__).parent.parent / "app" / "scenarios" / ID / "autoplay" / "fix.patch"
 
 
-def copy_scenario(tmp_path) -> Path:
+def copy_scenario(tmp_path, sid: str = ID) -> Path:
     """A writable copy of the scenario folder to break on purpose (the seed is shared, copied once per test; the app is small)."""
     root = tmp_path / "scenarios"
-    shutil.copytree(SCENARIOS_DIR / ID, root / ID, ignore=shutil.ignore_patterns("__pycache__", "*.woff2"))
+    shutil.copytree(SCENARIOS_DIR / sid, root / sid, ignore=shutil.ignore_patterns("__pycache__", "*.woff2"))
     return root
 
 
-def edit(root: Path, fn) -> None:
-    path = root / ID / "scenario.json"
+def edit(root: Path, fn, sid: str = ID) -> None:
+    path = root / sid / "scenario.json"
     raw = json.loads(path.read_text(encoding="utf-8"))
     fn(raw)
     path.write_text(json.dumps(raw), encoding="utf-8")
@@ -37,7 +37,7 @@ def test_the_shipped_scenario_loads_with_everything_the_session_needs():
     assert s.task.files == ["backend/api/appointments.py", "backend/api/doctors.py"]
     assert set(s.characters) == {"qa", "architect", "database", "planner"} and s.role not in s.characters
     assert [i.id for i in s.timeline][:2] == ["qa-report", "lead-update"] and len(s.guide) == 8
-    assert [s.id for s in list_scenarios()] == [ID]
+    assert [s.id for s in list_scenarios()] == [ID, "opd-double-bookings"]  # both scenarios are in the picker
 
 
 def test_the_picker_data_leaves_the_script_on_the_server():

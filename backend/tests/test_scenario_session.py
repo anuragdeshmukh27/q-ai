@@ -44,11 +44,12 @@ def scenario(tmp_path):
 
 # -- the scenario list and the start endpoint --------------------------------------------------------------
 
-def test_the_scenario_list_has_one_card_without_the_script(tmp_path):
+def test_the_scenario_list_has_a_card_for_each_scenario_without_the_script(tmp_path):
     client, mgr = manager(tmp_path, ScenarioLLM())
     cards = client.get("/api/scenarios").json()
-    assert [c["id"] for c in cards] == [ID] and cards[0]["title"] == "Production incident: Bookings are down" and cards[0]["role"] == "backend"
-    assert "timeline" not in cards[0] and "guide" not in cards[0] and "characters" not in cards[0]
+    assert [c["id"] for c in cards] == [ID, "opd-double-bookings"] and cards[0]["title"] == "Production incident: Bookings are down" and cards[0]["role"] == "backend"
+    assert (cards[1]["title"], cards[1]["role"], cards[1]["level"], cards[1]["minutes"]) == ("Double bookings", "database", "Advanced", 30)
+    assert all("timeline" not in c and "guide" not in c and "characters" not in c for c in cards)
 
 
 def test_unknown_scenarios_and_a_second_session_are_refused(tmp_path):

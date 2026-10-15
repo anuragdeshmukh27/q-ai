@@ -41,7 +41,7 @@ def test_the_shipped_rubric_has_five_criteria_with_judges_descriptors_and_four_r
     assert [(c.name, NAMES[c.judge]) for c in RUBRIC.criteria] == [("Communication", "Aarav"), ("Diagnosis", "Karan"), ("Fix quality", "Vikram"), ("Testing", "Ananya"), ("Ownership", "Aarav")]
     for c in RUBRIC.criteria:
         assert sorted(c.descriptors) == ["0", "1", "2", "3", "4"] and len(c.rules) == 4 and c.signals and all(r.advice for r in c.rules)
-    assert {r.id for c in RUBRIC.criteria for r in c.rules} <= set(scoring.RULES) and len(scoring.RULES) == 20
+    assert {r.id for c in RUBRIC.criteria for r in c.rules} <= set(scoring.RULES) and len({r.id for c in RUBRIC.criteria for r in c.rules}) == 20
 
 
 def copy_rubric(tmp_path) -> Path:

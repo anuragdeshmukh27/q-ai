@@ -82,12 +82,12 @@ def event_text(e: dict) -> str:
     return ""
 
 
-def source_label(e: dict) -> str:
+def source_label(e: dict, channel: str = "#incident-opd") -> str:
     """Where a log entry happened, for the report: the channel (with who spoke), the IDE, Submit, the debrief's own checks."""
     k = e.get("kind")
     if k == "team_message":
-        return f"#incident-opd · {display_name(str(e.get('from', '')))}"
-    return {"message_posted": "#incident-opd · You", "hint_given": "#incident-opd (hint)", "file_opened": "IDE · file opened", "file_saved": "IDE · file saved",
+        return f"{channel} · {display_name(str(e.get('from', '')))}"
+    return {"message_posted": f"{channel} · You", "hint_given": f"{channel} (hint)", "file_opened": "IDE · file opened", "file_saved": "IDE · file saved",
             "search": "IDE · search", "test_run": "IDE · tests", "test_result": "IDE · tests", "submit": "Submit", "submit_result": "Submit", "debrief_check": "Debrief check"}.get(str(k), "Session")
 
 
@@ -142,13 +142,14 @@ class Facts:
     """What the rules look at: the session log and what the debrief measured after the submit (as `debrief_check` entries after the session's own)."""
 
     def __init__(self, events: list[dict], minutes: int = 25, old_name_files: list[str] | None = None, rerun: dict | None = None, regression: dict | None = None,
-                 scan: tuple[str, str] = ("backend", "slot_time")):
+                 scan: tuple[str, str] | None = ("backend", "slot_time"), measured: dict[str, dict] | None = None):
         self.session = [dict(e) for e in events]
         self.minutes = minutes
         self.old_name_files = list(old_name_files or [])
         self.rerun = rerun  # {ok, passed, failed, summary} of the suite on the merged project, or None when it could not be run
         self.regression = regression  # {path, fails_on_seed, passes_on_main, seed_summary?, main_summary?} of the learner's new test, or None when there is none
         self.scan = scan  # (folder, old name) the scan looked for
+        self.measured = dict(measured or {})  # what a scenario's own measures found after the submit, by name; each has a `text` and becomes a `debrief_check` entry
         self.log = self.session + self._checks()
         self._index = {e["id"]: i for i, e in enumerate(self.log)}
 
@@ -162,8 +163,9 @@ class Facts:
         def add(check: str, text: str) -> None:
             out.append({"id": f"E{len(self.session) + len(out) + 1:03d}", "t": t, "kind": "debrief_check", "check": check, "text": text})
 
-        folder, name = self.scan
-        add("scan", f"Debrief scan of {folder}/: no file says {name} any more" if not self.old_name_files else f"Debrief scan of {folder}/: {name} is still in {', '.join(self.old_name_files[:4])}")
+        if self.scan is not None:  # a scenario that is not about a renamed name has no scan
+            folder, name = self.scan
+            add("scan", f"Debrief scan of {folder}/: no file says {name} any more" if not self.old_name_files else f"Debrief scan of {folder}/: {name} is still in {', '.join(self.old_name_files[:4])}")
         r = self.rerun
         add("rerun", "Debrief re-run on main: the suite could not be run" if r is None else f"Debrief re-run on main: {r.get('passed', 0)} passed" + (f", {r.get('failed', 0)} failed" if r.get("failed") else ""))
         g = self.regression
@@ -180,6 +182,8 @@ class Facts:
             _plural(len(self.of("hint_given")), "hint"), _plural(len(self.of("team_message", lambda e: e.get("ref") == "lead-nudge")), "nudge") + " from the lead",
             _plural(sum(1 for e in refused if e.get("stage") == "review"), "review send-back"), _plural(sum(1 for e in refused if e.get("stage") == "tests"), "submit") + " refused for tests",
             _plural(sum(1 for e in refused if e.get("stage") == "scope"), "submit") + " refused for scope"]))
+        for name, m in self.measured.items():
+            add(name, str(m.get("text", "")))
         return out
 
     def check(self, name: str) -> dict | None:
@@ -340,7 +344,8 @@ def reproduced_first(f: Facts, p: dict) -> Outcome:
 
 def _read_before_edit(f: Facts, pattern: str, what: str, search: str = "") -> Outcome:
     edit = f.first_edit
-    opened = f.of("file_opened", lambda e: not e.get("auto") and fnmatch.fnmatch(str(e.get("path", "")), pattern))
+    globs = pattern.split("|")  # one glob, or several separated by |
+    opened = f.of("file_opened", lambda e: not e.get("auto") and any(fnmatch.fnmatch(str(e.get("path", "")), g) for g in globs))
     early = [e for e in opened if f.before(e, edit)]
     if early:
         return Outcome(True, _ids(*early), f"You opened {what} ({early[0]['path']}) at {clock(early[0]['t'])}, before the first edit.")
@@ -368,8 +373,8 @@ def read_the_migration(f: Facts, p: dict) -> Outcome:
 def no_pointer_needed(f: Facts, p: dict) -> Outcome:
     """A scripted pointer from a teammate counts against you only when you had not found the answer yourself by then."""
     pointer = f.first("hint_given", lambda e: e.get("reason") == "timeline")
-    mig = str(p.get("pattern", "database/migrations/*"))
-    found_by = f.first("file_opened", lambda e: not e.get("auto") and fnmatch.fnmatch(str(e.get("path", "")), mig) and (pointer is None or f.before(e, pointer)))
+    mig = str(p.get("pattern", "database/migrations/*")).split("|")  # one glob, or several separated by |
+    found_by = f.first("file_opened", lambda e: not e.get("auto") and any(fnmatch.fnmatch(str(e.get("path", "")), g) for g in mig) and (pointer is None or f.before(e, pointer)))
     if pointer is not None and found_by is None:
         return Outcome(False, _ids(pointer), f"A teammate had to point you at the database change at {clock(pointer['t'])}.")
     searched = f.first("search", lambda e: int(e.get("matches", 0)) > 0)
@@ -507,6 +512,75 @@ def reported_the_outcome(f: Facts, p: dict) -> Outcome:
     if post is not None:
         return Outcome(True, _ids(post), f"At {clock(post['t'])} you told the team the fix was ready.")
     return Outcome(False, _ids(green, f.anchor), f"{_by(green or f.anchor)} you never told the channel that the fix was ready.")
+
+
+# -- Double bookings (scenario "Double bookings", the database engineer) --------------------------------------
+
+@rule
+def looked_at_the_data(f: Facts, p: dict) -> Outcome:
+    """Opened the production snapshot (`pattern`), or searched the project for the duplicates (`search`), before the first edit."""
+    return _read_before_edit(f, str(p.get("pattern", "fixtures/*")), "the production data", str(p.get("search", "")))
+
+
+@rule
+def found_the_missing_constraint(f: Facts, p: dict) -> Outcome:
+    """Opened a migration that sets up the appointments table or its index (`pattern`), or searched for the constraint (`search`), before the first edit."""
+    return _read_before_edit(f, str(p.get("pattern", "database/migrations/*")), "the migration that made the index", str(p.get("search", "")))
+
+
+def _upgrade(f: Facts, name: str) -> tuple[dict | None, dict | None]:
+    """(what the debrief measured, the log entry that says so); None when the upgrade of the production snapshot could not be measured."""
+    return f.measured.get(name), f.check(name)
+
+
+def _unmeasured(f: Facts, name: str) -> Outcome:
+    return Outcome(False, _ids(f.check(name), f.anchor), "Q could not try your migration on the production snapshot.")
+
+
+@rule
+def no_row_deleted(f: Facts, p: dict) -> Outcome:
+    m, check = _upgrade(f, "rows_kept")
+    if m is None:
+        return _unmeasured(f, "rows_kept")
+    if m.get("ok"):
+        return Outcome(True, _ids(check), "No appointment was deleted: every row of the production snapshot is still there after your migration.")
+    if m.get("error"):
+        return Outcome(False, _ids(check), "Your migration could not run on the production snapshot, so nothing showed that the rows were safe.")
+    return Outcome(False, _ids(check), "Your migration deleted appointments: every patient's record has to stay, a later duplicate is cancelled, not removed.")
+
+
+@rule
+def duplicates_resolved(f: Facts, p: dict) -> Outcome:
+    m, check = _upgrade(f, "duplicates")
+    if m is None:
+        return _unmeasured(f, "duplicates")
+    if m.get("ok"):
+        return Outcome(True, _ids(check), "Every double-booked slot kept its earliest booking, the later ones were cancelled and each one says why.")
+    if m.get("error"):
+        return Outcome(False, _ids(check), "Your migration failed on the production snapshot, so the double bookings were not resolved.")
+    if m.get("still_double"):
+        return Outcome(False, _ids(check), "A slot still holds two Booked appointments after your migration.")
+    if not m.get("earliest_kept"):
+        return Outcome(False, _ids(check), "An earliest booking did not stay Booked: the first patient to book a slot keeps it.")
+    if m.get("reasons", 0) < m.get("later", 0):
+        return Outcome(False, _ids(check), "A cancelled duplicate does not say why it was cancelled: record the reason in a new column or a log table.")
+    return Outcome(False, _ids(check), "The later duplicates were not all cancelled, or an appointment that was no duplicate was changed.")
+
+
+@rule
+def partial_index_present(f: Facts, p: dict) -> Outcome:
+    m, check = _upgrade(f, "unique_index")
+    if m is None:
+        return _unmeasured(f, "unique_index")
+    if m.get("ok"):
+        return Outcome(True, _ids(check), "The database now refuses a second Booked row for a slot, and still allows a Cancelled one: a unique index limited to Booked rows.")
+    if m.get("error"):
+        return Outcome(False, _ids(check), "Your migration failed on the production snapshot, so no index was created.")
+    if not m.get("unique"):
+        return Outcome(False, _ids(check), "There is no unique index over the doctor, the date and the time, so the database still accepts a second booking.")
+    if not m.get("partial"):
+        return Outcome(False, _ids(check), "The unique index covers every status, so a cancelled appointment would block its slot: limit it to the Booked rows.")
+    return Outcome(False, _ids(check), "The index exists but does not behave: a second Booked row has to be refused and a Cancelled one allowed.")
 
 
 def score(rubric: Rubric, facts: Facts) -> list[CriterionResult]:

@@ -17,7 +17,7 @@ from ..config import WORKSPACE
 from ..humanide import search_worktree
 from ..integrator import Integrator
 from ..memory import MessageBus, ProjectMemory
-from ..orchestrator import Orchestrator
+from ..orchestrator import TEST_GLOBS, Orchestrator
 from ..project import git, slugify
 from ..repo import Repo
 from ..schemas import ArchitectOutput
@@ -112,15 +112,20 @@ class ScenarioBuild(Orchestrator):
         ia = self.agents["integrator"]
         self.integrator = Integrator(ia, self.repo, self.llm, self._model(ia).id, self.emit, lambda: self.mode, self.approver)
         self.log.attach(root / ".q" / "session")
-        self.add_human_task(s.role, s.task.title, s.task.files, s.task.acceptance_tests)
+        self.add_human_task(s.role, s.task.title, s.task.all_files, s.task.acceptance_tests)
         self._commit("[q] scenario task")
 
     def _engineer(self, owner: str):
         """The learner may also add tests of their own for the incident (a regression test); the generated and QA's tests stay read-only."""
         a = super()._engineer(owner)
-        if owner == self.scenario.role:
-            a = a.model_copy(update={"owned_paths": [*a.owned_paths, REGRESSION_TESTS]})
+        if owner == self.scenario.role:  # only the role's own folder and the regression tests: the database role's generic `tests/test_db*.py` is not part of an incident
+            a = a.model_copy(update={"owned_paths": [*(p for p in a.owned_paths if p != TEST_GLOBS.get(owner)), REGRESSION_TESTS]})
         return a
+
+    def _automatic_findings(self, agent, wt: Path, owner: str):
+        """The Reviewer's deterministic checks, minus "a database branch needs its own tests": a scenario brings its tests, and the learner's own regression test is scored by the rubric
+        (the Reviewer could only ask for `tests/test_db_*.py`, a file the database role may not write here)."""
+        return [f for f in super()._automatic_findings(agent, wt, owner) if f.file != "tests/test_db.py"]
 
     # -- what a person's task needs here ------------------------------------------------------
     def _scaffold(self, t: dict, agent, wt: Path):

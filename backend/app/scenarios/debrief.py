@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from ..humanide import SuiteRun, summary_line
+from .measures import MEASURES
 from .reports import History, attach_voices, build_report, write_report
 from .rubric import Rubric
 from .scoring import Facts, clock, score
@@ -195,5 +196,11 @@ class Debrief:
                 ok_main = sum(1 for t in mine if t["outcome"] == "passed")
                 regression = {"path": rel, "fails_on_seed": failed_on_seed, "passes_on_main": bool(mine) and ok_main == len(mine), "seed_summary": seed_summary or None,
                               "main_summary": f"{ok_main} passed" + (f", {len(mine) - ok_main} failed" if len(mine) != ok_main else "") if mine else None}
-        scan = (str(rule.params.get("folder", "backend")), str(rule.params.get("old_name", ""))) if rule else ("backend", "slot_time")
-        return Facts(log, minutes=b.scenario.minutes, old_name_files=old_name_files, rerun=rerun, regression=regression, scan=scan)
+        scan = (str(rule.params.get("folder", "backend")), str(rule.params.get("old_name", ""))) if rule else None
+        measured: dict[str, dict] = {}
+        for name in self.rubric.measures:  # what this scenario's rubric measures on the merged project besides the suite
+            try:
+                measured.update(MEASURES[name](Path(root), b.scenario.seed_dir, {})) if root and Path(root).is_dir() else None
+            except Exception:  # a measure that cannot run is "not measured": the rules say so, the score does not guess
+                continue
+        return Facts(log, minutes=b.scenario.minutes, old_name_files=old_name_files, rerun=rerun, regression=regression, scan=scan, measured=measured)

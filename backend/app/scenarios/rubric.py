@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from ..config import load_agents
 from .loader import Scenario, ScenarioError
+from .measures import MEASURES
 from .scoring import RULES
 from .sessionlog import KINDS
 
@@ -59,9 +60,12 @@ class Rubric(BaseModel):
     points_per_criterion: int = Field(default=4, ge=1)
     weight: int = Field(default=5, ge=1)  # marks per point: the total is the points times this, out of 100
     criteria: list[Criterion] = Field(min_length=1)
+    measures: list[str] = Field(default_factory=list)  # what the debrief measures on the merged project besides the suite (see measures.py)
 
     @model_validator(mode="after")
     def _adds_up(self):
+        if unknown := [m for m in self.measures if m not in MEASURES]:
+            raise ValueError(f"unknown measure {unknown[0]!r}")
         for c in self.criteria:
             if len(c.rules) != self.points_per_criterion:
                 raise ValueError(f"criterion {c.id}: it needs exactly {self.points_per_criterion} rules (one point each), not {len(c.rules)}")

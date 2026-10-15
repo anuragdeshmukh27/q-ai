@@ -262,7 +262,8 @@ class Director:
             return {"message": msg, "to": addressed, "pending": []}
         if not addressed:
             if others:  # a colleague who is not part of this incident
-                self._answer_scripted("architect", f"{', '.join(others)} is not on this incident. Ask Ananya, Karan or me.", msg)
+                askable = [self.roster[c].name for c in self.scenario.characters if c not in ("architect", "planner")]  # the teammates worth asking: Aarav is "me", Priya is the guide
+                self._answer_scripted("architect", f"{', '.join(others)} is not on this incident. Ask {', '.join(askable)} or me.", msg)
             else:
                 with self._lock:
                     ack = self.scenario.acks[self._ack % len(self.scenario.acks)]
