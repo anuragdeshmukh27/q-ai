@@ -76,6 +76,22 @@ export interface GuideView {
   steps: GuideStepView[]
 }
 
+/** One run of a scenario: what the left panel remembers when the learner leaves the scenario view for the picker. Null when no scenario is loaded. */
+export function scenarioRunKey(s: Pick<ScenarioSession, 'id' | 'attempt' | 'startedAt' | 'kind' | 'variant'> | null): string | null {
+  return s ? [s.id, s.attempt, s.startedAt, s.kind ?? 'learner', s.variant ?? ''].join(':') : null
+}
+
+/** The left panel shows the scenario (not the live-build column) from the start of a scenario until the learner presses "Back to the scenarios" at its end. */
+export function showsScenarioPanel(s: Parameters<typeof scenarioRunKey>[0], left: string | null): boolean {
+  const key = scenarioRunKey(s)
+  return key !== null && key !== left
+}
+
+/** A scenario run is over once its session has ended (or the build finished) and no script is still playing it. */
+export function scenarioRunEnded(s: Pick<ScenarioSession, 'endedAt'>, finished: boolean, scriptActive: boolean): boolean {
+  return (s.endedAt !== null || finished) && !scriptActive
+}
+
 /** 63 -> "01:03", 3725 -> "1:02:05". */
 export function formatClock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))

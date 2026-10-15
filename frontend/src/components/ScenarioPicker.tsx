@@ -1,6 +1,6 @@
 import type { ScenarioInfo } from '../scenario'
 
-const ROLE_LABEL: Record<string, string> = { backend: 'Backend engineer', frontend: 'Frontend engineer', database: 'Database engineer' }
+export const ROLE_LABEL: Record<string, string> = { backend: 'Backend engineer', frontend: 'Frontend engineer', database: 'Database engineer' }
 
 interface Props {
   scenarios: ScenarioInfo[]

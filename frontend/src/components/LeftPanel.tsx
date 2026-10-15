@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ConfigInfo, RecordingMeta } from '../api'
 import { HUMAN_ROLES, type BoardArea, type OfficeModel } from '../model'
 
 import { card, demosFor } from '../demos'
 import { EXAMPLES, FAMOUS } from '../examples'
-import type { ScenarioInfo } from '../scenario'
+import { scenarioRunEnded, scenarioRunKey, showsScenarioPanel, type ScenarioInfo } from '../scenario'
+import { ScenarioPanel } from './ScenarioPanel'
 import { ScenarioPicker } from './ScenarioPicker'
 
 // The stack presets Q knows about. Only the ones the backend lists can be built today; the rest are shown as planned.
@@ -38,6 +39,8 @@ interface Props {
   scenarios: ScenarioInfo[]
   onScenario: (id: string) => void
   onWatch?: (id: string, variant: 'strong' | 'weak') => void
+  /** The scenario run the learner has already gone back from (the panel starts on the picker for it); a test's way to start there. */
+  leftRun?: string | null
 }
 
 const ROLE_LABEL: Record<string, string> = { backend: 'Backend', frontend: 'Frontend', database: 'Database' }
@@ -83,9 +86,15 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario, onWatch }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario, onWatch, leftRun = null }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null)
-  const rolesLocked = hasProject && !replay && (!model.finished || !!model.autoplay?.active) // the roles of a running simulation are fixed; a scripted run (its debrief goes on after the build is done) locks the scenario card until it ends
+  const [left, setLeft] = useState<string | null>(leftRun) // the scenario run the learner went back from: its panel is not shown again
+  const runKey = scenarioRunKey(model.scenario)
+  useEffect(() => {
+    if (runKey === null) setLeft(null) // no scenario any more: the next one shows its panel again, even a replay of the same recording
+  }, [runKey])
+  const backed = runKey !== null && runKey === left // the learner went back from this run: it is over for the panel, whatever the build says
+  const rolesLocked = hasProject && !replay && !backed && (!model.finished || !!model.autoplay?.active) // the roles of a running simulation are fixed; a scripted run (its debrief goes on after the build is done) locks the scenario card until it ends
   const submit1 = async (task: string) => {
     setSubmitting(task)
     try {
@@ -102,6 +111,10 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   const submit = () => shown.trim() && !busy && onStart(shown.trim())
   const byId = new Map(model.tasks.map((t) => [t.id, t]))
   const board = model.board
+  if (showsScenarioPanel(model.scenario, left)) {
+    const over = !!model.scenario && scenarioRunEnded(model.scenario, !!model.finished, !!model.autoplay?.active)
+    return <ScenarioPanel model={model} replay={replay} projectId={projectId} onSubmit={onSubmit} onCopyPath={onCopyPath} onBack={over ? () => setLeft(runKey) : undefined} />
+  }
   return (
     <aside className="flex w-[318px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--line)] bg-[var(--panel)] p-3">
       {!demo && mode === 'simulation' && !rolesLocked && <ScenarioPicker scenarios={scenarios} busy={busy} onStart={onScenario} onWatch={onWatch} />}
