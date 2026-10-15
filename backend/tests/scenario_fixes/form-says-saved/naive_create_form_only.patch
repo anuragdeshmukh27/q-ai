@@ -1,0 +1,13 @@
+diff --git a/static/shell.js b/static/shell.js
+--- a/static/shell.js
++++ b/static/shell.js
+@@ -284,7 +284,8 @@
+         parents: parentRes && !parentId ? { resource: parentRes, rows: parents, selected: parents[0].id } : null,
+         onSave: async (values, chosen) => {
+           const pid = parentId ?? chosen;
+-          await call("POST", r.parent ? fill(r.create, { parent: pid }) : r.create, values);
++          const out = await call("POST", r.parent ? fill(r.create, { parent: pid }) : r.create, values);
++          if (out && out.detail) { const err = new Error("refused"); err.detail = out.detail; throw err; }
+           toast(`${pretty(r.singular)} added`, "success");
+           invalidate();
+           await render();

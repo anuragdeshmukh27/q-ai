@@ -1,0 +1,24 @@
+"""Regression: a request the server refuses (409, 400, 404 with a JSON message) is an error on the page, never a success."""
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = """
+const vm = require('node:vm'), fs = require('node:fs')
+globalThis.window = globalThis
+globalThis.fetch = async () => ({ ok: false, status: 409, json: async () => ({ detail: 'Slot already booked' }) })
+vm.runInThisContext(fs.readFileSync('static/shell.js', 'utf8'))
+window.Q.call('POST', '/api/doctors/1/appointments', {}).then(
+  () => console.log(JSON.stringify({ rejected: false })),
+  (e) => console.log(JSON.stringify({ rejected: true, detail: e.detail })))
+"""
+
+
+def test_a_refused_request_is_an_error_on_the_page():
+    node = shutil.which("node")
+    assert node, "node is not installed"
+    r = subprocess.run([node, "-e", SCRIPT], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"rejected": True, "detail": "Slot already booked"}

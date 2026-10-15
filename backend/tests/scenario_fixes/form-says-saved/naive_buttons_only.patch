@@ -1,0 +1,23 @@
+diff --git a/static/shell.js b/static/shell.js
+--- a/static/shell.js
++++ b/static/shell.js
+@@ -141,7 +141,8 @@
+   }
+   async function run(r, a, item) {
+     try {
+-      await call("POST", fill(a.url, { id: item.id }));
++      const out = await call("POST", fill(a.url, { id: item.id }));
++      if (out && out.detail) throw Object.assign(new Error("refused"), { detail: out.detail });
+       toast(a.kind === "set" ? `${item[r.title] ?? one(r)}: ${a.value}` : "Done", "success");
+     } catch (e) {
+       toast(e.detail || "Could not do that", "error");
+@@ -307,7 +308,8 @@
+   function removeItem(r, item, then) {
+     return () => confirmBox(`Delete this ${one(r)}${(r.children || []).length ? ` and its ${r.children.map((c) => c).join(", ")}` : ""}? This cannot be undone.`, async () => {
+       try {
+-        await call("DELETE", fill(r.item, { id: item.id }));
++        const out = await call("DELETE", fill(r.item, { id: item.id }));
++        if (out && out.detail) throw Object.assign(new Error("refused"), { detail: out.detail });
+         toast("Removed", "success");
+       } catch (e) {
+         toast(e.detail || "Could not delete", "error");
