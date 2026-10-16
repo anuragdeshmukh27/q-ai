@@ -67,7 +67,7 @@ SKILLS: dict[str, tuple[str, ...]] = {
 
 # domain -> (the words that point at it, the one-line app Q would build for that domain: Part B's starting point)
 DOMAINS: dict[str, tuple[tuple[str, ...], str]] = {
-    "healthcare": (("healthcare", "health care", "hospital", "clinic", "clinical", "patient", "medical", "ehr", "pharma", "telehealth", "health"),
+    "healthcare": (("healthcare", "health care", "hospital", "clinic", "clinical", "patient", "medical", "ehr", "pharma", "telehealth"),
                    "An outpatient booking app: doctors, appointments, prescriptions and lab tests."),
     "fintech": (("fintech", "payment", "payments", "banking", "bank", "lending", "ledger", "trading", "brokerage", "card issuing", "insurance", "wallet"),
                 "A payments service: accounts, transfers and a ledger with a transaction history."),
@@ -75,7 +75,7 @@ DOMAINS: dict[str, tuple[tuple[str, ...], str]] = {
                    "An online store: products, a cart, checkout and order tracking."),
     "education": (("education", "edtech", "students", "school", "university", "learning platform", "courses", "classroom"),
                   "A course platform: courses, enrolments, assignments and grades."),
-    "logistics": (("logistics", "shipping", "freight", "fleet", "warehouse", "supply chain", "delivery", "last-mile"),
+    "logistics": (("logistics", "shipping", "freight", "fleet", "warehouse", "supply chain", "deliveries", "last-mile"),
                   "A delivery tracker: shipments, drivers, routes and status updates."),
     "travel": (("travel", "airline", "hotel", "hospitality", "reservations", "tourism"),
                "A reservations app: listings, availability, bookings and cancellations."),
@@ -112,8 +112,8 @@ SIGNALS: dict[str, tuple[str, tuple[str, ...]]] = {
     "communication": ("communication", ("communicat", "stakeholder", "cross-functional", "collaborat", "teamwork", "written", "explain", "document")),
     "diagnosis": ("debugging and root-cause analysis", ("debug", "troubleshoot", "root cause", "incident", "production issue", "performance", "observab", "monitoring", "diagnos")),
     "fix_quality": ("code quality", ("code review", "clean code", "maintainab", "best practice", "refactor", "readable", "design pattern", "technical debt", "high-quality", "quality code")),
-    "testing": ("testing culture", ("testing", "unit test", "integration test", "tdd", "test-driven", "pytest", "jest", "automated test", "test coverage", "ci/cd", "quality assurance", "regression")),
-    "ownership": ("ownership", ("ownership", "own the", "owning", "end-to-end", "on-call", "on call", "accountab", "self-starter", "autonom", "take initiative", "responsib")),
+    "testing": ("testing culture", ("testing", "tests", "unit test", "integration test", "tdd", "test-driven", "pytest", "jest", "automated test", "test coverage", "ci/cd", "quality assurance", "regression")),
+    "ownership": ("ownership", ("ownership", "own the", "owning", "own features", "own it", "on-call", "on call", "accountab", "self-starter", "autonom", "take initiative", "responsib")),
 }
 SOFT_SKILLS = tuple(label for label, _ in SIGNALS.values())
 
@@ -128,7 +128,7 @@ def phrase(p: str) -> re.Pattern:
     return _PATTERNS[p]
 
 
-_WHOLE = {"tdd", "jest", "pytest", "document", "written", "explain", "performance", "own the", "owning", "on-call", "on call", "regression", "testing", "monitoring", "ci/cd", "incident"}
+_WHOLE = {"own it", "tests", "tdd", "jest", "pytest", "document", "written", "explain", "performance", "own the", "owning", "on-call", "on call", "regression", "testing", "monitoring", "ci/cd", "incident"}
 
 
 def find_skills(text: str) -> list[str]:

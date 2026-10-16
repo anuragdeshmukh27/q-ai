@@ -1,0 +1,20 @@
+Backend Engineer (Payments Platform)
+Northwind Pay, a fintech company, Remote (Europe)
+
+About the role
+Northwind Pay processes card payments and bank transfers for small merchants. We are looking for a backend engineer to join the team that owns our payments API. You will design, build and run the services that move money, and you will be on call for them with the rest of the team.
+
+What you will do
+- Build and maintain REST APIs in Python (FastAPI) on top of PostgreSQL and Redis.
+- Own features end-to-end: from the design discussion to the release and the follow-up in production.
+- Debug production issues, find the root cause and write the fix and the regression test that keeps it fixed.
+- Write unit tests and integration tests with pytest; we run them in CI/CD on every merge and we take testing seriously.
+- Review code from teammates and keep the codebase clean and maintainable.
+- Communicate clearly with product managers and support: explain what broke, what you are doing about it and when it will be fixed.
+
+What we are looking for
+- 3+ years of experience building backend services, ideally in Python.
+- Solid understanding of REST API design, SQL and database migrations.
+- Experience with Docker and a cloud provider (AWS).
+- Calm during incidents, and good at keeping people informed.
+- A sense of ownership: you do not hand a problem over until it is solved.

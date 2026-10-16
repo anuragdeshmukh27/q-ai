@@ -1,0 +1,20 @@
+Frontend Engineer
+Bazaar Lane, an e-commerce marketplace, Remote
+
+About the role
+Bazaar Lane is an online marketplace for independent shops. The storefront and the checkout are what our shoppers see, so a frontend engineer here directly decides whether people trust us with their order.
+
+What you will do
+- Build and maintain the storefront and checkout in JavaScript and TypeScript with React, HTML and CSS.
+- Connect the UI to our REST APIs and make sure every error the server returns is shown to the shopper clearly: no silent failures and no false "order placed" messages.
+- Keep the interface responsive and accessible (WCAG).
+- Write component tests and end-to-end tests (Jest, Cypress) and run them in CI.
+- Debug issues reported from production by looking at the network tab, the console and the code.
+- Review pull requests and keep the code readable and maintainable.
+- Work with designers and the backend team, and tell them early when something is unclear or broken.
+
+What we are looking for
+- 3+ years of experience building web frontends.
+- Strong JavaScript and CSS, and a feel for error handling in the browser.
+- Ownership of what you ship: you check that it works for the shopper, not only that the tests pass.
+- Clear communicator, comfortable giving short status updates.

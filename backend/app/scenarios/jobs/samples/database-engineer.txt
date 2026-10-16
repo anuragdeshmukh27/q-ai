@@ -1,0 +1,19 @@
+Database Engineer / Data Engineer
+Meridian Health Analytics, healthcare data company, Hybrid
+
+About the role
+Meridian Health Analytics turns hospital and clinic records into reports that care teams rely on every morning. As a database engineer you will look after the schemas, the data pipelines and the quality of the patient data behind those reports.
+
+What you will do
+- Design and evolve relational schemas in PostgreSQL: data modeling, constraints and indexing for speed and for integrity.
+- Write and review database migrations, including migrations that have to fix bad production data without losing a single row.
+- Build and run ETL data pipelines (Python, SQL, Airflow, dbt) into our data warehouse.
+- Troubleshoot data incidents: duplicated records, broken constraints, slow queries. Find the root cause before you change anything.
+- Add tests for your queries and migrations, and keep the data tests green in CI.
+- Explain data problems in plain words to analysts and to the clinical operations team, and tell them what you changed.
+
+What we are looking for
+- 4+ years of experience with SQL and relational databases; query optimization experience.
+- Python for data work.
+- A careful, data-first way of working: you look at the data before you write the fix.
+- Ownership of the databases you build, including being reachable when they misbehave.
