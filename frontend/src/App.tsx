@@ -5,6 +5,7 @@ import { Dock } from './components/Dock'
 import { Inspector } from './components/Inspector'
 import { LeftPanel } from './components/LeftPanel'
 import { OfficeCanvas } from './components/OfficeCanvas'
+import { ProgressPage } from './components/ProgressPage'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
 import { useQ } from './useQ'
@@ -13,6 +14,7 @@ export default function App() {
   const q = useQ()
   const { model } = q
   const [selected, setSelected] = useState<string | null>(null)
+  const [progressOpen, setProgressOpen] = useState(false)
   const agent = selected ? model.agents.get(selected) : undefined
   const [models, setModels] = useState<ModelInfo[]>([])
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function App() {
           scenarios={q.scenarios}
           onScenario={q.startScenario}
           onWatch={q.startAutoplay}
+          onProgress={() => setProgressOpen(true)}
         />
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, #141a2c 0%, #0b0d12 75%)' }}>
           <OfficeCanvas model={model} selected={selected} tempo={q.demo ? q.speed : 1} onSelect={setSelected} />
@@ -81,6 +84,7 @@ export default function App() {
         </main>
         {agent && <Inspector agent={agent} model={model} projectId={q.projectId} replay={q.replay} models={models} onClose={() => setSelected(null)} onError={q.fail} onEscalate={q.escalate} />}
       </div>
+      {progressOpen && <ProgressPage onClose={() => setProgressOpen(false)} onStart={q.startScenario} busy={q.busy} onError={q.fail} />}
       <Dock model={model} projectId={q.projectId} replay={q.replay} onDecide={q.decide} ticker={model.ticker} onSubmit={q.submitTask} onError={q.fail} onPost={q.postChannel} onTryAgain={q.startScenario} busy={q.busy} />
     </div>
   )

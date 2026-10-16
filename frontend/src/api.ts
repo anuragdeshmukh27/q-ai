@@ -1,6 +1,7 @@
 // Thin client for the Q backend (see backend/app/main.py). Errors are plain-language messages, never stack traces.
 import type { AgentInfo, QEvent } from './model'
-import type { ScenarioInfo } from './scenario'
+import { reportUrl, type Progress } from './progress'
+import type { DebriefReport, ScenarioInfo } from './scenario'
 
 export class ApiError extends Error {}
 
@@ -283,6 +284,9 @@ export const api = {
   submitTask: (id: string, task: string) => call<SubmitResult>(`/api/projects/${id}/tasks/${task}/submit`, { method: 'POST', body: '{}' }),
   taskDoc: (id: string, task: string) => callText(`/api/projects/${id}/tasks/${task}/doc`),
   scenarios: () => call<ScenarioInfo[]>('/api/scenarios'),
+  progress: () => call<Progress>('/api/progress'),
+  progressReport: (sid: string, attempt: number) => call<DebriefReport>(reportUrl(sid, attempt)),
+  resetProgress: () => call<{ cleared: number }>('/api/progress', { method: 'DELETE' }),
   startAutoplay: (sid: string, variant: string, speed: number) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/autoplay`, { method: 'POST', body: JSON.stringify({ variant, speed }) }),
   autoplaySpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/autoplay/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),
   autoplayStop: (id: string) => call<unknown>(`/api/projects/${id}/autoplay/stop`, { method: 'POST', body: '{}' }),

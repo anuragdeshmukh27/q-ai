@@ -39,6 +39,7 @@ interface Props {
   scenarios: ScenarioInfo[]
   onScenario: (id: string) => void
   onWatch?: (id: string, variant: 'strong' | 'weak') => void
+  onProgress?: () => void
   /** The scenario run the learner has already gone back from (the panel starts on the picker for it); a test's way to start there. */
   leftRun?: string | null
 }
@@ -86,7 +87,7 @@ function Heading({ children }: { children: string }) {
   return <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">{children}</div>
 }
 
-export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario, onWatch, leftRun = null }: Props) {
+export function LeftPanel({ model, busy, demo, hasProject, recordings, recording, onRecording, config, preset, onPreset, fast, onFast, onStart, onImport, mode, replay, projectId, humanRoles, onHumanRoles, onSubmit, onCopyPath, scenarios, onScenario, onWatch, onProgress, leftRun = null }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [left, setLeft] = useState<string | null>(leftRun) // the scenario run the learner went back from: its panel is not shown again
   const runKey = scenarioRunKey(model.scenario)
@@ -117,7 +118,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   }
   return (
     <aside className="flex w-[318px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--line)] bg-[var(--panel)] p-3">
-      {!demo && mode === 'simulation' && !rolesLocked && <ScenarioPicker scenarios={scenarios} busy={busy} onStart={onScenario} onWatch={onWatch} />}
+      {!demo && mode === 'simulation' && !rolesLocked && <ScenarioPicker scenarios={scenarios} busy={busy} onStart={onScenario} onWatch={onWatch} onProgress={onProgress} />}
       <div>
         <Heading>GOAL</Heading>
         <textarea

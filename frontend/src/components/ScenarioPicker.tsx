@@ -8,14 +8,23 @@ interface Props {
   onStart: (id: string) => void
   /** "Watch a run": a script plays the scenario (variant "strong" or "weak"), nobody types. */
   onWatch?: (id: string, variant: 'strong' | 'weak') => void
+  /** Open My progress (the learner's real attempts across the scenarios). */
+  onProgress?: () => void
 }
 
 /** The scenarios of Simulation mode: a finished app with a planted problem and a scripted team, one card each. */
-export function ScenarioPicker({ scenarios, busy, onStart, onWatch }: Props) {
+export function ScenarioPicker({ scenarios, busy, onStart, onWatch, onProgress }: Props) {
   if (scenarios.length === 0) return null
   return (
     <div aria-label="Scenarios">
-      <div className="mb-1 text-[11px] font-semibold tracking-wider text-[var(--muted)]">SCENARIOS</div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[11px] font-semibold tracking-wider text-[var(--muted)]">SCENARIOS</span>
+        {onProgress && (
+          <button onClick={onProgress} title="Your real attempts across the scenarios: scores, skills, what to practise next" className="rounded-md border border-[var(--line)] px-2.5 py-[3px] text-[12px] font-semibold text-[var(--accent)] hover:bg-[#1a2033]">
+            My progress
+          </button>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
         {scenarios.map((s) => (
           <div key={s.id} className="rounded-lg border border-[var(--line)] bg-[#0b0e17] p-3">

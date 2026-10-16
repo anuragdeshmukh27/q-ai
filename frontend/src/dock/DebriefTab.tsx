@@ -12,11 +12,14 @@ interface Props {
   busy?: boolean
   /** The row whose entry is open when the tab first shows (tests; a click opens one). */
   initiallyOpen?: string
+  /** A saved report opened from My progress: nothing to start again, and the report file link is given. */
+  readOnly?: boolean
+  reportLink?: string
 }
 
 /** The debrief of an attempt: the total and the score of every criterion with its judge, the evidence rows (each quotes a moment of your session), the fairness checks and what to
  *  focus on next time. A timestamp opens that entry of the session log. */
-export function DebriefTab({ model, projectId, onTryAgain, busy, initiallyOpen }: Props) {
+export function DebriefTab({ model, projectId, onTryAgain, busy, initiallyOpen, readOnly, reportLink }: Props) {
   const d = model.debrief
   const report = d?.report ?? null
   const [open, setOpen] = useState<string | null>(initiallyOpen ?? null)
@@ -31,7 +34,7 @@ export function DebriefTab({ model, projectId, onTryAgain, busy, initiallyOpen }
     <div className="grid h-full min-h-0 grid-cols-[330px_minmax(0,1fr)_340px] max-[1100px]:grid-cols-[280px_minmax(0,1fr)] max-[1100px]:overflow-y-auto" aria-label="Debrief">
       <Scores report={report} model={model} />
       <Evidence report={report} model={model} open={open} onOpen={(id) => setOpen(open === id ? null : id)} />
-      <Side report={report} projectId={projectId} onTryAgain={onTryAgain} busy={!!busy} />
+      <Side report={report} projectId={projectId} onTryAgain={onTryAgain} busy={!!busy} readOnly={!!readOnly} reportLink={reportLink} />
     </div>
   )
 }
@@ -170,7 +173,7 @@ function Row({ row, report, model, open, onOpen }: { row: ReportRow; report: Deb
   )
 }
 
-function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; projectId: string | null; onTryAgain: Props['onTryAgain']; busy: boolean }) {
+function Side({ report, projectId, onTryAgain, busy, readOnly, reportLink }: { report: DebriefReport; projectId: string | null; onTryAgain: Props['onTryAgain']; busy: boolean; readOnly: boolean; reportLink?: string }) {
   const f = report.fairness
   const checks: [boolean, string, string][] = [
     [f.quoted === f.points, 'Every point quotes a moment', `${f.quoted}/${f.points}`],
@@ -222,11 +225,11 @@ function Side({ report, projectId, onTryAgain, busy }: { report: DebriefReport; 
         </ol>
       </div>
       <div className="mt-auto flex flex-col gap-2 pt-4">
-        {report.kind !== 'demo' && <button onClick={() => void onTryAgain(report.scenario)} disabled={busy} className="rounded-lg bg-[#2f5bd6] px-3 py-2.5 text-[14px] font-bold text-white hover:bg-[#3b6af0] disabled:opacity-40">
+        {report.kind !== 'demo' && !readOnly && <button onClick={() => void onTryAgain(report.scenario)} disabled={busy} className="rounded-lg bg-[#2f5bd6] px-3 py-2.5 text-[14px] font-bold text-white hover:bg-[#3b6af0] disabled:opacity-40">
           ↻ Try again (attempt {Math.max(...report.attempts.map((a) => a.attempt)) + 1})
         </button>}
         <a
-          href={projectId ? `/api/projects/${projectId}/report?format=md` : undefined}
+          href={reportLink ?? (projectId ? `/api/projects/${projectId}/report?format=md` : undefined)}
           target="_blank"
           rel="noreferrer"
           className="rounded-lg border border-[var(--line)] px-3 py-2.5 text-center text-[14px] font-semibold text-[var(--text)] hover:bg-[#1a2033]"
