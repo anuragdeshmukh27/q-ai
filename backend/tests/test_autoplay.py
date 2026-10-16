@@ -5,14 +5,16 @@ import threading
 import time
 from pathlib import Path
 
+import psutil
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.registry import ModelRegistry
 from app.scenarios.autoplay import ScaledClock, VirtualClock
+from app.scenarios.debrief import Debrief
 from app.scenarios.reports import History
-from app.session import SessionManager
+from app.session import Session, SessionManager
 
 from api_helpers import make_settings, wait_for
 from scenario_helpers import ScenarioLLM
@@ -145,6 +147,136 @@ def test_stop_in_the_middle_ends_the_script_the_session_and_the_debrief_and_clea
     nxt = client.post(f"/api/scenarios/{ID}/autoplay", json={"variant": "weak"})  # the next run can start at once
     assert nxt.status_code == 201
     client.post(f"/api/projects/{nxt.json()['id']}/autoplay/stop")
+
+
+LIVE_THREADS = ("autoplay-", "scenario-", "incident-clock", "debrief", "ide-tests-")
+
+
+def _live_threads() -> list[str]:
+    return [t.name for t in threading.enumerate() if t.is_alive() and t.name.startswith(LIVE_THREADS)]
+
+
+def _children() -> list[int]:
+    """Every process this one started and has not seen end: a test run, the demo's own app."""
+    return [p.pid for p in psutil.Process().children(recursive=True) if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+
+
+def _catch(monkeypatch, cls, name: str, torn_down, pending: bool):
+    """Wrap `cls.name` so the test knows when an autoplay run is inside it. `pending`: the call is held until Stop has torn the session down and only then made, which is
+    a step that was in flight when Stop arrived (the real call, against a stopped build); otherwise it is made at once and Stop arrives while it works."""
+    orig = getattr(cls, name)
+    entered = threading.Event()
+
+    def wrapper(self, *a, **k):
+        first = not entered.is_set()
+        entered.set()
+        if first and pending:
+            end = time.time() + 60
+            while not torn_down(self) and time.time() < end:
+                time.sleep(0.02)
+        return orig(self, *a, **k)
+
+    monkeypatch.setattr(cls, name, wrapper)
+    return entered
+
+
+STOP_STEPS = [
+    ("edit", Session, "ide_write", lambda s: s.orch.stopped.is_set(), True),
+    ("test run, called as Stop arrives", Session, "ide_run_tests", lambda s: s.orch.stopped.is_set(), True),
+    ("test run, the suite is running", None, None, None, False),
+    ("submit, called as Stop arrives", Session, "submit_task", lambda s: s.orch.stopped.is_set(), True),
+    ("submit, the check is running", Session, "submit_task", None, False),
+    ("debrief, the meeting", None, None, None, False),
+    ("debrief, the suite is re-run", Debrief, "measure", lambda d: d._halted.is_set(), True),
+]
+
+
+@pytest.mark.parametrize("step", STOP_STEPS, ids=[s[0] for s in STOP_STEPS])
+def test_stop_during_any_kind_of_step_ends_as_stopped_and_leaves_nothing(tmp_path, monkeypatch, step):
+    """Whatever the script was doing when Stop came (an edit, a test run, a submit, the debrief), the run ends as `stopped` (never `error`), and no thread, test process or folder is left."""
+    label, cls, name, torn_down, pending = step
+    client, mgr, settings = make(tmp_path)
+    settings.debrief_pace = 30.0 if label == "debrief, the meeting" else 0.0  # the judges speak 30 s apart: Stop comes in the middle of the meeting
+    try:
+        caught = _catch(monkeypatch, cls, name, torn_down, pending) if cls else None
+        before = set(_children())
+        pid, s = watch(client, mgr, "strong")
+        if label == "test run, the suite is running":
+            wait_for(lambda: events(s, "human_test_started"), 240, "the first test run")
+        elif label == "debrief, the meeting":
+            wait_for(lambda: events(s, "debrief_started"), 400, "the meeting")
+        else:
+            wait_for(lambda: caught.is_set(), 400, f"the run to be in {name}")
+        root = s.root
+        assert root and root.is_dir()
+        r = client.post(f"/api/projects/{pid}/autoplay/stop")
+        assert r.status_code == 200 and r.json() == {"stopped": True, "state": "stopped"}, r.text
+        runner = s.autoplay
+        assert not runner.alive() and runner.state == "stopped", runner.error
+        ended = events(s, "autoplay_ended")
+        assert [e["reason"] for e in ended] == ["stopped"] and "error" not in ended[0] and runner.error == ""
+        assert not events(s, "debrief_report") and client.get(f"/api/projects/{pid}/report").status_code == 404
+        assert History(settings.workspace, ID).attempts() == [] and History(settings.workspace, ID, "demo").attempts() == []
+        assert not root.exists(), "the demo's project folder is removed"
+        assert _live_threads() == []
+        assert [p for p in _children() if p not in before] == [], "a test run or the demo's app is still going"
+    finally:
+        mgr.shutdown()
+
+
+def test_an_exception_after_stop_was_asked_is_a_stop_and_one_before_it_is_an_error():
+    """The runner's own rule, without any timing: a step that raises because Stop has just torn the build down (a closed task, a missing folder) is not a failure of the script."""
+    from types import SimpleNamespace
+    from app.scenarios.autoplay import AutoplayRunner
+    from app.scenarios.loader import load_scenario
+
+    def runner() -> AutoplayRunner:
+        bus = SimpleNamespace(history=[{"type": "human_task_assigned", "task": "T1"}])
+        bus.emit = lambda type_, **f: bus.history.append({"type": type_, **f})
+        session = SimpleNamespace(id="x", scenario=load_scenario(ID), bus=bus, _stop=threading.Event(), orch=SimpleNamespace(),
+                                  ide_tree=lambda role: {}, task_doc=lambda t: "")
+        return AutoplayRunner(session, "strong", VirtualClock())
+
+    a = runner()
+
+    def closed_by_stop():
+        a._stop.set()
+        raise RuntimeError("You have no open task for this role: nothing can be edited now.")
+
+    a.steps = [("edit", "ide", closed_by_stop)]
+    a._run()
+    assert a.state == "stopped" and a.error == "" and a.session.bus.history[-1] == {"type": "autoplay_ended", "reason": "stopped"}
+
+    b = runner()
+    b.session._stop.set()  # the session ended (its Stop, or the manager's shutdown) while the step was running
+
+    def closed_by_session():
+        raise RuntimeError("the folder is gone")
+
+    b.steps = [("edit", "ide", closed_by_session)]
+    b._run()
+    assert b.state == "stopped" and b.error == ""
+
+    c = runner()
+
+    def broken():
+        raise RuntimeError("the submit was not accepted")
+
+    c.steps = [("submit", "ide", broken)]
+    c._run()
+    assert c.state == "error" and c.error == "RuntimeError: the submit was not accepted"
+    assert c.session.bus.history[-1] == {"type": "autoplay_ended", "reason": "error", "error": c.error}
+
+
+def test_a_test_run_killed_before_it_started_never_starts(tmp_path):
+    """Stop can reach a SuiteRun between its creation and the moment its process exists: it must not run the suite then."""
+    from app.humanide import SuiteRun
+    (tmp_path / "test_x.py").write_text("def test_x():\n    open('ran', 'w').close()\n", encoding="utf-8")
+    run = SuiteRun(tmp_path, lambda line: None)
+    run.kill()
+    res = run.run()
+    assert res["ok"] is False and res["summary"] == "the test run was stopped" and not (tmp_path / "ran").exists()
+    assert run.proc is None or run.proc.poll() is not None
 
 
 def test_the_speed_switch_and_the_bad_requests(world):

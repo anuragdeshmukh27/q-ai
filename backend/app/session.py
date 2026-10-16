@@ -677,8 +677,11 @@ class Session:
         runner.stop(30)
         if self._thread:
             self._thread.join(30)
+        if isinstance(self.orch, ScenarioBuild) and self.orch.debrief:
+            self.orch.debrief.join(30)  # the meeting may be mid-sentence or mid-re-run: it ends (stop halted it) before its folder goes
         root = self.root
         if root and root.is_dir() and not runner.alive():
+            self.mgr.ports.stop(root.name)  # the app the verify stage started keeps running (and keeps `.q/app.log` open) after the build; the demo's folder cannot go while it does
             if self.orch:
                 self.orch.messages.close()
             remove_tree(root)

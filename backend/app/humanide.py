@@ -82,11 +82,15 @@ class SuiteRun:
         """Blocks until pytest ends. Returns {ok, passed, failed, tests, summary}."""
         lines: list[str] = []
         sent = 0
+        if self._killed.is_set():  # Stop came before the process existed: there is nothing to run
+            return {"ok": False, "passed": 0, "failed": 0, "tests": [], "summary": "the test run was stopped"}
         try:
             self.proc = subprocess.Popen([sys.executable, *PYTEST_ARGS], cwd=self.worktree, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                          encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"})
         except OSError as e:
             return {"ok": False, "passed": 0, "failed": 0, "tests": [], "summary": f"could not start the tests: {e}"}
+        if self._killed.is_set():  # ... or between the check and the process: kill kept the flag, and could not see a process yet
+            self.kill()
         timer = threading.Timer(self.timeout, self._timeout)
         timer.daemon = True
         timer.start()

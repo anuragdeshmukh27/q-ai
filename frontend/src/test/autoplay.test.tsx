@@ -166,6 +166,16 @@ describe('the banner', () => {
     expect(renderToStaticMarkup(<AutoplayBanner auto={bad} />)).toContain('the submit was not accepted')
   })
 
+  it('shows a Stop as stopped at its step, in the calm colour, and only an error as failed', () => {
+    const stopped = autoplayReduce(live(), ev('autoplay_ended', { reason: 'stopped' }))!
+    const html = renderToStaticMarkup(<AutoplayBanner auto={stopped} onStop={() => {}} onSpeed={() => {}} />)
+    expect(html).toContain('Strong run · stopped at step 2 of 10'); expect(html).not.toContain('finished'); expect(html).not.toContain('failed')
+    expect(html).not.toContain('Stop</button>'); expect(html).not.toContain('var(--bad)'); expect(html).toContain('width:20%')
+    const bad = autoplayReduce(live(), ev('autoplay_ended', { reason: 'error', error: 'RuntimeError: boom' }))!
+    const failed = renderToStaticMarkup(<AutoplayBanner auto={bad} />)
+    expect(failed).toContain('The scripted run failed: RuntimeError: boom'); expect(failed).toContain('var(--bad)')
+  })
+
   it('is labelled as a recording in a replay and cannot be stopped there', () => {
     const html = renderToStaticMarkup(<AutoplayBanner auto={live()} replay onStop={() => {}} onSpeed={() => {}} />)
     expect(html).toContain('Recorded autoplay demo'); expect(html).not.toContain('Stop'); expect(html).not.toContain('Autoplay speed')

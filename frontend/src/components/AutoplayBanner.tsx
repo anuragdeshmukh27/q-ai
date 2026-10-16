@@ -1,4 +1,4 @@
-import { bannerLine, type AutoplayState } from '../autoplay'
+import { bannerLine, variantLabel, type AutoplayState } from '../autoplay'
 
 interface Props {
   auto: AutoplayState
@@ -19,7 +19,13 @@ export function AutoplayBanner({ auto, replay = false, onStop, onSpeed }: Props)
         {replay ? 'Recorded autoplay demo' : 'Autoplay demo'}
       </span>
       <span className="min-w-0 truncate text-[var(--text)]">
-        {ended ? (auto.ended === 'error' ? `The scripted run stopped: ${auto.error || 'an error'}` : `${bannerLine({ ...auto, step: auto.total })} · finished`) : bannerLine(auto)}
+        {ended
+          ? auto.ended === 'error'
+            ? `The scripted run failed: ${auto.error || 'an error'}`
+            : auto.ended === 'stopped'
+              ? `${variantLabel(auto.variant)} · stopped at step ${Math.min(auto.step, auto.total)} of ${auto.total}`
+              : `${bannerLine({ ...auto, step: auto.total })} · finished`
+          : bannerLine(auto)}
       </span>
       <div className="h-[6px] w-[140px] shrink-0 overflow-hidden rounded-full bg-[#3a3012]" aria-label={`Step ${auto.step} of ${auto.total}`}>
         <div className="h-full rounded-full" style={{ width: `${ended && auto.ended === 'done' ? 100 : pct}%`, background: tone }} />

@@ -92,6 +92,7 @@ class HumanTask:
     submitting: bool = False
     base: str = ""  # the commit the person starts from (main plus the generated starting point): what they change is measured against it
     run: SuiteRun | None = None  # the test run the IDE started, while it is going
+    thread: threading.Thread | None = None  # the thread that waits for that run: Stop waits for it, so nothing of the run outlives the project folder
 
 
 class Orchestrator:
@@ -271,6 +272,9 @@ class Orchestrator:
             if ht.run is not None:
                 ht.run.kill()
             self.emit("agent_state", agent=ht.task["owner"], state="idle")
+        for ht in released:  # a killed run ends at once; wait for its thread so no test process or event comes after Stop returns
+            if ht.thread is not None and ht.thread is not threading.current_thread():
+                ht.thread.join(10)
 
     def prepare_recovery(self, agent_id: str = "") -> tuple[str, dict | None]:
         """Where a retry or a re-plan resumes, and which task it is about; ValueError (user-safe text) when nothing has stopped."""
@@ -780,8 +784,12 @@ class Orchestrator:
             self.emit("agent_state", agent=owner, state="testing")
             self.emit("human_test_started", agent=owner, task=tid)  # the IDE's test panel shows this run too
             ht.run = SuiteRun(wt, lambda line: self.emit("human_test_output", agent=owner, task=tid, line=line))
+            if self.stopped.is_set():  # Stop read `ht.run` before it was set: this run is the one to end
+                ht.run.kill()
             res = ht.run.run()
             ht.run = None
+            if self.stopped.is_set():  # nothing is reviewed or merged after Stop, and the killed run is not a red submit
+                return {"ok": False, "stage": "stopped", "summary": "The build was stopped.", "failed": [], "items": []}
             passed, summary = res["ok"], res["summary"]
             failed = [x["id"] for x in res["tests"] if x["outcome"] == "failed"]
             self.emit("human_test_result", agent=owner, task=tid, **res)
@@ -884,6 +892,18 @@ class Orchestrator:
     def ide_run_tests(self, role: str) -> dict:
         """Start the suite of the role's worktree in the background (one run at a time); the output arrives as `human_test_output` events and the outcome as `human_test_result`."""
         wt = self._ide_worktree(role)
+        announced = threading.Event()  # the result never comes before `human_test_started`
+
+        def work() -> None:
+            announced.wait()
+            try:
+                res = run.run()
+            except Exception as e:  # never leave the run flagged as going
+                res = {"ok": False, "passed": 0, "failed": 0, "tests": [], "summary": f"the test run failed: {e}"}
+            with self._human_lock:
+                ht.run = None
+            self.emit("human_test_result", agent=role, task=tid, **res)
+
         with self._human_lock:
             ht = next((h for h in self._humans.values() if h.task["owner"] == role and not h.future.done()), None)
             if ht is None:
@@ -894,18 +914,10 @@ class Orchestrator:
                 raise IDEError("Your task is being checked; run the tests when the result is in.")
             tid = ht.task["id"]
             run = ht.run = SuiteRun(wt, lambda line: self.emit("human_test_output", agent=role, task=tid, line=line))
+            ht.thread = threading.Thread(target=work, name=f"ide-tests-{role}", daemon=True)  # registered with the run, under the lock Stop takes: Stop finds both or neither
+            ht.thread.start()
         self.emit("human_test_started", agent=role, task=tid)
-
-        def work() -> None:
-            try:
-                res = run.run()
-            except Exception as e:  # never leave the run flagged as going
-                res = {"ok": False, "passed": 0, "failed": 0, "tests": [], "summary": f"the test run failed: {e}"}
-            with self._human_lock:
-                ht.run = None
-            self.emit("human_test_result", agent=role, task=tid, **res)
-
-        threading.Thread(target=work, name=f"ide-tests-{role}", daemon=True).start()
+        announced.set()
         return {"started": True, "task": tid}
 
     def _human_review(self, t: dict, wt: Path, rnd: int) -> ReviewOutput:

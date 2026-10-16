@@ -104,6 +104,7 @@ class Debrief:
         self.report: dict | None = None
         self._halted = threading.Event()
         self._thread: threading.Thread | None = None
+        self._suite: SuiteRun | None = None  # the re-run of the suite on main while it is going
         self.started = False
 
     # -- running it ---------------------------------------------------------------
@@ -116,6 +117,9 @@ class Debrief:
 
     def stop(self) -> None:
         self._halted.set()
+        suite = self._suite
+        if suite is not None:  # the re-run ends now, not when pytest is done
+            suite.kill()
 
     def join(self, timeout: float = 120.0) -> None:
         if self._thread:
@@ -142,6 +146,8 @@ class Debrief:
         if self._halted.is_set():
             return b.emit("debrief_ended", ok=False)
         facts = self.measure()
+        if self._halted.is_set():  # Stop came while the project was being measured: nothing is scored, written or kept
+            return b.emit("debrief_ended", ok=False)
         results = score(self.rubric, facts)
         report = build_report(scenario=b.scenario, rubric=self.rubric, attempt=self.attempt, project=b.root.name if b.root else "", facts=facts, results=results, names=names,
                               history=self.history.attempts(), kind=b.kind, variant=b.variant)
@@ -170,7 +176,10 @@ class Debrief:
 
     # -- what is measured after the submit -------------------------------------------------------
     def _run_suite(self, root: Path) -> dict:
-        return SuiteRun(root, lambda line: None).run()
+        self._suite = suite = SuiteRun(root, lambda line: None)
+        if self._halted.is_set():  # Stop read `_suite` before it was set: this run is the one to end
+            suite.kill()
+        return suite.run()
 
     def measure(self) -> Facts:
         """The session log plus what Q checks itself on the merged project: the suite re-run, the files that still say the old name, the learner's new test on the seed."""
@@ -181,7 +190,7 @@ class Debrief:
         rerun: dict | None = None
         regression: dict | None = None
         rule = next((r for c in self.rubric.criteria for r in c.rules if r.id == "old_name_gone"), None)
-        if root and Path(root).is_dir():
+        if root and Path(root).is_dir() and not self._halted.is_set():
             if rule:
                 old_name_files = scan_old_name(root, str(rule.params.get("folder", "backend")), str(rule.params.get("old_name", "")))
             try:
@@ -189,7 +198,7 @@ class Debrief:
             except Exception:  # the suite could not be started: the rubric says so, the score does not guess
                 rerun = None
             saved = [e["path"] for e in log if e["kind"] == "file_saved" and fnmatch.fnmatch(str(e.get("path", "")), REGRESSION_GLOB)]
-            if saved and (Path(root) / saved[-1]).is_file():
+            if saved and (Path(root) / saved[-1]).is_file() and not self._halted.is_set():
                 rel = saved[-1]
                 mine = [t for t in (rerun or {}).get("tests", []) if t["id"].startswith(rel + "::")]
                 failed_on_seed, seed_summary = run_on_seed(b.scenario.seed_dir, root, rel)

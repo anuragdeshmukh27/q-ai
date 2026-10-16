@@ -173,8 +173,12 @@ class AutoplayRunner:
         return self.session.bus.emit(type_, **fields)
 
     # -- waiting: in session time, so a speed or a clock change never changes what the run does ------------
+    def stopping(self) -> bool:
+        """Stop was pressed (or the session is ending): from here on, whatever a step raises is the teardown reaching it, not a fault of the script."""
+        return self._stop.is_set() or self.session._stop.is_set()
+
     def _check(self) -> None:
-        if self._stop.is_set() or self.session._stop.is_set():
+        if self.stopping():
             raise Stopped()
 
     def pause(self, seconds: float) -> None:
@@ -298,7 +302,10 @@ class AutoplayRunner:
         except Stopped:
             self.state, reason = "stopped", "stopped"
         except Exception as e:  # a script that cannot go on says so and ends: the session stays as it is
-            self.state, reason, self.error = "error", "error", f"{type(e).__name__}: {e}"[:300]
+            if self.stopping():  # a step that was in flight when Stop tore the build down (its task is closed, its folder going): the run was stopped, it did not fail
+                self.state, reason = "stopped", "stopped"
+            else:
+                self.state, reason, self.error = "error", "error", f"{type(e).__name__}: {e}"[:300]
         finally:
             self.emit("autoplay_ended", reason=reason, **({"error": self.error} if self.error else {}))
 
