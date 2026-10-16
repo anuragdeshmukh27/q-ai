@@ -12,6 +12,7 @@ import threading
 import time
 from pathlib import Path
 
+from .jobs.report import job_markdown
 from .rubric import Rubric
 from .scoring import CriterionResult, Facts, clock, event_text, note_matches, source_label
 from .wording import Dropped, quote_matches
@@ -161,6 +162,7 @@ def render_markdown(report: dict, names: dict[str, str]) -> str:
         for r in (x for x in report["rows"] if x["criterion"] == c["id"]):
             lines += [f"- **{r['kind'].upper()}** {clock(r['t'])} · {r['source']} · {r['event']}: “{r['quote']}”", f"  {r['note']}" + (f" Next attempt: {r['advice']}" if r["advice"] else "") + " [rule]"]
         lines.append("")
+    lines += job_markdown(report)
     f = report["fairness"]
     rerun = f["tests_rerun"]
     lines += ["## Fairness checks", "", f"- Points that quote a moment: {f['quoted']}/{f['points']}", f"- Quotes matched to the session log: {f['matched']}/{f['points']}",

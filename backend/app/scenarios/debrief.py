@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable
 
 from ..humanide import SuiteRun, summary_line
 from .measures import MEASURES
+from .jobs.report import attach_job
 from .reports import History, attach_voices, build_report, write_report
 from .rubric import Rubric
 from .scoring import Facts, clock, score
@@ -151,6 +152,8 @@ class Debrief:
         results = score(self.rubric, facts)
         report = build_report(scenario=b.scenario, rubric=self.rubric, attempt=self.attempt, project=b.root.name if b.root else "", facts=facts, results=results, names=names,
                               history=self.history.attempts(), kind=b.kind, variant=b.variant)
+        if b.job:  # started from a job description: the role-fit block is added; the standard score and every row above are final and untouched
+            attach_job(report, b.job)
         # the points are final: the model only says them aloud (each judge's line, the coach paragraph), and a line that says anything else is dropped
         moments = {c["id"]: m for c in report["criteria"] if (m := moment_of(c, report["rows"]))}
         lines, coach, dropped, reason = build_voices(report, self.wordsmith, moments, lambda c: judge_post(c, report["rows"]))

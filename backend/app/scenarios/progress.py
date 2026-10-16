@@ -44,7 +44,8 @@ def _real_attempts(workspace: Path, scenario_id: str) -> list[dict]:
         if a.get("kind") == "demo" or not isinstance(scores, dict) or isinstance(a.get("total"), bool) or not isinstance(a.get("total"), (int, float)):
             continue
         out.append({"attempt": a["attempt"], "total": a["total"], "scores": {k: int(v) for k, v in scores.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
-                    "date": str(a.get("finished_at") or ""), "elapsed": _num(a.get("elapsed")), "project": str(a.get("project") or "")})
+                    "date": str(a.get("finished_at") or ""), "elapsed": _num(a.get("elapsed")), "project": str(a.get("project") or ""),
+                    **({"role_fit": int(a["role_fit"]), "job_role": str(a.get("job_role") or "")} if isinstance(a.get("role_fit"), int) and not isinstance(a.get("role_fit"), bool) else {})})  # role fit: extra information, never the score
     return out
 
 
@@ -130,6 +131,10 @@ def _weakest(workspace: Path, skills: list[dict], flat: list[tuple[dict, dict]])
     return {"skill": s["id"], "name": s["name"], "average": s["average"], "latest": s["latest"], "max": s["max"], "gap": gap, "reason": reason}
 
 
+def _fit(a: dict) -> str:
+    return f" (role fit {a['role_fit']}{' for ' + a['job_role'] if a.get('job_role') else ''})" if "role_fit" in a else ""
+
+
 def _score(value: float) -> str:
     return f"{value:.1f}".rstrip("0").rstrip(".") if value % 1 else str(int(value))
 
@@ -174,7 +179,7 @@ def render_markdown(p: dict) -> str:
             lines += ["Not attempted yet.", ""]
             continue
         lines += [f"Best score {s['best_score']}/{s['max']} · best time {clock(s['best_time'])}", "", "| Attempt | Score | Date | Time |", "| --- | --- | --- | --- |",
-                  *[f"| {a['attempt']} | {a['total']}/{a['max']} | {a['date'].replace('T', ' ')} | {clock(a['elapsed'])} |" for a in s["attempts"]], ""]
+                  *[f"| {a['attempt']} | {a['total']}/{a['max']}{_fit(a)} | {a['date'].replace('T', ' ')} | {clock(a['elapsed'])} |" for a in s["attempts"]], ""]
     lines += ["## Skills across all scenarios", "", "| Skill | Latest | Average | Trend |", "| --- | --- | --- | --- |",
               *[f"| {k['name']} | {'-' if k['latest'] is None else str(k['latest']) + '/' + str(k['max'])} | {'-' if k['average'] is None else _score(k['average']) + '/' + str(k['max'])} | {k['trend']} |" for k in p["skills"]], ""]
     w = p["weakest"]
