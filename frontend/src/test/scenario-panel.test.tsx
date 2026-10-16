@@ -75,6 +75,15 @@ describe('the left panel while a scenario runs', () => {
     expect(left(run({ kind: 'demo', autoplay: true, ended: true }))).not.toContain('Back to the scenarios') // the script is still playing: its debrief goes on
   })
 
+  it('offers My progress (wired to the progress page) next to the way back when the run ends, and not before', () => {
+    const over = left(run({ ended: true }), { onProgress: () => {} })
+    expect(over).toContain('Back to the scenarios'); expect(over).toMatch(/<button[^>]*>My progress<\/button>/)
+    expect(left(run({ ended: true }))).not.toContain('My progress') // no page to open: no button
+    expect(over.indexOf('Back to the scenarios')).toBeLessThan(over.indexOf('My progress'))
+    expect(left(run(), { onProgress: () => {} })).not.toContain('My progress') // while the incident runs there is only the task
+    expect(left(run({ kind: 'demo', autoplay: true, ended: true }), { onProgress: () => {} })).not.toContain('My progress') // a script still playing: its debrief goes on
+  })
+
   it('keeps the live-build column for a normal build', () => {
     const html = left(new OfficeModel(), { hasProject: false })
     expect(html).not.toContain('aria-label="Scenario"')

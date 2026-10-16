@@ -116,7 +116,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   const board = model.board
   if (showsScenarioPanel(model.scenario, left)) {
     const over = !!model.scenario && scenarioRunEnded(model.scenario, !!model.finished, !!model.autoplay?.active)
-    return <ScenarioPanel model={model} replay={replay} projectId={projectId} onSubmit={onSubmit} onCopyPath={onCopyPath} onBack={over ? () => setLeft(runKey) : undefined} />
+    return <ScenarioPanel model={model} replay={replay} projectId={projectId} onSubmit={onSubmit} onCopyPath={onCopyPath} onBack={over ? () => setLeft(runKey) : undefined} onProgress={over ? onProgress : undefined} />
   }
   return (
     <aside className="flex w-[318px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--line)] bg-[var(--panel)] p-3">

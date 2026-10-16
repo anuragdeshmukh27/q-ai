@@ -8,6 +8,8 @@ interface Props {
   projectId: string | null
   /** Set when the run is over: the way back to the scenario picker. */
   onBack?: () => void
+  /** Open My progress (the progress page) straight from the end of a run. */
+  onProgress?: () => void
   onSubmit: (task: string) => Promise<void>
   onCopyPath: (path: string) => void
 }
@@ -18,7 +20,7 @@ function Heading({ children }: { children: string }) {
 
 /** The left panel while a scenario runs (a real attempt or a script playing it): the scenario, the task with Submit, Priya's progress and the hints used.
  *  A normal build keeps the goal column (LeftPanel); this replaces it for the length of the incident. */
-export function ScenarioPanel({ model, replay, projectId, onBack, onSubmit, onCopyPath }: Props) {
+export function ScenarioPanel({ model, replay, projectId, onBack, onProgress, onSubmit, onCopyPath }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null)
   const s = model.scenario
   if (!s) return null
@@ -146,6 +148,11 @@ export function ScenarioPanel({ model, replay, projectId, onBack, onSubmit, onCo
           <button onClick={onBack} className="h-9 w-full rounded-lg border border-[var(--accent)] text-[13.5px] font-bold text-[var(--text)] hover:bg-[#16213f]">
             Back to the scenarios
           </button>
+          {onProgress && (
+            <button onClick={onProgress} title="Your real attempts across the scenarios: scores, skills, what to practise next" className="mt-2 h-9 w-full rounded-lg border border-[var(--line)] text-[13.5px] font-bold text-[var(--accent)] hover:bg-[#1a2033]">
+              My progress
+            </button>
+          )}
         </div>
       )}
     </aside>
