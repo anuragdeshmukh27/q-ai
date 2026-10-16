@@ -32,6 +32,8 @@ export function ScoreLine({ scenario }: { scenario: ProgressScenario }) {
     <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Score over attempts: ${scenario.attempts.map((a) => a.total).join(', ')}`} className="mt-2 w-full">
       <line x1="8" x2={w - 8} y1="8" y2="8" stroke="#222a40" strokeDasharray="3 4" />
       <line x1="8" x2={w - 8} y1={h - 8} y2={h - 8} stroke="#222a40" />
+      <text x={w - 8} y="6" textAnchor="end" fontSize="9" fill="#8a93aa">{scenario.max}</text>
+      <text x={w - 8} y={h - 10} textAnchor="end" fontSize="9" fill="#8a93aa">0</text>
       {pts.length > 1 && <path d={linePath(pts)} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" />}
       {pts.map((p, i) => (
         <g key={scenario.attempts[i].attempt}>
@@ -272,6 +274,8 @@ export function ProgressPage({ onClose, onStart, busy, onError }: PageProps) {
   const viewModel = useMemo(() => {
     if (!report) return null
     const m = new OfficeModel()
+    // the judges' names come from the report (this model has no team), so "architect" reads Aarav
+    m.setRoster([...new Map(report.criteria.map((c) => [c.judge, c])).values()].map((c, i) => ({ id: c.judge, name: c.judge_name, role: c.judge, desk: [i, 0] as [number, number], sprite: { palette: 'teal', accessory: 'none' } })))
     m.debrief = { phase: 'done', attempt: report.attempt, judges: [], report }
     return m
   }, [report])
