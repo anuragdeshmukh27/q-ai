@@ -1,0 +1,20 @@
+{
+  "name": "simulation-form-says-saved-strong",
+  "goal": "The form says it saved at the Hospital OPD",
+  "ok": true,
+  "problems": [],
+  "preset": "fastapi-vanilla",
+  "recorded_at": "2026-10-16 11:42:30",
+  "seconds": 213,
+  "events": 838,
+  "llm_calls": 2,
+  "models": [
+    "qwen2.5-coder:7b"
+  ],
+  "snapshot": true,
+  "title": "Simulation: The form says it saved (strong)",
+  "app": "Hospital OPD",
+  "feature": "Strong run: the server's answer first, one fix in the request function, a regression test, 100/100",
+  "kind": "scenario",
+  "variant": "strong"
+}
