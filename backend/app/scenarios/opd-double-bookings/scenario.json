@@ -6,6 +6,7 @@
   "minutes": 30,
   "level": "Advanced",
   "rubric": "opd-double-bookings-v1",
+  "fit": {"domain": "healthcare", "skills": ["sql", "sqlite", "database migrations", "indexing", "data modeling", "python", "pytest", "debugging"]},
   "goal": "Double bookings at the Hospital OPD",
   "brief": "It is Thursday, 08:20. The front desk of the Hospital OPD reports that two patients were booked with the same doctor at the same date and time. It has happened several times this week and the morning clinic opens at 09:00: two people turn up for one slot.\n\nYou are the Database engineer on call. Karan's seat is yours. The app is finished and its tests are in the repo, and there is a snapshot of the production data in fixtures/prod_snapshot.sql. Find out why the database lets it happen, and ship a migration that (a) cleans up the double bookings that already exist without deleting any appointment, and (b) makes sure it cannot happen again. Submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-duplicates. Ananya (QA) has the report with the real rows, Aarav (lead) wants updates, Rohan owns backend/ (read-only for you) and helps if you ask. Every question you ask is counted.",
   "seed": {"dir": "seed", "preset": "fastapi-vanilla"},

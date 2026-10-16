@@ -127,6 +127,12 @@ class GuideStep(BaseModel):
     advance_on: Advance
 
 
+class FitInfo(BaseModel):
+    """What a job description is matched against (jobs/match.py): the domain of the app and the skills the incident exercises, in the vocabulary of jobs/vocab.py."""
+    domain: str = Field(min_length=2)
+    skills: list[str] = Field(min_length=1)
+
+
 class Scenario(BaseModel):
     id: str
     title: str = Field(min_length=3)
@@ -135,6 +141,7 @@ class Scenario(BaseModel):
     minutes: int = Field(gt=0)
     level: str = ""
     rubric: str
+    fit: FitInfo | None = None  # optional: without it the scenario is not offered for a job description
     goal: str = Field(min_length=3, max_length=1000)
     brief: str = Field(min_length=20)
     seed: SeedInfo

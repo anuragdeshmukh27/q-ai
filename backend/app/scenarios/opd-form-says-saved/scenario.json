@@ -6,6 +6,7 @@
   "minutes": 25,
   "level": "Intermediate",
   "rubric": "opd-form-says-saved-v1",
+  "fit": {"domain": "healthcare", "skills": ["javascript", "html", "css", "dom", "rest api", "error handling", "ui testing", "debugging"]},
   "goal": "The form says it saved at the Hospital OPD",
   "brief": "It is Friday, 08:35. Since the double-bookings fix went live the database refuses a second booking for a slot, and the API says so: 409 and a message. But the front desk reports that the booking form still closes with a green 'Appointment added' for a slot that was taken, and no booking appears. Two patients have already turned up for appointments that do not exist. The morning clinic opens at 09:00.\n\nYou are the Frontend engineer on call. Meera's seat is yours. The pages of the Hospital OPD manager are in static/ (the shell, app.js, the styles) and the tests of the pages run in Node from tests/ui. The backend and the database are finished and tested: they are read-only for you, Rohan owns backend/ and helps if you ask. Find out what the page does with the server's answer, fix it everywhere the same mistake is made, and add a regression test. Submit your work: Q runs every test, the Reviewer reads your change, and the Integrator merges it.\n\nThe team is in #incident-frontdesk. Ananya (QA) has the steps, Aarav (lead) wants updates. Every question you ask is counted.",
   "seed": {"dir": "seed", "preset": "fastapi-vanilla"},
