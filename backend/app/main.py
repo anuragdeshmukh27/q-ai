@@ -5,11 +5,12 @@ Q_MODE=live (default) | record (every live build is recorded) | replay (every bu
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from .approvals import UnknownApproval
@@ -21,6 +22,8 @@ from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
 from .recording import RecordingError, list_recordings, load_recording
 from .scenarios.loader import ScenarioError, list_scenarios
+from .scenarios.progress import build_progress, read_report, render_markdown, report_path
+from .scenarios.reports import History
 from .session import CreateRequest, Session, SessionError, SessionManager, Settings
 
 ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -295,6 +298,45 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
             raise SessionError("format must be json or md")
         out = session(pid).report(markdown=format == "md")
         return PlainTextResponse(out, media_type="text/plain; charset=utf-8") if format == "md" else out
+
+    # -- my progress: the learner's real attempts across the scenarios (demo runs never count) ----------------------------
+    @app.get("/api/progress")
+    def progress():
+        """Everything the My progress page shows: attempts per scenario, the five skills, the weakest one with a gap quoted from its report, the suggested next step."""
+        return build_progress(mgr.settings.workspace)
+
+    @app.get("/api/progress/export")
+    def progress_export(format: str = "json"):
+        """The same data as a download: `?format=md` or `json`."""
+        if format not in ("json", "md"):
+            raise SessionError("format must be json or md")
+        data = build_progress(mgr.settings.workspace)
+        body, media = (render_markdown(data), "text/markdown; charset=utf-8") if format == "md" else (json.dumps(data, indent=1), "application/json")
+        return Response(body, media_type=media, headers={"Content-Disposition": f'attachment; filename="q-progress.{format}"'})
+
+    @app.get("/api/progress/report/{scenario}/{attempt}")
+    def progress_report(scenario: str, attempt: int, format: str = "json"):
+        """The saved report of one of the learner's real attempts (404 when the history has no such attempt or the report file is gone; a demo's is never served)."""
+        if format not in ("json", "md"):
+            raise SessionError("format must be json or md")
+        record = next((a for a in History(mgr.settings.workspace, scenario).attempts() if a["attempt"] == attempt and a.get("kind") != "demo"), None)
+        report = read_report(mgr.settings.workspace, str(record.get("project", "")), attempt, scenario) if record else None
+        if report is None:
+            raise SessionError("That report is no longer saved.", 404)
+        if format == "json":
+            return report
+        path = report_path(mgr.settings.workspace, record["project"], attempt, "md")
+        try:
+            return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
+        except (OSError, AttributeError):
+            raise SessionError("That report is no longer saved.", 404) from None
+
+    @app.delete("/api/progress")
+    def progress_reset():
+        """Clear the learner's attempt history. Demo histories, saved reports and recordings stay; refused while a debrief is still writing the history."""
+        if mgr.debrief_running():
+            raise SessionError("A debrief is still going; reset when it has finished.", 409)
+        return {"cleared": History.clear_learner(mgr.settings.workspace)}
 
     @app.get("/api/projects/{pid}/tasks/{tid}/guide")
     def task_guide(pid: str, tid: str):

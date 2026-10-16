@@ -51,6 +51,18 @@ class History:
             return items
 
 
+    @staticmethod
+    def clear_learner(base: Path) -> int:
+        """Remove the learner's attempt history of every scenario (`<scenario>.json`) and report how many files went. Demo histories (`*-demo.json`), the saved reports in the project
+        folders and the recordings are not touched."""
+        folder = Path(base) / ".q-attempts"
+        with _lock:
+            files = [p for p in folder.glob("*.json") if not p.name.endswith("-demo.json")] if folder.is_dir() else []
+            for p in files:
+                p.unlink(missing_ok=True)
+        return len(files)
+
+
 def _clip(text: str, n: int = QUOTE_CHARS) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"

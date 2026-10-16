@@ -826,6 +826,14 @@ class SessionManager:
         s.autoplay = AutoplayRunner(s, variant, clock, speed).start()
         return s
 
+    def debrief_running(self) -> bool:
+        """A scenario's debrief is still going (it writes the attempt history when it ends)."""
+        for s in list(self.sessions.values()):
+            d = s.orch.debrief if isinstance(s.orch, ScenarioBuild) else None
+            if d is not None and d._thread is not None and d._thread.is_alive():
+                return True
+        return False
+
     def shutdown(self) -> None:
         for s in self.sessions.values():
             s.stop()
