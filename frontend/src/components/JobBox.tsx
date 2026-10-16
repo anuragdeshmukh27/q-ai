@@ -19,6 +19,9 @@ export interface JobViewProps {
   onStart: (id: string) => void
 }
 
+/** Below this score nothing really fits the job: the top row says "closest match", not "best fit". */
+export const FIT_FLOOR = 30
+
 const chip = 'rounded-full border border-[var(--line)] px-2 py-[1px]'
 
 /** The "Start from a job description" box: paste a posting (or pick a sample), see how Q read it, and which scenario fits it and why. Presentational: JobBox holds the state. */
@@ -96,7 +99,7 @@ export function JobBoxView({ samples, text, sampleId, reading, error, analysis, 
                     <span className="ml-auto shrink-0 text-[13px] font-bold tabular-nums">{m.score}/100</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--muted)]">
-                    {best && <span className="rounded border border-[var(--good)] px-1 text-[10.5px] font-bold uppercase text-[var(--good)]">best fit</span>}
+                    {best && <span className="rounded border border-[var(--good)] px-1 text-[10.5px] font-bold uppercase text-[var(--good)]">{m.score >= FIT_FLOOR ? 'best fit' : 'closest match'}</span>}
                     {s && <span>You play: {ROLE_LABEL[s.role] ?? s.role}</span>}
                     <span title="role / skills / domain">role {m.parts.role} · skills {m.parts.skills} · domain {m.parts.domain}</span>
                   </div>

@@ -107,6 +107,11 @@ describe('the Start from a job description box', () => {
     expect(html).toContain('You play: Backend engineer'); expect(html).toContain('You play: Frontend engineer')
     expect(html).toContain('Start this scenario for this job'); expect(html.match(/Pick this one instead/g)).toHaveLength(2) // the learner can pick another card
   })
+  it('calls the top row the closest match when nothing really fits the job', () => {
+    const weak = { ...ANALYSIS, ranking: ANALYSIS.ranking.map((m, i) => ({ ...m, score: 10 - i, parts: { role: 0, skills: 10 - i, domain: 0 } })) }
+    const html = view({ text: 'x', analysis: weak })
+    expect(html).toContain('closest match'); expect(html).not.toContain('best fit')
+  })
   it('locks every Start while a run is starting', () => {
     const html = view({ text: 'x', analysis: ANALYSIS, busy: true })
     expect(html.match(/<button[^>]*disabled=""[^>]*>Starting…/g)).toHaveLength(3)
