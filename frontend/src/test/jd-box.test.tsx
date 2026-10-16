@@ -4,7 +4,7 @@ import { JobBoxView, type JobViewProps } from '../components/JobBox'
 import { LeftPanel } from '../components/LeftPanel'
 import { ProgressView } from '../components/ProgressPage'
 import { DebriefTab, RoleFit } from '../dock/DebriefTab'
-import { MAX_JD_CHARS, clipJd, counter, jobRequest, readerLabel, readerNote, seniorityLabel, stressed, weightText, type JobAnalysis, type JobExtraction, type ReportJob } from '../jobs'
+import { MAX_JD_CHARS, NOT_SOFTWARE_NOTE, clipJd, counter, jobRequest, readerLabel, readerNote, seniorityLabel, stressed, weightText, type JobAnalysis, type JobExtraction, type ReportJob } from '../jobs'
 import { OfficeModel, type AgentInfo, type QEvent } from '../model'
 import type { Progress } from '../progress'
 import type { DebriefReport, ScenarioInfo } from '../scenario'
@@ -111,6 +111,16 @@ describe('the Start from a job description box', () => {
     const weak = { ...ANALYSIS, ranking: ANALYSIS.ranking.map((m, i) => ({ ...m, score: 10 - i, parts: { role: 0, skills: 10 - i, domain: 0 } })) }
     const html = view({ text: 'x', analysis: weak })
     expect(html).toContain('closest match'); expect(html).not.toContain('best fit')
+  })
+  it('says clearly that a posting that is not a software job is not one, keeps its own title and shows no made-up app idea', () => {
+    const sales: JobExtraction = { role: 'Sales Executive', role_family: 'other', seniority: 'mid', domain: 'not stated', skills: [], soft_skills: [], app_idea: '', software_job: false, source: 'keywords', reason: 'the posting names no software skill, role or tool' }
+    const ranking = ANALYSIS.ranking.map((m, i) => ({ ...m, score: 0, parts: { role: 0, skills: 0, domain: 0 }, shared_skills: [], reason: 'The posting (Sales Executive) is not a software engineering job, so no seat fits it.', rank: i + 1 }))
+    const html = view({ text: 'x', analysis: { ...ANALYSIS, extraction: sales, ranking } })
+    expect(html).toContain('This does not look like a software engineering job; the closest scenario is shown.'); expect(html).toContain(NOT_SOFTWARE_NOTE)
+    expect(html).toContain('Sales Executive'); expect(html).not.toContain('Software engineer'); expect(html).not.toContain('fintech'); expect(html).not.toContain('payments service')
+    expect(html).not.toContain('App idea'); expect(html).toContain('domain: not stated')
+    expect(html.match(/closest match/g)).toHaveLength(1); expect(html).not.toContain('best fit')
+    expect(view({ text: 'x', analysis: ANALYSIS })).not.toContain('does not look like a software engineering job') // a software posting gets no such note
   })
   it('locks every Start while a run is starting', () => {
     const html = view({ text: 'x', analysis: ANALYSIS, busy: true })

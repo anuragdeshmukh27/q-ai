@@ -17,6 +17,8 @@ export interface JobExtraction {
   skills: string[]
   soft_skills: string[]
   app_idea: string
+  /** False when the posting is not for a software engineering job (its own title, no made-up domain or app idea). Absent in readings saved before this field existed: those are software jobs. */
+  software_job?: boolean
   source: 'model' | 'keywords'
   reason: string
 }
@@ -94,6 +96,9 @@ export function readerNote(e: Pick<JobExtraction, 'source' | 'reason'>): string 
   if (e.source === 'model') return 'Read by the local model; every skill it named is in your text.'
   return e.reason ? `The model was not used: ${e.reason}.` : 'Read by the deterministic keyword reader.'
 }
+
+/** What the box says about a posting that is not a software job. */
+export const NOT_SOFTWARE_NOTE = 'This does not look like a software engineering job; the closest scenario is shown.'
 
 /** The body of a start request for the analysis the person is looking at. */
 export function jobRequest(a: JobAnalysis, text: string): JobRequest {

@@ -40,7 +40,9 @@ def candidates(extraction: JobExtraction | None = None, scenarios: list[Scenario
 
 def score_one(e: JobExtraction, c: Candidate) -> Match:
     seat = FAMILY_NAME[c.role_family]
-    if e.role_family == c.role_family:
+    if not e.software_job:
+        role, why_role = 0, f"the posting ({e.role}) is not a software engineering job, so no seat fits it"
+    elif e.role_family == c.role_family:
         role, why_role = ROLE_POINTS, f"the posting's role ({e.role}) matches the {seat} seat"
     elif e.role_family == "fullstack" and c.role_family in ("backend", "frontend"):
         role, why_role = FULLSTACK_POINTS, f"a full-stack posting partly fits the {seat} seat"

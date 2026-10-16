@@ -19,7 +19,8 @@ class JobExtraction(BaseModel):
     domain: str = Field(min_length=2, max_length=60)
     skills: list[str] = Field(default_factory=list, max_length=MAX_SKILLS)  # canonical names (vocab.SKILLS)
     soft_skills: list[str] = Field(default_factory=list, max_length=6)  # labels of vocab.SIGNALS
-    app_idea: str = Field(min_length=5, max_length=200)  # one line: the app Q would build for this domain (Part B)
+    app_idea: str = Field(default="", max_length=200)  # one line: the app Q would build for this domain (Part B); empty when the posting is not a software job
+    software_job: bool = True  # False: the posting is not for a software engineering role (the role is its own title, no domain or app idea is made up, the closest scenario is only a closest)
     source: Literal["model", "keywords"] = "keywords"
     reason: str = ""  # why the keyword reader was used, "" for the model
 

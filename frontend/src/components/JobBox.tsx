@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { MAX_JD_CHARS, clipJd, counter, jobRequest, readerLabel, readerNote, seniorityLabel, type JobAnalysis, type JobRequest, type JobSample } from '../jobs'
+import { MAX_JD_CHARS, NOT_SOFTWARE_NOTE, clipJd, counter, jobRequest, readerLabel, readerNote, seniorityLabel, type JobAnalysis, type JobRequest, type JobSample } from '../jobs'
 import type { ScenarioInfo } from '../scenario'
 import { ROLE_LABEL } from './ScenarioPicker'
 
@@ -27,6 +27,7 @@ const chip = 'rounded-full border border-[var(--line)] px-2 py-[1px]'
 /** The "Start from a job description" box: paste a posting (or pick a sample), see how Q read it, and which scenario fits it and why. Presentational: JobBox holds the state. */
 export function JobBoxView({ samples, text, sampleId, reading, error, analysis, scenarios, busy, onText, onSample, onRead, onStart }: JobViewProps) {
   const e = analysis?.extraction
+  const software = e?.software_job !== false
   const byId = new Map(scenarios.map((s) => [s.id, s]))
   return (
     <section aria-label="Start from a job description" className="mb-3 rounded-lg border border-[var(--line)] bg-[#0b0e17] p-3">
@@ -72,11 +73,12 @@ export function JobBoxView({ samples, text, sampleId, reading, error, analysis, 
             {analysis.job.clipped && <span className={`${chip} text-[var(--warn)]`}>cut at {MAX_JD_CHARS.toLocaleString('en-US')} characters</span>}
           </div>
           <div className="mt-1 text-[12px] leading-snug text-[var(--muted)]">{readerNote(e)}</div>
+          {!software && <div role="note" className="mt-2 rounded-md border border-[var(--warn)] px-2 py-1.5 text-[12.5px] font-semibold leading-snug text-[var(--warn)]">{NOT_SOFTWARE_NOTE}</div>}
           <div className="mt-2 text-[13.5px] font-bold leading-snug">{e.role}</div>
           <div className="mt-1 flex flex-wrap gap-1.5 text-[11.5px] text-[var(--muted)]">
             <span className={chip}>{seniorityLabel(e.seniority)}</span>
             <span className={chip}>domain: {e.domain}</span>
-            <span className={chip}>{ROLE_LABEL[e.role_family] ?? e.role_family}</span>
+            {software && <span className={chip}>{ROLE_LABEL[e.role_family] ?? e.role_family}</span>}
           </div>
           {e.skills.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]" aria-label="Skills it asks for">
@@ -84,7 +86,7 @@ export function JobBoxView({ samples, text, sampleId, reading, error, analysis, 
             </div>
           )}
           {e.soft_skills.length > 0 && <div className="mt-1.5 text-[12px] text-[var(--muted)]">Also asks for: {e.soft_skills.join(', ')}</div>}
-          <div className="mt-1.5 text-[12px] text-[var(--muted)]">App idea for this domain: {e.app_idea}</div>
+          {software && e.app_idea && <div className="mt-1.5 text-[12px] text-[var(--muted)]">App idea for this domain: {e.app_idea}</div>}
 
           <div className="mt-3 text-[11px] font-semibold tracking-wider text-[var(--muted)]">SCENARIOS RANKED FOR THIS JOB</div>
           <ol className="mt-1.5 flex flex-col gap-2" aria-label="Ranking">
@@ -99,7 +101,7 @@ export function JobBoxView({ samples, text, sampleId, reading, error, analysis, 
                     <span className="ml-auto shrink-0 text-[13px] font-bold tabular-nums">{m.score}/100</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--muted)]">
-                    {best && <span className="rounded border border-[var(--good)] px-1 text-[10.5px] font-bold uppercase text-[var(--good)]">{m.score >= FIT_FLOOR ? 'best fit' : 'closest match'}</span>}
+                    {best && <span className="rounded border border-[var(--good)] px-1 text-[10.5px] font-bold uppercase text-[var(--good)]">{software && m.score >= FIT_FLOOR ? 'best fit' : 'closest match'}</span>}
                     {s && <span>You play: {ROLE_LABEL[s.role] ?? s.role}</span>}
                     <span title="role / skills / domain">role {m.parts.role} · skills {m.parts.skills} · domain {m.parts.domain}</span>
                   </div>

@@ -155,3 +155,11 @@ def normalise_domain(value: str) -> str:
         if v == name.replace("-", "") or any(w in v for w in words):
             return name
     return v or "general software"
+
+
+# words that say a posting is about building or running software, apart from the skills of SKILLS and the role cues of FAMILY_CUES: without any of them a posting is not read as a software job
+TECH_CUES: tuple[str, ...] = ("software", "developer", "programmer", "programming", "coding", "codebase", "source code", "web app", "web application", "mobile app", "api", "apis", "devops",
+                              "full-stack", "full stack", "frontend", "front-end", "backend", "back-end", "database", "sysadmin", "data engineer", "machine learning", "qa engineer", "sdet")
+
+# skills whose words are everyday English too ("react quickly", "monitoring patients", "error handling" in a complaints desk): alone they do not make a posting a software job
+EVERYDAY_SKILLS = frozenset({"react", "monitoring", "debugging", "error handling", "dom", "indexing", "accessibility", "responsive design", "data modeling", "database migrations", "ui testing", "git", "linux"})

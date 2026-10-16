@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from .modelcall import EXTRACT_TIMEOUT, READ_GATE, ModelGate
 from .schema import MAX_JD_CHARS, MAX_SKILLS, JobExtraction
-from .vocab import DOMAINS, FAMILIES, FAMILY_CUES, FAMILY_NAME, SENIORITY, SENIORITY_CUES, SIGNALS, SKILLS, SOFT_SKILLS, find_skills, normalise_domain, signal_hits
+from .vocab import DOMAINS, EVERYDAY_SKILLS, FAMILIES, FAMILY_CUES, FAMILY_NAME, SENIORITY, SENIORITY_CUES, SIGNALS, SKILLS, SOFT_SKILLS, TECH_CUES, find_skills, normalise_domain, signal_hits
 
 HEAD_CHARS = 200  # the first lines of a posting are its title: its words weigh more
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -68,6 +68,30 @@ def pick_title(text: str, family: str) -> str:
     return FAMILY_NAME[family]
 
 
+def is_software_job(text: str, skills: list[str]) -> bool:
+    """A posting is for a software job when it names a skill of the vocabulary (one that is not also everyday English), a phrase that names a role family, or a word that says software is built or run (`TECH_CUES`). "Engineer" in a title is not
+    enough on its own: a civil engineer is not one."""
+    return any(k not in EVERYDAY_SKILLS for k in skills) or any(family_scores(text).values()) or any(_count(text, c) for c in TECH_CUES)
+
+
+_ASKING = re.compile(r"\b(?:looking for|hiring|seeking|searching for|need|needs|wanted|want|recruiting)\s+(?:an?\s+|the\s+)?([A-Za-z][A-Za-z&/' -]{2,40}?)(?=\s+(?:to|who|with|for|in|at|on|and|that)\b|[.,;:!]|$)", re.I)
+
+
+def own_title(text: str) -> str:
+    """The title of a posting that is not a software job, as the posting words it: the first line up to a colon, dash or bar ("Sales Executive: we need ..." is Sales Executive), else the
+    person it asks for ("we are hiring a registered nurse to ..."), else "Not stated"."""
+    for line in [x for x in text.splitlines() if x.strip()][:3]:
+        line = re.sub(r"^(job title|title|position|role|vacancy|opening)\s*[:\-]\s*", "", line.strip(), flags=re.I)
+        head = re.split(r"\s*[:|–—]\s*|\s+-\s+|\s+(?:at|@)\s+", line)[0].strip(" -–—|:.,")
+        head = re.sub(r"\s*[\(\[].*$", "", head).strip()
+        if 3 <= len(head) <= 60 and len(head.split()) <= 6 and not re.search(r"\b(?:we|you|our|is|are|will|must)\b", head, re.I):
+            return head
+    m = _ASKING.search(text)
+    if m:
+        return " ".join(m.group(1).split()).title()
+    return "Not stated"
+
+
 def pick_seniority(text: str) -> str:
     head = text[:HEAD_CHARS]
     for level in ("intern", "junior", "lead", "senior", "mid"):
@@ -80,13 +104,15 @@ def pick_seniority(text: str) -> str:
     return "mid"
 
 
-def pick_domain(text: str) -> str:
-    best, top = "general software", 0
+def pick_domain(text: str, software_job: bool = True) -> str:
+    """The domain whose words the text uses most. For a software job one word is enough, with none the domain is "general software"; a posting that is not a software job keeps a domain
+    only when two different words of it are in the text (a single "insurance" does not make a sales job fintech), else the domain is "not stated"."""
+    best, top = "", 0
     for name, (words, _) in DOMAINS.items():
         n = sum(_count(text, w) for w in words)
-        if n > top:
+        if software_job and n > top or not software_job and n > top and sum(1 for w in words if _count(text, w)) >= 2:
             best, top = name, n
-    return best
+    return best or ("general software" if software_job else "not stated")
 
 
 def soft_skills(text: str) -> list[str]:
@@ -97,10 +123,17 @@ def idea_for(domain: str) -> str:
     return DOMAINS.get(domain, DOMAINS["general software"])[1]
 
 
+# why the model did not read a posting that is not a software job (the box says the rest: "This does not look like a software engineering job; the closest scenario is shown.")
+NOT_SOFTWARE = "the posting names no software skill, role or tool"
+
+
 def extract_keywords(text: str, reason: str = "") -> JobExtraction:
     """The deterministic reading of an already prepared posting."""
     skills = find_skills(text)[:MAX_SKILLS]
     family = pick_family(text, skills)
+    if not is_software_job(text, skills):
+        return JobExtraction(role=own_title(text), role_family="other", seniority=pick_seniority(text), domain=pick_domain(text, False), skills=[], soft_skills=[],
+                             app_idea="", software_job=False, source="keywords", reason=reason)
     domain = pick_domain(text)
     return JobExtraction(role=pick_title(text, family), role_family=family, seniority=pick_seniority(text), domain=domain, skills=skills, soft_skills=soft_skills(text),
                          app_idea=idea_for(domain), source="keywords", reason=reason)
@@ -160,6 +193,8 @@ def read_job(text: str | None, llm=None, available=None, timeout: float = EXTRAC
     """(the prepared text, whether it was cut, the reading). Raises JobTextError for an empty posting; every other problem falls back to the keywords."""
     clean, clipped = prepare(text)
     kw = extract_keywords(clean)
+    if not kw.software_job:
+        return clean, clipped, kw.model_copy(update={"reason": NOT_SOFTWARE})  # nothing in it for the model to read: no skill, no software word
     reading, why = gate.ask(llm, _prompt(clean), ModelReading, available=available, timeout=timeout)
     if reading is None:
         return clean, clipped, kw.model_copy(update={"reason": why})
@@ -174,8 +209,10 @@ def revalidate(extraction: dict | JobExtraction, text: str) -> JobExtraction:
         got = extraction if isinstance(extraction, JobExtraction) else JobExtraction.model_validate(extraction)
     except ValueError:
         return kw
+    if not kw.software_job:
+        return kw.model_copy(update={"reason": NOT_SOFTWARE})  # a reading that says "model" cannot make a sales posting a software job
     if got.source == "keywords":
-        return kw.model_copy(update={"reason": got.reason})  # the keyword reading is deterministic: recompute it
+        return kw.model_copy(update={"reason": got.reason})  # the keyword reader is deterministic: recompute it
     in_text = set(find_skills(text))
     grounded = [s for s in got.skills if s in in_text or _present(text, s)]
     soft = [s for s in got.soft_skills if s in SOFT_SKILLS]

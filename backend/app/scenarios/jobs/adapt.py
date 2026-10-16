@@ -92,6 +92,9 @@ def _join(items: list[str]) -> str:
 
 def template_briefing(e: JobExtraction, scenario: Scenario, m: Match, weights: dict[str, float], names: dict[str, str], key: list[str]) -> str:
     seat = FAMILY_NAME[scenario.role]
+    if not e.software_job:
+        return (f"The posting ({e.role}) does not look like a software engineering job, so no scenario really fits it. This is the closest one: it puts you in the {seat} seat for "
+                f"{scenario.minutes} minutes on “{scenario.title}”. Your role-fit score will equal your standard score.")
     parts = [f"This incident fits the {e.role} job: it puts you in the {seat} seat for {scenario.minutes} minutes on “{scenario.title}”."]
     if key:
         parts.append(f"The posting asks for {_join(key)}" + (f"; the incident exercises {_join(m.shared_skills[:4])}." if m.shared_skills else "."))
@@ -172,6 +175,8 @@ def build_context(*, scenario: Scenario, rubric: Rubric, extraction: JobExtracti
     match = next((m for m in ranking if m.scenario == scenario.id), None) or rank(extraction, [own])[0]
     names = {c.id: c.name for c in rubric.criteria}
     weights, reasons = weights_for(text, [c.id for c in rubric.criteria])
+    if not extraction.software_job:  # nothing in a non-software posting says what to stress in an incident: the role fit equals the standard score
+        weights, reasons = {c.id: 1.0 for c in rubric.criteria}, {c.id: [] for c in rubric.criteria}
     key = key_skills(extraction, own.skills)
     return JobContext(source=source, sample_id=sample_id, text=text, clipped=clipped, extraction=extraction, match=match, ranking=ranking, weights=weights, weight_reasons=reasons,
                       key_skills=key, briefing=Briefing(text=template_briefing(extraction, scenario, match, weights, names, key), source="template"))

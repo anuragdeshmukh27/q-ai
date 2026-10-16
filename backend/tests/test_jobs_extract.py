@@ -62,7 +62,9 @@ def test_role_family_falls_back_to_the_skills_when_the_title_says_nothing():
 
 def test_a_posting_that_names_nothing_still_reads():
     e = extract_keywords("We are a friendly team. Come and work with us.")
-    assert e.skills == [] and e.domain == "general software" and e.role == "Software engineer" and e.app_idea
+    # nothing in it says software: it is not read as a software engineer in some invented domain (test_jobs_not_software.py has the whole story)
+    assert e.skills == [] and e.domain == "not stated" and e.role == "Not stated" and e.app_idea == "" and not e.software_job
+    assert extract_keywords("Come and work with us. We build software.").software_job  # one word that says software is enough
 
 
 def test_skill_matching_is_by_whole_word():
