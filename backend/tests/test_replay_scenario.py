@@ -16,6 +16,8 @@ from api_helpers import wait_for
 from test_autoplay import ID, events, make
 from test_replay_offline import REPO_RECORDINGS, OfflineServer
 
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
+
 SHIPPED = "simulation-bookings-down-strong"
 INFO = {"title": "Simulation: Bookings are down (strong)", "app": "Hospital OPD", "feature": "A recorded autoplay run of the incident"}
 

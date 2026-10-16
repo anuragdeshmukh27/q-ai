@@ -10,6 +10,8 @@ from api_helpers import wait_for
 from scenario_helpers import ScenarioLLM
 from test_autoplay import events, make
 
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
+
 ID = "opd-double-bookings"
 OTHER = "opd-bookings-down"
 MIGRATION = "database/migrations/0008_one_booking_per_slot.sql"

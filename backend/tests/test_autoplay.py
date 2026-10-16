@@ -19,6 +19,8 @@ from app.session import Session, SessionManager
 from api_helpers import make_settings, wait_for
 from scenario_helpers import ScenarioLLM
 
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
+
 ID = "opd-bookings-down"
 CRITERIA = ["communication", "diagnosis", "fix_quality", "testing", "ownership"]
 

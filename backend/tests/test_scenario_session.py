@@ -175,6 +175,7 @@ def test_the_channel_belongs_to_scenario_sessions_only(tmp_path):
 
 # -- the whole incident: fix it through the IDE endpoints ------------------------------------------------------
 
+@pytest.mark.slow
 def test_the_reference_fix_through_the_ide_is_accepted_and_every_step_is_in_the_session_log(scenario):
     client, s, pid, task, llm = scenario
     ide = f"/api/projects/{pid}/ide/backend"
@@ -228,6 +229,7 @@ def test_the_reference_fix_through_the_ide_is_accepted_and_every_step_is_in_the_
         ["git", "log", "--all", "--format=%s"], cwd=s.root, capture_output=True, text=True).stdout
 
 
+@pytest.mark.slow
 def test_a_red_submit_is_logged_and_ananya_names_the_failing_tests(scenario):
     client, s, pid, task, llm = scenario
     answer = client.post(f"/api/projects/{pid}/tasks/h1/submit").json()

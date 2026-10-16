@@ -128,6 +128,7 @@ def types(bus):
     return [e["type"] for e in bus.history]
 
 
+@pytest.mark.slow
 def test_full_build_with_scripted_team(tmp_path):
     llm = FakeLLM()
     o, bus = make(tmp_path, llm)
@@ -148,6 +149,7 @@ def test_full_build_with_scripted_team(tmp_path):
     assert (root / ".q/agents.json").is_file() and list((root / ".q/history").glob("events-*.jsonl"))
 
 
+@pytest.mark.slow
 def test_engineers_cannot_touch_locked_files_or_generated_tests(tmp_path):
     o, _ = make(tmp_path, FakeLLM())
     o.run()
@@ -161,6 +163,7 @@ def test_engineers_cannot_touch_locked_files_or_generated_tests(tmp_path):
             pp.resolve_write(bad)
 
 
+@pytest.mark.slow
 def test_without_a_router_each_role_uses_the_registry_default_and_stays_local(tmp_path):
     llm = FakeLLM()
     o, _ = make(tmp_path, llm)
@@ -189,6 +192,7 @@ def test_local_failure_is_replanned_once_then_retried_locally_without_consultant
     assert len([e for e in bus.history if e["type"] == "escalation" and e["agent"] == "backend"]) == 2
 
 
+@pytest.mark.slow
 def test_consultant_is_called_after_two_local_escalations_and_logged(tmp_path, monkeypatch):
     monkeypatch.setattr(orch_mod, "MAX_REPLANS", 0)
     llm = FakeLLM(broken_local="Rohan")
@@ -212,6 +216,7 @@ def test_consultant_needs_an_available_cloud_model(tmp_path, monkeypatch):
     assert not res.ok and "consultant_called" not in types(bus)
 
 
+@pytest.mark.slow
 def test_contract_amendment_denied_by_architect_leaves_contract_unchanged(tmp_path):
     o, bus = make(tmp_path, FakeLLM())
     o.run()

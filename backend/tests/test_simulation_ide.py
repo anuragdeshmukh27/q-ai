@@ -167,6 +167,7 @@ def test_stop_kills_a_run_in_progress(build):
 
 # -- Submit checks the scope too -------------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_submit_rejects_files_outside_the_role_and_lists_them(build):
     client, s, pid, ev, wt = build
     solve_db(ev["worktree"])

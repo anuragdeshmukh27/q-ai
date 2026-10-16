@@ -1,4 +1,5 @@
 """P8: Reviewer diff without generated tests, recording cards, Ask-employee follow-ups inside a recording."""
+import pytest
 import subprocess
 
 from app.recording import list_recordings, load_recording
@@ -35,6 +36,7 @@ def test_the_reviewer_diff_leaves_out_generated_tests_but_keeps_the_engineers_ow
     assert not any(p in shown for p in ("tests/api", "tests/ui", "tests/qa"))
 
 
+@pytest.mark.slow
 def test_a_recording_carries_its_card_text_and_the_ask_employee_request_after_the_build(tmp_path):
     holder: list = []
     settings, mgr = make_manager(tmp_path, llm_holder=holder)
@@ -72,6 +74,7 @@ def test_an_employee_goes_back_to_work_once_the_approval_is_decided():
     assert [e["state"] for e in bus.history if e["type"] == "agent_state"] == ["waiting_human", "thinking"]
 
 
+@pytest.mark.slow
 def test_a_second_frontend_task_is_shown_the_page_that_already_exists(tmp_path):
     """The Planner sometimes splits the page over two tasks; the second engineer used to write a new app.js blind and lose the generated actions and filter."""
     from test_orchestrator import FakeLLM, make
@@ -99,6 +102,7 @@ def test_a_search_box_promised_by_the_spec_reaches_the_page_even_if_the_architec
     assert plain.ui_features == ["List"]
 
 
+@pytest.mark.slow
 def test_a_calculator_page_says_calculate_not_add(tmp_path):
     from app.uistub import page_stub
     from test_orchestrator import FakeLLM, make
@@ -131,6 +135,7 @@ def test_a_page_with_a_duplicate_element_id_fails_the_generated_page_test_and_sa
     assert good.returncode == 0, good.stdout
 
 
+@pytest.mark.slow
 def test_the_generated_starting_page_has_no_duplicate_ids(tmp_path):
     import re
     from app.uistub import page_stub

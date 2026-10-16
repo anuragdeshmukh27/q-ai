@@ -172,6 +172,7 @@ class FinishLLM:
         return StructuredResult(Action.model_validate(self.steps.pop(0)), model_id, 1, 10, 5, 0.01, "{}")
 
 
+@pytest.mark.slow
 def test_a_scripted_team_finishes_the_half_built_fest_app_on_its_own_branch(tmp_path):
     llm, bus = FinishLLM(), EventBus()
     o = FinishBuild(str(SAMPLES / "fest-app"), ModelRegistry.load(env={}), llm, bus, auto_fix=True, mode="autonomous", base=tmp_path, start_app=False)

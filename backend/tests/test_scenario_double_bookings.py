@@ -139,12 +139,14 @@ def copies(tmp_path_factory):
     return tmp_path_factory.mktemp("double")
 
 
+@pytest.mark.slow
 def test_the_seed_fails_exactly_the_five_acceptance_tests(copies):
     rc, failed, out = run_suite(make_copy(copies, "red"))
     assert rc != 0
     assert failed == set(load_scenario(ID).task.acceptance_tests), out[-1500:]  # everything else in the suite passes on the seed
 
 
+@pytest.mark.slow
 def test_the_reference_migration_makes_the_whole_suite_green(copies):
     rc, failed, out = run_suite(make_copy(copies, "green", patch=True))
     assert rc == 0 and not failed, out[-1500:]
@@ -166,6 +168,7 @@ NAIVE_FIXES = [
 
 
 @pytest.mark.parametrize("name,expected", NAIVE_FIXES, ids=[n for n, _ in NAIVE_FIXES])
+@pytest.mark.slow
 def test_each_naive_fix_fails_the_tests_that_name_its_mistake(copies, name, expected):
     rc, failed, out = run_suite(make_copy(copies, name, NAIVE / f"{name}.sql"))
     assert failed == expected, out[-2000:]

@@ -96,6 +96,7 @@ def scenario(tmp_path):
 
 # -- a strong attempt -----------------------------------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_a_strong_attempt_ends_in_the_meeting_room_with_five_judges_and_a_full_report(scenario):
     client, s, pid, llm, mgr, settings = scenario
     assert client.get(f"/api/projects/{pid}/report").status_code == 404  # nothing before the fix is accepted
@@ -132,6 +133,7 @@ def test_a_strong_attempt_ends_in_the_meeting_room_with_five_judges_and_a_full_r
     assert client.get(f"/api/projects/{pid}/session").json()["events"][-1]["kind"] == "session_finished"  # the debrief adds nothing to the evidence
 
 
+@pytest.mark.slow
 def test_the_report_is_saved_in_the_project_as_markdown_and_json_and_served_by_the_endpoint(scenario):
     client, s, pid, llm, mgr, settings = scenario
     strong_attempt(client, s, pid)
@@ -169,6 +171,7 @@ def weak_attempt(client, s, pid):
     assert answer["ok"] and answer["stage"] == "accepted"
 
 
+@pytest.mark.slow
 def test_a_weak_attempt_gets_gaps_with_advice_and_the_model_only_speaks(tmp_path):
     def speak(prompt: str):
         said = {m.group(1): m.group(2) for m in re.finditer(r'criterion "(\w+)": [^\n]*?Moment at (\d\d:\d\d)', prompt)}
@@ -216,6 +219,7 @@ def test_a_weak_attempt_gets_gaps_with_advice_and_the_model_only_speaks(tmp_path
 
 # -- attempts --------------------------------------------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_the_second_attempt_is_numbered_two_and_the_report_carries_the_first(tmp_path):
     llm = ScenarioLLM()
     client, mgr, settings = manager(tmp_path, llm)
@@ -237,6 +241,7 @@ def test_the_second_attempt_is_numbered_two_and_the_report_carries_the_first(tmp
         mgr.shutdown()
 
 
+@pytest.mark.slow
 def test_a_session_that_is_stopped_before_the_fix_is_accepted_has_no_debrief_and_no_history(scenario):
     client, s, pid, llm, mgr, settings = scenario
     run_tests(client, s, pid)

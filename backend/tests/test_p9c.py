@@ -1,4 +1,5 @@
 """P9c: who wrote the code (authorship), the single-agent baseline, and the team-vs-single-agent report."""
+import pytest
 import json
 
 from app.authorship import measure, _py_functions
@@ -119,6 +120,7 @@ def test_one_agent_builds_the_whole_app_in_one_loop_with_no_team_around_it(tmp_p
     assert o.authorship["app"]["functions"] == report["app"]["functions"]
 
 
+@pytest.mark.slow
 def test_a_single_agent_that_cannot_make_the_tests_pass_fails_the_build_without_a_second_attempt(tmp_path):
     d = uber()
     llm = SoloLLM(d, [act("run_tests")] * 5)  # reruns the failing tests: the repeated-action rule stops it
@@ -130,6 +132,7 @@ def test_a_single_agent_that_cannot_make_the_tests_pass_fails_the_build_without_
 
 # -- the team's build records who wrote the code ----------------------------------------------------------------
 
+@pytest.mark.slow
 def test_a_team_build_saves_its_authorship_and_how_the_design_was_made(tmp_path):
     from test_orchestrator import make
 
@@ -188,6 +191,7 @@ def test_the_leaked_words_of_the_prompt_examples_are_dropped_from_the_banner_unl
 
 
 
+@pytest.mark.slow
 def test_an_unknown_product_name_is_built_by_rules_with_a_banner_even_when_the_model_cannot_write_a_spec(tmp_path):
     """Dropbox before: the free Architect path built 'files' with no banner (a failure of the judge test); now the design, plan and tests are generated, and the page says what it is."""
     from app.platforms import generic_spec
@@ -215,6 +219,7 @@ def test_an_unknown_product_name_is_built_by_rules_with_a_banner_even_when_the_m
     assert any(e["type"] == "agent_thought" and "plain list app" in e.get("text", "") for e in bus.history)
 
 
+@pytest.mark.slow
 def test_a_model_spec_for_an_unknown_name_gets_the_banner_and_the_rules_path(tmp_path):
     from test_orchestrator import make
 
@@ -346,6 +351,7 @@ def test_a_replace_that_breaks_the_script_is_reported_like_any_other_write(tmp_p
     assert not r.ok and "syntax" in r.output.lower()
 
 
+@pytest.mark.slow
 def test_a_guessed_design_that_fails_the_checks_falls_back_to_a_plain_list_app_with_the_banner(tmp_path):
     """Strava (judge run 5): the model's spec gave a contract the checks reject, and nothing was built. For an unknown name it now falls back."""
     from app.agent.planning import AgentFailed

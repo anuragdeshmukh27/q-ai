@@ -127,6 +127,7 @@ def seed_copies(tmp_path_factory):
     return red, green
 
 
+@pytest.mark.slow
 def test_the_seed_fails_and_each_acceptance_test_is_among_the_failures(seed_copies):
     rc, failed, out = run_suite(seed_copies[0])
     assert rc != 0

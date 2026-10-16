@@ -28,6 +28,7 @@ def _failed_build(tmp_path, monkeypatch, llm=None):
     return o, bus, llm
 
 
+@pytest.mark.slow
 def test_retry_this_step_runs_the_failed_task_again_and_finishes_the_build(tmp_path, monkeypatch):
     o, bus, llm = _failed_build(tmp_path, monkeypatch)
     llm.broken_local = None  # the model is back
@@ -38,6 +39,7 @@ def test_retry_this_step_runs_the_failed_task_again_and_finishes_the_build(tmp_p
     assert all(t["status"] == "done" for t in res.tasks) and {"t1", "t2", "t3", "t4"} <= {t["id"] for t in res.tasks}  # QA ran too (q1)
 
 
+@pytest.mark.slow
 def test_replan_lets_the_planner_split_the_failed_task_then_the_build_finishes(tmp_path, monkeypatch):
     class Replanner(FakeLLM):
         def call(self, model_id, messages, schema_model, temperature=0.2):
@@ -57,6 +59,7 @@ def test_replan_lets_the_planner_split_the_failed_task_then_the_build_finishes(t
     assert any(e["type"] == "plan_created" and e.get("replan") for e in bus.history)
 
 
+@pytest.mark.slow
 def test_nothing_to_retry_is_a_plain_message_not_a_crash(tmp_path):
     o, _ = make(tmp_path, FakeLLM())
     assert o.run().ok
@@ -125,6 +128,7 @@ def _create(c, **kw):
     return r.json()["id"]
 
 
+@pytest.mark.slow
 def test_retry_over_http_after_the_build_stopped(tmp_path, monkeypatch):
     settings, mgr = _flaky_manager(tmp_path, monkeypatch)
     c = _client(settings, mgr)
@@ -142,6 +146,7 @@ def test_retry_over_http_after_the_build_stopped(tmp_path, monkeypatch):
         mgr.shutdown()
 
 
+@pytest.mark.slow
 def test_retry_clicked_while_the_build_is_running_is_queued_and_applied_when_it_stops(tmp_path, monkeypatch):
     gate = threading.Event()
     settings, mgr = _flaky_manager(tmp_path, monkeypatch, gate=gate)

@@ -163,6 +163,7 @@ def copies(tmp_path_factory):
     return tmp_path_factory.mktemp("frontend")
 
 
+@pytest.mark.slow
 def test_the_seed_fails_exactly_the_six_acceptance_tests(copies):
     rc, failed, out = run_suite(make_copy(copies, "red"))
     assert rc != 0
@@ -170,6 +171,7 @@ def test_the_seed_fails_exactly_the_six_acceptance_tests(copies):
     assert re.search(r"6 failed, 1\d\d passed", out)
 
 
+@pytest.mark.slow
 def test_the_reference_fix_makes_the_whole_suite_green(copies):
     rc, failed, out = run_suite(make_copy(copies, "green", PATCH))
     assert rc == 0 and not failed, out[-1500:]
@@ -192,6 +194,7 @@ NAIVE_FIXES = [
 
 
 @pytest.mark.parametrize("name,expected", NAIVE_FIXES, ids=[n for n, _ in NAIVE_FIXES])
+@pytest.mark.slow
 def test_each_naive_fix_fails_the_tests_that_name_its_mistake(copies, name, expected):
     rc, failed, out = run_suite(make_copy(copies, name, FIXES / f"{name}.patch"))
     assert failed == expected, out[-2000:]

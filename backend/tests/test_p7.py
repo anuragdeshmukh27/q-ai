@@ -1,4 +1,5 @@
 """P7: model router, VRAM-aware scheduler, shipped benchmark results, fast live mode, Ask-employee project state."""
+import pytest
 import json
 import threading
 import time
@@ -75,6 +76,7 @@ def test_the_router_never_returns_an_unavailable_or_cloud_model_for_a_local_buil
     assert Router(reg, b).choose("backend", "coding").model.id == "qwen25-coder-7b"  # no API key -> unavailable
 
 
+@pytest.mark.slow
 def test_the_orchestrator_asks_the_router_but_a_manual_override_wins(tmp_path):
     b = board(tmp_path, [("qwen25-coder-7b", "reviewer", 1, 4), ("qwen3-4b", "reviewer", 4, 4)])
     llm = FakeLLM()
@@ -288,6 +290,7 @@ def fix_script(llm):
                              act("run_tests"), act("finish", summary="limited")]
 
 
+@pytest.mark.slow
 def test_fast_live_mode_allows_one_llm_review_and_accepts_a_clean_fix_without_a_second_one(tmp_path):
     llm = FakeLLM()
     llm.reviews = [ReviewOutput(verdict="REQUEST_CHANGES", summary="x", items=[ReviewItem(file="database/calculations.py", problem="limit the history to 100 rows")])]
@@ -302,6 +305,7 @@ def test_fast_live_mode_allows_one_llm_review_and_accepts_a_clean_fix_without_a_
     assert "LIMIT 100" in (res.root / "database/calculations.py").read_text()
 
 
+@pytest.mark.slow
 def test_fast_live_mode_static_findings_still_block_after_the_single_round(tmp_path):
     llm = FakeLLM()
     bad = DB_LIST.replace("conn.execute('SELECT * FROM calculations ORDER BY id DESC')", "conn.execute(f'SELECT * FROM calculations ORDER BY id DESC')")
@@ -321,6 +325,7 @@ def test_normal_mode_still_allows_three_review_rounds(tmp_path):
     assert o.fast_live is False
 
 
+@pytest.mark.slow
 def test_fast_live_mode_skips_the_polish_pass_when_the_page_already_uses_the_kit(tmp_path):
     llm = FakeLLM()
     llm.scripts["Meera"] = llm.scripts["Meera"][:4] + [act("write_file", path="static/index.html", content=POLISHED_HTML),
@@ -335,6 +340,7 @@ def test_fast_live_mode_skips_the_polish_pass_when_the_page_already_uses_the_kit
     assert not any(t["id"] == "p1" for t in res.tasks)  # no polish agent ran at all
 
 
+@pytest.mark.slow
 def test_without_fast_live_mode_the_polish_task_still_runs(tmp_path):
     from test_polish import polish_script
     llm = FakeLLM()
@@ -346,6 +352,7 @@ def test_without_fast_live_mode_the_polish_task_still_runs(tmp_path):
 
 # -- Ask employee: the project is in progress again ---------------------------------------------------------------
 
+@pytest.mark.slow
 def test_a_request_on_a_finished_project_reopens_it_and_only_the_involved_agents_are_done(tmp_path):
     llm = FakeLLM()
     o, bus = make(tmp_path, llm)

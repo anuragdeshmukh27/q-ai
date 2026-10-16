@@ -30,6 +30,7 @@ def recorded(tmp_path_factory):
     return record_fake_build(tmp_path_factory.mktemp("rec"))
 
 
+@pytest.mark.slow
 def test_rewriting_identical_documents_does_not_end_a_build(tmp_path):
     """Regression from the first real recording: a retried task makes the Reviewer write the same review file again."""
     from test_orchestrator import FakeLLM, make
@@ -43,6 +44,7 @@ def test_rewriting_identical_documents_does_not_end_a_build(tmp_path):
 
 # -- recording ---------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_a_live_build_through_the_api_is_recorded_with_events_llm_responses_and_a_snapshot(recorded):
     settings, status = recorded
     assert status["state"] == "done" and status["finished"]["ok"] and status["progress"]["percent"] == 100
@@ -83,6 +85,7 @@ def replay_client(recorded, tmp_path):
     return TestClient(create_app(s2, mgr)), mgr
 
 
+@pytest.mark.slow
 def test_replay_plays_the_recorded_stream_over_websocket_and_restores_the_project(recorded, tmp_path):
     c, mgr = replay_client(recorded, tmp_path)
     try:
@@ -118,6 +121,7 @@ def test_replay_plays_the_recorded_stream_over_websocket_and_restores_the_projec
         mgr.shutdown()
 
 
+@pytest.mark.slow
 def test_replay_speed_can_change_while_playing_and_unknown_recordings_are_refused(recorded, tmp_path):
     c, mgr = replay_client(recorded, tmp_path)
     try:
@@ -136,6 +140,7 @@ def test_replay_speed_can_change_while_playing_and_unknown_recordings_are_refuse
 
 # -- live: files, controls, employees ----------------------------------------------------
 
+@pytest.mark.slow
 def test_live_build_exposes_status_files_and_ask_employee(tmp_path):
     c, settings, mgr = make_client(tmp_path)
     try:
@@ -162,6 +167,7 @@ def test_live_build_exposes_status_files_and_ask_employee(tmp_path):
         mgr.shutdown()
 
 
+@pytest.mark.slow
 def test_a_task_given_to_one_engineer_runs_after_the_build_and_the_project_is_reverified(tmp_path):
     holder: list = []
     c, settings, mgr = make_client(tmp_path, llm_holder=holder)
@@ -185,6 +191,7 @@ def test_a_task_given_to_one_engineer_runs_after_the_build_and_the_project_is_re
         mgr.shutdown()
 
 
+@pytest.mark.slow
 def test_model_override_and_mode_switch(tmp_path):
     c, settings, mgr = make_client(tmp_path)
     try:
@@ -275,6 +282,7 @@ def test_approval_queue_blocks_until_a_human_decides_and_times_out_to_deny():
         q.resolve("missing", True)
 
 
+@pytest.mark.slow
 def test_approvals_are_decided_over_http_and_autonomous_mode_releases_pending_ones(recorded, tmp_path):
     c, mgr = replay_client(recorded, tmp_path)
     try:

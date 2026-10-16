@@ -1,4 +1,5 @@
 """UI kit and the final polish task: the kit is always on the page, polish runs after QA, and a bad polish can never reach main."""
+import pytest
 import subprocess
 
 from test_orchestrator import FakeLLM, act, make, types
@@ -21,6 +22,7 @@ def git_out(root, *args):
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8").stdout.strip()
 
 
+@pytest.mark.slow
 def test_every_project_ships_the_ui_kit_and_the_served_page_always_links_it(tmp_path):
     o, _ = make(tmp_path, FakeLLM())
     res = o.run()
@@ -45,6 +47,7 @@ def test_every_project_ships_the_ui_kit_and_the_served_page_always_links_it(tmp_
     assert "/static/ui-kit.css" in page and "/static/ui-kit.js" in page and page.index("ui-kit.js") < page.index("/static/app.js")
 
 
+@pytest.mark.slow
 def test_engineers_cannot_edit_the_ui_kit(tmp_path):
     o, _ = make(tmp_path, FakeLLM())
     o.run()
@@ -58,12 +61,14 @@ def test_engineers_cannot_edit_the_ui_kit(tmp_path):
     pp.resolve_write("static/style.css")
 
 
+@pytest.mark.slow
 def test_polish_is_off_by_default(tmp_path):
     o, bus = make(tmp_path, FakeLLM())
     res = o.run()
     assert res.ok and "polish_result" not in types(bus) and all(t["id"] != "p1" for t in res.tasks)
 
 
+@pytest.mark.slow
 def test_polish_runs_after_qa_passes_and_merges_when_the_whole_suite_is_green(tmp_path):
     llm = FakeLLM()
     polish_script(llm)
@@ -82,6 +87,7 @@ def test_polish_runs_after_qa_passes_and_merges_when_the_whole_suite_is_green(tm
     assert res.tests_passed
 
 
+@pytest.mark.slow
 def test_a_polish_that_fails_the_safety_check_is_skipped_and_main_stays_as_qa_left_it(tmp_path, monkeypatch):
     llm = FakeLLM()
     polish_script(llm)
@@ -113,6 +119,7 @@ def test_polish_is_on_for_live_builds_unless_switched_off_with_q_polish():
     assert Settings.from_env({"Q_POLISH": "off"}).polish is False
 
 
+@pytest.mark.slow
 def test_polish_task_shows_the_current_files_and_skips_the_llm_review_but_not_the_static_checks(tmp_path):
     llm = FakeLLM()
     llm.scripts["Meera"] = [act("write_file", path="static/app.js", content=POLISHED_JS.replace("UI.empty(list, 'No calculations yet')", "list.innerHTML = '<b>none</b>'")),
@@ -135,6 +142,7 @@ def test_polish_task_shows_the_current_files_and_skips_the_llm_review_but_not_th
     assert not any(e["type"] == "review_result" and e["task"] == "p1" for e in bus.history)
 
 
+@pytest.mark.slow
 def test_a_polished_script_that_uses_no_ui_kit_helper_is_not_merged(tmp_path):
     o, _ = make(tmp_path, FakeLLM(), polish=True)
     o.run()
@@ -145,6 +153,7 @@ def test_a_polished_script_that_uses_no_ui_kit_helper_is_not_merged(tmp_path):
     assert o._polish_check(wt) == ""
 
 
+@pytest.mark.slow
 def test_polish_that_changes_nothing_is_reported_as_nothing_to_change_and_merges_nothing(tmp_path):
     llm = FakeLLM()
     llm.scripts["Meera"] = [act("finish", summary="already looks right")]
@@ -157,6 +166,7 @@ def test_polish_that_changes_nothing_is_reported_as_nothing_to_change_and_merges
     assert "Polish the UI" not in git_out(res.root, "log", "main", "--pretty=%s")
 
 
+@pytest.mark.slow
 def test_a_polish_that_only_resends_the_existing_file_counts_as_nothing_to_change(tmp_path):
     llm = FakeLLM()
     llm.scripts["Meera"] = [act("read_file", path="static/app.js"), act("read_file", path="static/app.js"), act("read_file", path="static/app.js"),
@@ -169,6 +179,7 @@ def test_a_polish_that_only_resends_the_existing_file_counts_as_nothing_to_chang
     assert [(e["ok"], e["changed"]) for e in bus.history if e["type"] == "polish_result"] == [(True, False)]
 
 
+@pytest.mark.slow
 def test_a_skipped_polish_leaves_no_half_polished_edits_in_the_frontend_worktree(tmp_path, monkeypatch):
     llm = FakeLLM()
     polish_script(llm)

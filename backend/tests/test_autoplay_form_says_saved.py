@@ -9,6 +9,8 @@ from scenario_helpers import ScenarioLLM
 from test_autoplay import events, make
 from test_autoplay_double_bookings import play, watch
 
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
+
 ID = "opd-form-says-saved"
 OTHER = "opd-double-bookings"
 SHELL = "static/shell.js"

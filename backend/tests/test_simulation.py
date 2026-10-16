@@ -87,6 +87,7 @@ def git_subjects(root):
 
 # -- the human's database task waits while the AI employees keep working -----------------------------------
 
+@pytest.mark.slow
 def test_the_human_task_waits_without_holding_a_worker_and_dependents_start_after_the_merge(tmp_path):
     o, bus = sim(tmp_path, SimLLM(), max_parallel=1)  # one AI worker: a waiting person must not take it
     th, out = start(o)
@@ -117,6 +118,7 @@ def test_the_human_task_waits_without_holding_a_worker_and_dependents_start_afte
     assert of_type(bus, "simulation_started")[0]["human_roles"] == ["database"]
 
 
+@pytest.mark.slow
 def test_without_simulation_nothing_changes(tmp_path):
     from test_orchestrator import make
     o, bus = make(tmp_path, FakeLLM())
@@ -127,6 +129,7 @@ def test_without_simulation_nothing_changes(tmp_path):
 
 # -- Submit ----------------------------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_a_red_submit_leaves_the_task_open_and_a_fixed_one_is_merged(tmp_path):
     o, bus = sim(tmp_path, SimLLM())
     th, out = start(o)
@@ -152,6 +155,7 @@ def test_a_red_submit_leaves_the_task_open_and_a_fixed_one_is_merged(tmp_path):
     assert "INSERT INTO calculations" in (o.root / "database" / "calculations.py").read_text(encoding="utf-8")  # the person's code is on main
 
 
+@pytest.mark.slow
 def test_the_reviewer_sends_green_work_back_twice_and_the_third_green_submit_is_accepted(tmp_path):
     o, bus = sim(tmp_path, SimLLM(human_reviews=[CHANGES, CHANGES, CHANGES]))
     th, out = start(o)
@@ -251,6 +255,7 @@ def test_simulation_is_supervised_for_the_command_policy(tmp_path):
         apply_mode(policy.check("python -m pytest -q"), "nonsense")
 
 
+@pytest.mark.slow
 def test_the_api_creates_a_simulation_serves_the_doc_takes_a_submit_and_validates_roles(tmp_path):
     client, settings, mgr = make_client(tmp_path)
     assert "simulation" in client.get("/api/config").json()["modes"]

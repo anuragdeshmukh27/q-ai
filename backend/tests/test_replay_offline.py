@@ -19,6 +19,8 @@ from websockets.sync.client import connect
 from app.recording import load_recording
 from api_helpers import record_fake_build, wait_for
 
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
+
 TESTS = Path(__file__).resolve().parent
 REPO_RECORDINGS = TESTS.parents[1] / "recordings"
 

@@ -24,6 +24,7 @@ def git_out(root, *args):
 
 # -- worktrees, merges ---------------------------------------------------------------
 
+@pytest.mark.slow
 def test_every_agent_works_on_its_own_branch_and_the_integrator_merges_into_main(tmp_path):
     o, bus = make(tmp_path, FakeLLM())
     res = o.run()
@@ -40,6 +41,7 @@ def test_every_agent_works_on_its_own_branch_and_the_integrator_merges_into_main
     assert any("agent/backend" in " ".join(c["refs"]) for c in graph)
 
 
+@pytest.mark.slow
 def test_reviewer_requests_changes_and_the_engineer_fixes_them(tmp_path):
     llm = FakeLLM()
     llm.reviews = [ReviewOutput(verdict="REQUEST_CHANGES", summary="ordering", items=[ReviewItem(file="database/calculations.py", problem="limit the history to 100 rows")])]
@@ -64,6 +66,7 @@ def _always_request_changes(llm):
                              act("run_tests"), act("finish", summary="r2")]
 
 
+@pytest.mark.slow
 def test_unresolved_review_blocks_the_merge_until_the_work_is_redone_or_a_human_accepts(tmp_path, monkeypatch):
     from app import orchestrator as orch_mod
     monkeypatch.setattr(orch_mod, "MAX_REPLANS", 0)
@@ -90,6 +93,7 @@ def test_unresolved_review_blocks_the_merge_until_the_work_is_redone_or_a_human_
 
 # -- QA -> owner -> fix --------------------------------------------------------------
 
+@pytest.mark.slow
 def test_injected_bug_is_found_by_qa_routed_to_its_owner_fixed_reviewed_merged_and_retested(tmp_path):
     llm = FakeLLM()
     llm.scripts["Rohan"] += [act("implement", path="backend/api/calculator.py", function="handle_post_calculate", content=API_POST),
@@ -194,6 +198,7 @@ class ParallelLLM(FakeLLM):
         return super().call(model_id, messages, schema_model, temperature)
 
 
+@pytest.mark.slow
 def test_independent_tasks_of_different_owners_run_at_the_same_time_but_merges_are_one_at_a_time(tmp_path):
     o, bus = make(tmp_path, ParallelLLM(), max_parallel=2)
     res = o.run()
@@ -203,6 +208,7 @@ def test_independent_tasks_of_different_owners_run_at_the_same_time_but_merges_a
     assert t[0] == ("task_assigned", "t1") and t[1] == ("task_assigned", "t3") and t[2][0] == "merge_result"
 
 
+@pytest.mark.slow
 def test_max_parallel_one_is_sequential(tmp_path):
     o, bus = make(tmp_path, ParallelLLM(), max_parallel=1)
     assert o.run().ok

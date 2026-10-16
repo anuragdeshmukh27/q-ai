@@ -5,6 +5,9 @@ from app.scenarios.reports import History
 from api_helpers import wait_for
 from scenario_helpers import ScenarioLLM
 from test_scenario_debrief import events, manager, strong_attempt as strong_one
+import pytest
+
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
 
 ONE, TWO = "opd-bookings-down", "opd-double-bookings"
 MIGRATION = "database/migrations/0008_one_booking_per_slot.sql"

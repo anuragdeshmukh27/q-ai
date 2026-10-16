@@ -11,6 +11,9 @@ from app.scaffold import _hints, _words
 from app.schemas import PlannerOutput, SpecOutput, normalize_spec
 
 from test_orchestrator import FakeLLM, make, types
+import pytest
+
+pytestmark = pytest.mark.slow  # whole module is slow (see backend/tests/conftest.py)
 
 SPEC = {
     "title": "Reddit replica", "summary": "Posts with comments and votes.",
