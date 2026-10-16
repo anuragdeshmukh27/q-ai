@@ -21,6 +21,9 @@ from .cost import load_pricing
 from .presets import list_presets, load_preset
 from .projectfiles import ProjectFileError, branch_diff, commit_diff, commits, file_tree, read_project_file
 from .recording import RecordingError, list_recordings, load_recording
+from .scenarios.jobs.modelcall import MODEL_ID
+from .scenarios.jobs.samples import list_samples
+from .scenarios.jobs.service import JobBody, JobRequestError, analyze as analyze_job
 from .scenarios.loader import ScenarioError, list_scenarios
 from .scenarios.progress import build_progress, read_report, render_markdown, report_path
 from .scenarios.reports import History
@@ -58,6 +61,11 @@ class FileBody(BaseModel):
 class AutoplayBody(BaseModel):
     variant: str
     speed: int = 1
+    job: JobBody | None = None  # a job description the run is started from (the check that role-fit emphasis leaves the standard score alone)
+
+
+class StartBody(BaseModel):
+    job: JobBody | None = None  # start the scenario for a job description (/api/jd/analyze showed the person why it fits)
 
 
 class AutoplaySpeedBody(BaseModel):
@@ -260,14 +268,28 @@ def create_app(settings: Settings | None = None, manager: SessionManager | None 
             raise SessionError("The scenarios could not be loaded.", 500) from None
 
     @app.post("/api/scenarios/{sid}/start", status_code=201)
-    def start_scenario(sid: str):
-        """A project from the scenario's seed: no design or planning calls, one human task for the scenario's role, the AI team on call."""
-        return mgr.start_scenario(sid).status()
+    def start_scenario(sid: str, body: StartBody | None = None):
+        """A project from the scenario's seed: no design or planning calls, one human task for the scenario's role, the AI team on call. With `job`, the briefing and the role-fit emphasis are adapted to it."""
+        return mgr.start_scenario(sid, job=body.job if body else None).status()
+
+    # -- job descriptions: read one, rank the scenarios against it ---------------------------------------------------
+    @app.get("/api/jd/samples")
+    def jd_samples():
+        """The bundled sample job descriptions (backend, database, frontend)."""
+        return list_samples()
+
+    @app.post("/api/jd/analyze")
+    def jd_analyze(body: JobBody):
+        """Read a pasted job description or a sample (the 7b when it can, else the keyword reader; the answer says which) and rank the scenarios against it."""
+        try:
+            return analyze_job(body, mgr.make_llm(None), lambda: mgr.registry.is_available(MODEL_ID))
+        except JobRequestError as e:
+            raise SessionError(str(e), 400) from None
 
     @app.post("/api/scenarios/{sid}/autoplay", status_code=201)
     def start_autoplay(sid: str, body: AutoplayBody):
         """"Watch a run": a scripted learner (variant strong or weak) plays the scenario through the same calls a person makes. The attempt is a demo: marked in its report, not in the learner's history."""
-        return mgr.start_autoplay(sid, body.variant, body.speed).status()
+        return mgr.start_autoplay(sid, body.variant, body.speed, job=body.job).status()
 
     @app.post("/api/projects/{pid}/autoplay/speed")
     def autoplay_speed(pid: str, body: AutoplaySpeedBody):

@@ -36,6 +36,7 @@ from .scenarios.scripts import SCRIPTS
 from .scenarios.loader import Scenario, ScenarioError, load_scenario
 from .scenarios.reports import History
 from .scenarios.rubric import Rubric, load_rubric
+from .scenarios.jobs.service import JobBody, JobRequestError, resolve as resolve_job
 from .scenarios.wording import Wordsmith
 from .scheduler import MetricsSampler, ModelScheduler
 from .scope import classify_goal
@@ -255,7 +256,7 @@ class Session:
         self._thread.start()
 
     def start_scenario(self, scn: Scenario, rubric: Rubric, attempt: int, kind: str = "learner", variant: str = "", clock=None,
-                       record_as: str | None = None, record_info: dict | None = None) -> None:
+                       record_as: str | None = None, record_info: dict | None = None, job=None) -> None:
         """The scenario's finished app, one task for the person, the AI team on call (no design or planning calls). `attempt`: the number of this try (1 for the first).
         `record_as`: an autoplay run is recorded under that name (the demo recordings folder) and the recording is closed when the run ends."""
         mgr = self.mgr
@@ -269,7 +270,7 @@ class Session:
         self.scenario = scn
         replier = Replier(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
         wordsmith = Wordsmith(llm, REPLY_MODEL, available=lambda: mgr.registry.is_available(REPLY_MODEL))
-        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, rubric=rubric, wordsmith=wordsmith, attempt=attempt, debrief_pace=mgr.settings.debrief_pace, kind=kind, variant=variant, **({"clock": clock} if clock else {}), approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
+        self.orch = ScenarioBuild(scn, mgr.registry, llm, self.bus, replier=replier, rubric=rubric, wordsmith=wordsmith, attempt=attempt, debrief_pace=mgr.settings.debrief_pace, kind=kind, variant=variant, job=job, **({"clock": clock} if clock else {}), approver=self.approvals, base=mgr.settings.workspace, overrides=self.overrides,
                                   local_only=True, ports=mgr.ports, max_parallel=1, fast_live=fast, router=mgr.router)
         self.fast_live = fast
         if mgr.scheduler is not None:
@@ -785,13 +786,20 @@ class SessionManager:
                 raise
         return s
 
-    def start_scenario(self, scenario_id: str, kind: str = "learner", variant: str = "", clock=None, record_as: str | None = None, record_info: dict | None = None) -> Session:
+    def start_scenario(self, scenario_id: str, kind: str = "learner", variant: str = "", clock=None, record_as: str | None = None, record_info: dict | None = None,
+                       job: JobBody | None = None) -> Session:
         try:
             scn = load_scenario(scenario_id)
             rubric = load_rubric(scn)
         except ScenarioError as e:
             unknown = str(e).startswith("unknown")
             raise SessionError(str(e) if unknown else "That scenario is not available.", 404 if unknown else 500) from None
+        context = None
+        if job is not None:  # a job description: its reading, ranking, weights and briefing are worked out before anything starts
+            try:
+                context = resolve_job(job, scn, rubric)
+            except JobRequestError as e:
+                raise SessionError(str(e), 400) from None
         with self._lock:
             if any(s.kind == "live" and s.state in ("starting", "running") for s in self.sessions.values()):
                 raise SessionError("A build is already running; the GPU runs one build at a time.", 409)
@@ -803,13 +811,13 @@ class SessionManager:
             s = Session(uuid.uuid4().hex[:8], CreateRequest(goal=scn.goal, mode="simulation", human_roles=[scn.role]), "live", self)
             self.sessions[s.id] = s
             try:
-                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id, kind).next_number(), kind, variant, clock, record_as, record_info)
+                s.start_scenario(scn, rubric, History(self.settings.workspace, scn.id, kind).next_number(), kind, variant, clock, record_as, record_info, context)
             except Exception:
                 del self.sessions[s.id]
                 raise
         return s
 
-    def start_autoplay(self, scenario_id: str, variant: str, speed: int = 1, record_as: str | None = None, record_info: dict | None = None) -> Session:
+    def start_autoplay(self, scenario_id: str, variant: str, speed: int = 1, record_as: str | None = None, record_info: dict | None = None, job: JobBody | None = None) -> Session:
         """"Watch a run": a demo session of the scenario played by a script. Its session clock runs faster than real time (the weak run waits five quiet minutes for Aarav's nudge)."""
         if variant not in VARIANTS:
             raise SessionError("The run is strong or weak.", 400)
@@ -822,7 +830,7 @@ class SessionManager:
         if scenario_id not in SCRIPTS:
             raise SessionError("That scenario has no scripted run.", 400)
         clock = VirtualClock() if self.settings.autoplay_virtual else ScaledClock(speed, CLOCK_FACTOR[variant])
-        s = self.start_scenario(scenario_id, "demo", variant, clock, record_as, record_info)
+        s = self.start_scenario(scenario_id, "demo", variant, clock, record_as, record_info, job)
         s.autoplay = AutoplayRunner(s, variant, clock, speed).start()
         return s
 

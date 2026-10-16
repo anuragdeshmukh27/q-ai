@@ -48,6 +48,7 @@ class Match(BaseModel):
 class Briefing(BaseModel):
     text: str
     source: Literal["template", "model"] = "template"
+    reason: str = ""  # why the template stayed (the model was missing, slow, or its wording failed the check)
 
 
 class JobContext(BaseModel):

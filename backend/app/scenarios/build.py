@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import difflib
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -24,11 +25,21 @@ from ..schemas import ArchitectOutput
 from .debrief import Debrief
 from .director import Director, Replier
 from .guide import GuideTracker, guide_markdown
+from .jobs.adapt import word_briefing
+from .jobs.modelcall import MODEL_ID
+from .jobs.schema import JobContext
 from .loader import Scenario
 from .reports import History
 from .rubric import Rubric
 from .sessionlog import SessionLog
 from .wording import Wordsmith
+
+
+def job_public(job: JobContext) -> dict:
+    """What the screen needs of a session's job description (not the posting itself): who the posting is for, why this scenario, the key skills, the weights and the briefing."""
+    e = job.extraction
+    return {"source": job.source, "sample_id": job.sample_id, "role": e.role, "seniority": e.seniority, "domain": e.domain, "reader": e.source, "key_skills": job.key_skills,
+            "match": {"score": job.match.score, "rank": job.match.rank, "of": len(job.ranking), "reason": job.match.reason}, "weights": job.weights, "briefing": job.briefing.model_dump()}
 
 
 REGRESSION_TESTS = "tests/regression/**"  # where the learner's own tests go (the folder is in the seed)
@@ -50,7 +61,7 @@ class ScenarioBuild(Orchestrator):
 
     def __init__(self, scenario: Scenario, registry, llm, bus=None, clock: Callable[[], float] = time.monotonic, replier: Replier | None = None,
                  rubric: Rubric | None = None, wordsmith: Wordsmith | None = None, attempt: int = 1, debrief_pace: float = 3.5,
-                 kind: str = "learner", variant: str = "", **kw):
+                 kind: str = "learner", variant: str = "", job: JobContext | None = None, **kw):
         kw.update(mode="simulation", human_roles=(scenario.role,), qa=False, polish=False)  # QA's phase and the polish task belong to a build from a goal
         super().__init__(scenario.goal, registry, llm, bus, **kw)
         self.scenario = scenario
@@ -63,6 +74,7 @@ class ScenarioBuild(Orchestrator):
         self.bus.subscribe(self._on_event)
         self.attempt = attempt
         self.kind, self.variant = kind, variant  # "demo": an autoplay run, kept out of the learner's attempts and marked in its report
+        self.job = job  # a job description this session was started from: the briefing, the key skills and the weights of the role fit (never part of the standard score)
         self.history = History(self.base or WORKSPACE, scenario.id, kind)
         self.debrief = Debrief(self, rubric, wordsmith or Wordsmith(), self.history, attempt, debrief_pace) if rubric is not None else None  # no rubric, no debrief
         self._trigger = "ide"  # what started the test run that is going: the IDE's Run tests, or Submit
@@ -72,10 +84,30 @@ class ScenarioBuild(Orchestrator):
         self.emit("scenario_started", scenario=self.scenario.id, title=self.scenario.title, role=self.scenario.role, minutes=self.scenario.minutes,
                   channel={"id": self.scenario.channel.id, "name": self.scenario.channel.name}, teammates=list(self.scenario.characters), started_at=self.log.started_at, attempt=self.attempt,
                   kind=self.kind, variant=self.variant,
-                  scoring=self.debrief.rubric.scoring() if self.debrief else [])
+                  scoring=self.debrief.rubric.scoring() if self.debrief else [], **({"job": job_public(self.job)} if self.job else {}))
         self.log.add("session_started", scenario=self.scenario.id, role=self.scenario.role)
         self.director.start()
+        if self.job:
+            threading.Thread(target=self._word_briefing, name="jd-briefing", daemon=True).start()
         return super().run()
+
+    def _word_briefing(self) -> None:
+        """The 7b may reword the briefing (it is checked against the posting's reading and the scenario); the template stays when it cannot, and the report says why."""
+        job, names = self.job, {c.id: c.name for c in self.debrief.rubric.criteria} if self.debrief else {}
+        if job is None:
+            return
+        try:
+            better, why = word_briefing(job, self.scenario, names, self.llm, available=lambda: self.registry.is_available(MODEL_ID))
+        except Exception as e:  # nothing about the briefing may take the session down
+            better, why = None, f"the wording failed ({type(e).__name__})"
+        if self.stopped.is_set():
+            return
+        if better is not None:
+            job.briefing = better
+            self.emit("job_briefing", text=better.text, source="model", reason="")
+        else:
+            job.briefing = job.briefing.model_copy(update={"reason": why})
+            self.emit("job_briefing", text=job.briefing.text, source="template", reason=why)
 
     def _pipeline(self, start: str = "setup") -> None:
         steps = {"setup": self._setup, "tasks": self._execute_tasks, "verify": self._verify}
