@@ -1,4 +1,5 @@
 // Thin client for the Q backend (see backend/app/main.py). Errors are plain-language messages, never stack traces.
+import type { JobAnalysis, JobRequest, JobSample } from './jobs'
 import type { AgentInfo, QEvent } from './model'
 import { reportUrl, type Progress } from './progress'
 import type { DebriefReport, ScenarioInfo } from './scenario'
@@ -287,10 +288,12 @@ export const api = {
   progress: () => call<Progress>('/api/progress'),
   progressReport: (sid: string, attempt: number) => call<DebriefReport>(reportUrl(sid, attempt)),
   resetProgress: () => call<{ cleared: number }>('/api/progress', { method: 'DELETE' }),
-  startAutoplay: (sid: string, variant: string, speed: number) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/autoplay`, { method: 'POST', body: JSON.stringify({ variant, speed }) }),
+  jdSamples: () => call<JobSample[]>('/api/jd/samples'),
+  analyzeJd: (job: JobRequest) => call<JobAnalysis>('/api/jd/analyze', { method: 'POST', body: JSON.stringify(job) }),
+  startAutoplay: (sid: string, variant: string, speed: number, job?: JobRequest) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/autoplay`, { method: 'POST', body: JSON.stringify({ variant, speed, ...(job ? { job } : {}) }) }),
   autoplaySpeed: (id: string, speed: number) => call<unknown>(`/api/projects/${id}/autoplay/speed`, { method: 'POST', body: JSON.stringify({ speed }) }),
   autoplayStop: (id: string) => call<unknown>(`/api/projects/${id}/autoplay/stop`, { method: 'POST', body: '{}' }),
-  startScenario: (sid: string) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/start`, { method: 'POST', body: '{}' }),
+  startScenario: (sid: string, job?: JobRequest) => call<ProjectStatus>(`/api/scenarios/${encodeURIComponent(sid)}/start`, { method: 'POST', body: JSON.stringify(job ? { job } : {}) }),
   postChannel: (id: string, text: string, to?: string) => call<{ to: string[]; pending: string[] }>(`/api/projects/${id}/channel`, { method: 'POST', body: JSON.stringify({ text, to: to || null }) }),
   ideTree: (id: string, role: string) => call<IdeTree>(`/api/projects/${id}/ide/${role}/tree`),
   ideRead: (id: string, role: string, path: string, auto = false) => call<{ path: string; content: string }>(`/api/projects/${id}/ide/${role}/file?path=${encodeURIComponent(path)}${auto ? '&auto=1' : ''}`),

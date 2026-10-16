@@ -1,3 +1,5 @@
+import type { ReportJob, SessionJob } from './jobs'
+
 // Scenarios (Simulation mode, step 4): the types the incident channel, the guide and the session timer share, and the small pure helpers around them.
 // No React in here, so the tests can drive it.
 
@@ -39,6 +41,7 @@ export interface ScenarioSession {
   variant?: string // an autoplay run: "strong" or "weak"
   clock?: ClockAnchor | null // an autoplay run keeps its own (faster) session clock: the timer follows it instead of the wall clock
   finishedT?: number | null // the session time at which the session ended (fixes the timer of an autoplay run)
+  job?: SessionJob // started from a job description: why this scenario fits it, its key skills and the weights of the Role fit
 }
 
 /** The session clock of an autoplay run at one moment: `t` session seconds when the browser's clock read `atMs`, running `rate` session seconds per real second. */
@@ -171,6 +174,8 @@ export interface AttemptRecord {
   project: string
   finished_at: string
   elapsed: number
+  role_fit?: number // extra information when the attempt was started from a job description; the total stays the score
+  job_role?: string
 }
 export interface SessionEntry {
   id: string
@@ -209,6 +214,7 @@ export interface DebriefReport {
   judge_lines: Record<string, { text: string; bubble: string; source: 'model' | 'template' }>
   attempts: AttemptRecord[]
   files: { md: string; json: string }
+  job?: ReportJob // started from a job description: the Role fit block (extra to the total)
 }
 /** The debrief of this session: the meeting (judges, walking to the meeting room), then the report. */
 export interface DebriefState {

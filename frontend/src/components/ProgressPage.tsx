@@ -77,7 +77,10 @@ function ScenarioCard({ s, onOpenReport }: { s: ProgressScenario; onOpenReport: 
                       {a.attempt}
                     </button>
                   </td>
-                  <td className="py-1 font-semibold tabular-nums" style={{ color: scoreColor(a.total, a.max) }}>{a.total}/{a.max}</td>
+                  <td className="py-1 font-semibold tabular-nums" style={{ color: scoreColor(a.total, a.max) }}>
+                    {a.total}/{a.max}
+                    {typeof a.role_fit === 'number' && <div className="text-[10.5px] font-normal text-[var(--muted)]" title={`Role fit for ${a.job_role || 'the job description'}: an extra number, the score is ${a.total}`}>role fit {a.role_fit}</div>}
+                  </td>
                   <td className="py-1 text-[var(--muted)]">{formatDate(a.date)}</td>
                   <td className="py-1 text-right tabular-nums text-[var(--muted)]">{formatClock(a.elapsed)}</td>
                 </tr>

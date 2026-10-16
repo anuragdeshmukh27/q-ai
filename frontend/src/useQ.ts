@@ -4,6 +4,7 @@ import { demosFor, pickDefault } from './demos'
 import { ApiError, api, openStream, type ConfigInfo, type Metrics, type RecordingMeta } from './api'
 import type { EscalationAction } from './escalation'
 import { OfficeModel, type ToastAction, type Tone } from './model'
+import type { JobRequest } from './jobs'
 import type { ScenarioInfo } from './scenario'
 
 export interface Toast {
@@ -145,11 +146,11 @@ export function useQ() {
 
   /** A scenario: a finished app with a planted problem, one task for the role it names, the AI team on call. */
   const startScenario = useCallback(
-    async (id: string) => {
+    async (id: string, job?: JobRequest) => {
       setBusy(true)
       try {
         const card = scenarios.find((c) => c.id === id)
-        const s = await api.startScenario(id)
+        const s = await api.startScenario(id, job)
         model.reset()
         model.setGoal(card?.title ?? s.goal)
         model.setMode(s.mode)

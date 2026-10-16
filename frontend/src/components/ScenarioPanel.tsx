@@ -95,6 +95,28 @@ export function ScenarioPanel({ model, replay, projectId, onBack, onSubmit, onCo
         )}
       </div>
 
+      {s.job && (
+        <div aria-label="Why this scenario fits this job">
+          <Heading>WHY THIS SCENARIO FITS THIS JOB</Heading>
+          <div className="rounded-md border border-[var(--line)] bg-[#0b0e17] px-2.5 py-2 text-[13px] leading-snug">
+            <div className="text-[12px] text-[var(--muted)]">{s.job.role} · {s.job.domain}</div>
+            <p className="mt-1 text-[#c9d3ee]">{s.job.briefing.text}</p>
+            <div className="mt-1 text-[11px] text-[var(--muted)]" title={s.job.briefing.reason || undefined}>
+              {s.job.briefing.source === 'model' ? 'Wording by the local model, checked against the job description and the scenario.' : 'Template wording, built from the job description and the scenario.'}
+            </div>
+            {s.job.keySkills.length > 0 && (
+              <div className="mt-2" aria-label="Key skills of the job">
+                <div className="text-[11px] font-semibold tracking-wider text-[var(--muted)]">KEY SKILLS OF THE JOB</div>
+                <div className="mt-1 flex flex-wrap gap-1.5 text-[11.5px]">
+                  {s.job.keySkills.map((k) => <span key={k} className="rounded-md bg-[#151a2b] px-1.5 py-[1px] text-[#c9d3ee]">{k}</span>)}
+                </div>
+              </div>
+            )}
+            <div className="mt-2 text-[11.5px] leading-snug text-[var(--muted)]">Your score stays the standard 0 to 100. The debrief adds a Role fit number, weighted by this job.</div>
+          </div>
+        </div>
+      )}
+
       <div>
         <Heading>PRIYA'S GUIDE</Heading>
         <div className="rounded-md border border-[var(--line)] bg-[#0b0e17] px-2.5 py-1.5 text-[13px]" aria-label="Guide progress">

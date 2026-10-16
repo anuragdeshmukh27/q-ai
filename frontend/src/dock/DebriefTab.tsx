@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { readerLabel, stressed, weightText } from '../jobs'
 import type { OfficeModel } from '../model'
 import { coachLabel, deltaLabel, eventDetail, formatClock, rowsOf, scoreColor, wordingLabel, type DebriefReport, type ReportRow } from '../scenario'
 
@@ -43,6 +44,40 @@ function Heading({ children }: { children: React.ReactNode }) {
   return <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">{children}</div>
 }
 
+/** Role fit: the same criterion scores averaged with the weights of the job description. Extra to the total above, labelled as such, with the weights it used. */
+export function RoleFit({ report }: { report: DebriefReport }) {
+  const j = report.job
+  if (!j) return null
+  const e = j.extraction
+  const stress = stressed(j.weights, Object.fromEntries(report.criteria.map((c) => [c.id, c.name])))
+  return (
+    <div className="mt-4 rounded-md border border-[var(--line)] bg-[#0b0e17] p-2.5" aria-label="Role fit">
+      <div className="flex items-baseline gap-2">
+        <Heading>Role fit for this job (extra)</Heading>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[32px] font-bold leading-none tabular-nums" aria-label={`Role fit ${j.role_fit} out of ${report.max}`}>{j.role_fit}</span>
+        <span className="text-[14px] text-[var(--muted)]">/{report.max}</span>
+        <span className="ml-2 text-[12px] text-[var(--muted)]">standard score {j.standard_total}/{report.max} above is the one that counts</span>
+      </div>
+      <div className="mt-1 text-[12px] leading-snug text-[var(--muted)]">
+        {e.role} ({e.domain}). The same five scores, weighted by what the job description asks for{stress.length ? `: ${stress.join(', ')} count more` : '; it stresses nothing in particular, so role fit equals the standard score'}.
+      </div>
+      <ul className="mt-2 space-y-0.5 text-[12px]" aria-label="Role fit weights">
+        {j.criteria.map((c) => (
+          <li key={c.id} className="flex justify-between gap-2" title={(j.weight_reasons[c.id] ?? []).length ? `Asked for: ${(j.weight_reasons[c.id] ?? []).join(', ')}` : 'Not stressed in the job description'}>
+            <span>{c.name}</span>
+            <span className="tabular-nums text-[var(--muted)]">{c.score}/{c.max} · weight <b className="text-[var(--text)]">{weightText(c.weight)}</b></span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1.5 text-[11.5px] text-[var(--muted)]">
+        Read by {readerLabel(e).toLowerCase()} · {j.source === 'sample' ? `sample “${j.sample_id}”` : 'pasted text'} · {j.match.reason}
+      </div>
+    </div>
+  )
+}
+
 function Scores({ report, model }: { report: DebriefReport; model: OfficeModel }) {
   const delta = deltaLabel(report)
   const top = Math.max(report.max, ...report.attempts.map((a) => a.total))
@@ -63,6 +98,7 @@ function Scores({ report, model }: { report: DebriefReport; model: OfficeModel }
           <>attempt {report.attempt} · {formatMinutes(report.elapsed)} on the clock</>
         )}
       </div>
+      {report.job && <RoleFit report={report} />}
       <div className="mt-4">
         <Heading>Rubric (0 to 4 each)</Heading>
         <ul className="space-y-2.5">

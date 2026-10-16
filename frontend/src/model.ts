@@ -3,6 +3,7 @@ import { decidedBy } from './approvalText'
 import { explainEscalation, ESCALATION_CHOICES, type Escalation } from './escalation'
 import type { CostReport, GapInfo, Metrics } from './api'
 import { autoplayReduce, type AutoplayState } from './autoplay'
+import type { SessionJob } from './jobs'
 import type { ChannelMsg, DebriefReport, DebriefState, GuideView, ScenarioSession } from './scenario'
 
 export interface QEvent {
@@ -127,6 +128,17 @@ export const YOU = 'You'
 
 const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d = 0) => (typeof v === 'number' ? v : d)
+
+/** The `job` of a `scenario_started` event (a session started from a job description) as the panel shows it. */
+function sessionJob(j: Record<string, unknown>): SessionJob {
+  const m = (j.match ?? {}) as Record<string, unknown>
+  const b = (j.briefing ?? {}) as Record<string, unknown>
+  return {
+    source: j.source === 'sample' ? 'sample' : 'paste', sampleId: str(j.sample_id), role: str(j.role), seniority: str(j.seniority), domain: str(j.domain), reader: j.reader === 'model' ? 'model' : 'keywords',
+    keySkills: Array.isArray(j.key_skills) ? (j.key_skills as string[]) : [], match: { score: num(m.score), rank: num(m.rank, 1), of: num(m.of, 1), reason: str(m.reason) },
+    weights: (j.weights ?? {}) as Record<string, number>, briefing: { text: str(b.text), source: b.source === 'model' ? 'model' : 'template', reason: str(b.reason) },
+  }
+}
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
@@ -513,7 +525,7 @@ export class OfficeModel {
         break
       case 'scenario_started': {
         const ch = (e.channel ?? {}) as { id?: string; name?: string }
-        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), scoring: Array.isArray(e.scoring) ? (e.scoring as ScenarioSession['scoring']) : [], attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null, ...(e.kind === 'demo' ? { kind: 'demo' as const, variant: str(e.variant), clock: null, finishedT: null } : {}) }
+        this.scenario = { id: str(e.scenario), title: str(e.title), role: str(e.role), minutes: num(e.minutes), channelId: str(ch.id), channelName: str(ch.name), teammates: strs(e.teammates), scoring: Array.isArray(e.scoring) ? (e.scoring as ScenarioSession['scoring']) : [], attempt: num(e.attempt, 1), startedAt: num(e.started_at), endedAt: null, ...(e.job ? { job: sessionJob(e.job as Record<string, unknown>) } : {}), ...(e.kind === 'demo' ? { kind: 'demo' as const, variant: str(e.variant), clock: null, finishedT: null } : {}) }
         this.say(`Incident: ${str(e.title)}`)
         break
       }
@@ -554,6 +566,10 @@ export class OfficeModel {
       case 'debrief_failed':
         this.show({ kind: 'toast', level: 'warn', title: 'The debrief could not be completed', text: clip(str(e.reason), 140) }, visuals)
         break
+      case 'job_briefing': {
+        if (this.scenario?.job) this.scenario = { ...this.scenario, job: { ...this.scenario.job, briefing: { text: str(e.text), source: e.source === 'model' ? 'model' : 'template', reason: str(e.reason) } } }
+        break
+      }
       case 'guide_progress': {
         this.guide = { task: str(e.task), current: typeof e.current === 'string' ? e.current : null, done: num(e.done), steps: Array.isArray(e.steps) ? (e.steps as GuideView['steps']) : [] }
         break

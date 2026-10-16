@@ -9,6 +9,8 @@ export interface ProgressAttempt {
   date: string // 2026-10-12T20:24:28 (local time of the server)
   elapsed: number // session seconds
   project: string
+  role_fit?: number // started from a job description: extra information, the score above is the score
+  job_role?: string
 }
 
 export interface ProgressScenario {

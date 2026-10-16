@@ -4,7 +4,9 @@ import { HUMAN_ROLES, type BoardArea, type OfficeModel } from '../model'
 
 import { card, demosFor } from '../demos'
 import { EXAMPLES, FAMOUS } from '../examples'
+import type { JobRequest } from '../jobs'
 import { scenarioRunEnded, scenarioRunKey, showsScenarioPanel, type ScenarioInfo } from '../scenario'
+import { JobBox } from './JobBox'
 import { ScenarioPanel } from './ScenarioPanel'
 import { ScenarioPicker } from './ScenarioPicker'
 
@@ -37,7 +39,7 @@ interface Props {
   onSubmit: (task: string) => Promise<void>
   onCopyPath: (path: string) => void
   scenarios: ScenarioInfo[]
-  onScenario: (id: string) => void
+  onScenario: (id: string, job?: JobRequest) => void
   onWatch?: (id: string, variant: 'strong' | 'weak') => void
   onProgress?: () => void
   /** The scenario run the learner has already gone back from (the panel starts on the picker for it); a test's way to start there. */
@@ -118,6 +120,7 @@ export function LeftPanel({ model, busy, demo, hasProject, recordings, recording
   }
   return (
     <aside className="flex w-[318px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--line)] bg-[var(--panel)] p-3">
+      {!demo && mode === 'simulation' && !rolesLocked && scenarios.length > 0 && <JobBox scenarios={scenarios} busy={busy} onStart={onScenario} />}
       {!demo && mode === 'simulation' && !rolesLocked && <ScenarioPicker scenarios={scenarios} busy={busy} onStart={onScenario} onWatch={onWatch} onProgress={onProgress} />}
       <div>
         <Heading>GOAL</Heading>
